@@ -1,0 +1,113 @@
+# The hook command that setup wrote gives each agent the bound files, in
+# config order, in a worktree outside the project folder. Claude and Codex
+# show the user a summary at session start, not for subagents.
+
+exec ctxtra setup --agent claude --agent codex --agent pi
+gitrepo dev/svc git@github.com:Acme/Svc.git
+exec git -C dev/svc worktree add -q -b feature ../../elsewhere/svc-feature
+
+runhook claude SessionStart elsewhere/svc-feature
+stdout '"hookEventName":"SessionStart"'
+stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
+! stdout 'CTXMARK-OTHER'
+stdout 'for this repository, ~/dev/svc, and all its worktrees'
+stdout '<name>deploy</name>'
+stdout '"systemMessage":"ctxtra: added 3 files \(work.md, svc.md, me.md\) and 1 skill \(deploy\)"'
+
+runhook claude SubagentStart elsewhere/svc-feature
+stdout '"hookEventName":"SubagentStart"'
+stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
+! stdout 'systemMessage'
+
+runhook codex SessionStart elsewhere/svc-feature
+stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
+stdout '"systemMessage":"ctxtra: added 3 files'
+
+# Pi gets files as context files, skills as native skill paths.
+runhook pi before_agent_start elsewhere/svc-feature
+stdout '"files":\[\{"path":"[^"]*/ctx/work.md".*\{"path":"[^"]*/ctx/svc.md".*\{"path":"[^"]*/ctx/me.md"'
+stdout '"skills":\["[^"]*/skills/deploy/SKILL.md"\]'
+stdout '"message":"ctxtra: added 3 files'
+
+# A repo the bindings don't select gets only the global file.
+gitrepo dev/other git@github.com:someone/other.git
+runhook claude SessionStart dev/other
+stdout 'CTXMARK-PERSONAL'
+! stdout 'CTXMARK-WORK|CTXMARK-SVC|deploy'
+
+# Every run is logged, with the session folder and what it got.
+exec cat .ctxtra/log.jsonl
+stdout '"harness":"claude","event":"SessionStart","dir":"[^"]*/elsewhere/svc-feature","repo":"[^"]*/dev/svc","files":\["[^"]*/ctx/work.md"'
+stdout '"harness":"claude","event":"SubagentStart"'
+stdout '"harness":"codex","event":"SessionStart"'
+stdout '"harness":"pi","event":"before_agent_start"'
+
+# The worktree and the main checkout stay clean.
+exec git -C dev/svc status --porcelain
+! stdout .
+exec git -C elsewhere/svc-feature status --porcelain
+! stdout .
+
+-- .config/ctxtra/config.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Config
+include:
+  - work.yaml
+  - me.yaml
+-- .config/ctxtra/work.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: acme
+spec:
+  selector:
+    gitRepos:
+      - remote: github.com/acme/**
+  files: [~/ctx/work.md]
+  skills: [~/skills/deploy]
+---
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: svc
+spec:
+  selector:
+    dirs: [~/dev/svc]
+  files: [~/ctx/svc.md]
+---
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: not-here
+spec:
+  selector:
+    gitRepos:
+      - remote: github.com/acme/svc
+        subpath: services/**
+  files: [~/ctx/other.md]
+-- .config/ctxtra/me.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: me
+spec:
+  selector:
+    global: true
+  files: [~/ctx/me.md]
+-- ctx/work.md --
+CTXMARK-WORK
+-- ctx/svc.md --
+CTXMARK-SVC
+-- ctx/me.md --
+CTXMARK-PERSONAL
+-- ctx/other.md --
+CTXMARK-OTHER
+-- skills/deploy/SKILL.md --
+---
+name: deploy
+description: Deploy the service.
+---
+
+CTXMARK-SKILLBODY
+-- dev/svc/AGENTS.md --
+CTXMARK-TEAM

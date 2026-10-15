@@ -1,0 +1,295 @@
+{
+ "source": "agentsmdcompose lab capture 20261010-235136-63210-T18-codex-exec-run1/00061.json",
+ "api": "responses",
+ "path": "/v1/responses",
+ "script": [
+  "read:/fixture/proj/svc/internal/code.txt",
+  "subagent"
+ ],
+ "role": "main",
+ "reply": {
+  "tool": "wait_agent",
+  "args": {
+   "targets": [
+    "01a1294d-7669-75f3-9c46-b5dc96b4d722"
+   ],
+   "timeout_ms": 60000
+  }
+ },
+ "body": {
+  "model": "mock-model",
+  "stream": true,
+  "tools": [
+   {
+    "type": "function",
+    "name": "exec_command",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "cmd": {
+       "type": "string",
+       "description": "Shell command to execute."
+      },
+      "justification": {
+       "type": "string",
+       "description": "User-facing approval question for `require_escalated`; omit otherwise."
+      },
+      "login": {
+       "type": "boolean",
+       "description": "True runs the shell with -l/-i semantics; false disables them. Defaults to true."
+      },
+      "max_output_tokens": {
+       "type": "number",
+       "description": "Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy."
+      },
+      "prefix_rule": {
+       "type": "array",
+       "description": "Reusable approval prefix for `cmd`, only with `sandbox_permissions: \"require_escalated\"`; for example [\"git\", \"pull\"].",
+       "items": {
+        "type": "string"
+       }
+      },
+      "sandbox_permissions": {
+       "type": "string",
+       "description": "Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed execution.",
+       "enum": [
+        "use_default",
+        "require_escalated"
+       ]
+      },
+      "shell": {
+       "type": "string",
+       "description": "Shell binary to launch. Defaults to the user's default shell."
+      },
+      "tty": {
+       "type": "boolean",
+       "description": "True allocates a PTY for the command; false or omitted uses plain pipes."
+      },
+      "workdir": {
+       "type": "string",
+       "description": "Working directory for the command. Defaults to the turn cwd."
+      },
+      "yield_time_ms": {
+       "type": "number",
+       "description": "Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms."
+      }
+     },
+     "required": [
+      "cmd"
+     ],
+     "additionalProperties": false
+    }
+   },
+   {
+    "type": "function",
+    "name": "write_stdin"
+   },
+   {
+    "type": "function",
+    "name": "request_user_input"
+   },
+   {
+    "type": "function",
+    "name": "view_image"
+   },
+   {
+    "type": "namespace",
+    "name": "multi_agent_v1",
+    "tools": [
+     {
+      "type": "function",
+      "name": "close_agent"
+     },
+     {
+      "type": "function",
+      "name": "resume_agent"
+     },
+     {
+      "type": "function",
+      "name": "send_input"
+     },
+     {
+      "type": "function",
+      "name": "spawn_agent",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "fork_context": {
+         "type": "boolean",
+         "description": "True forks the current thread history into the new agent; false or omitted starts with only the initial prompt."
+        },
+        "items": {
+         "type": "array",
+         "description": "Structured input items. Use this to pass explicit mentions (for example app:// connector paths).",
+         "items": {
+          "type": "object",
+          "properties": {
+           "audio_url": {
+            "type": "string",
+            "description": "Audio data URL when type is audio."
+           },
+           "image_url": {
+            "type": "string",
+            "description": "Image URL when type is image."
+           },
+           "name": {
+            "type": "string",
+            "description": "Display name when type is skill or mention."
+           },
+           "path": {
+            "type": "string",
+            "description": "Path when type is local_image/local_audio/skill, or structured mention target such as app://<connector-id> or plugin://<plugin-name>@<marketplace-name> when type is mention."
+           },
+           "text": {
+            "type": "string",
+            "description": "Text content when type is text."
+           },
+           "type": {
+            "type": "string",
+            "description": "Input item type: text, image, local_image, audio, local_audio, skill, or mention."
+           }
+          },
+          "additionalProperties": false
+         }
+        },
+        "message": {
+         "type": "string",
+         "description": "Initial plain-text task for the new agent. Use either message or items."
+        },
+        "model": {
+         "type": "string",
+         "description": "Model override for the new agent. Omit unless an explicit override is needed."
+        },
+        "reasoning_effort": {
+         "type": "string",
+         "description": "Reasoning effort override for the new agent. Omit to inherit the parent effort."
+        }
+       },
+       "additionalProperties": false
+      }
+     },
+     {
+      "type": "function",
+      "name": "wait_agent",
+      "parameters": {
+       "type": "object",
+       "properties": {
+        "targets": {
+         "type": "array",
+         "description": "Agent ids to wait on. Pass multiple ids to wait for whichever finishes first.",
+         "items": {
+          "type": "string"
+         }
+        },
+        "timeout_ms": {
+         "type": "number",
+         "description": "Timeout in milliseconds. Defaults to 30000, min 10000, max 3600000. Prefer longer waits (minutes) to avoid busy polling."
+        }
+       },
+       "required": [
+        "targets"
+       ],
+       "additionalProperties": false
+      }
+     }
+    ]
+   },
+   {
+    "type": "function",
+    "name": "get_goal"
+   },
+   {
+    "type": "function",
+    "name": "create_goal"
+   },
+   {
+    "type": "function",
+    "name": "update_goal"
+   },
+   {
+    "type": "web_search"
+   }
+  ],
+  "input": [
+   {
+    "type": "message",
+    "id": "msg_7fe3cda8-a7cd-56c5-88fd-576c70480950",
+    "role": "developer",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "[removed]"
+     }
+    ]
+   },
+   {
+    "type": "message",
+    "id": "msg_01a1294d-75fb-7a33-b0c0-f238b35ba2f9",
+    "role": "developer",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "[removed]"
+     },
+     {
+      "type": "input_text",
+      "text": "[removed]"
+     }
+    ]
+   },
+   {
+    "type": "message",
+    "id": "msg_01a1294d-75fb-7a33-b0c0-f24429c6fbec",
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "[removed]"
+     },
+     {
+      "type": "input_text",
+      "text": "[removed]"
+     }
+    ]
+   },
+   {
+    "type": "message",
+    "id": "msg_01a1294d-75fb-7a33-b0c0-f263b8bb078d",
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "E2E-MAIN-TASK: reply with OK and nothing else."
+     }
+    ]
+   },
+   {
+    "type": "function_call",
+    "id": "fc_mock3",
+    "name": "exec_command",
+    "arguments": "{\"cmd\": \"cat '/fixture/proj/svc/internal/code.txt'\"}",
+    "call_id": "call_mock3"
+   },
+   {
+    "type": "function_call_output",
+    "id": "fco_01a1294d-7658-71c3-839d-1ccad4029ef7",
+    "call_id": "call_mock3",
+    "output": "[result]"
+   },
+   {
+    "type": "function_call",
+    "id": "fc_mock4",
+    "name": "spawn_agent",
+    "namespace": "multi_agent_v1",
+    "arguments": "{\"message\": \"SUBAGENT-PROBE: reply with OK and nothing else.\"}",
+    "call_id": "call_mock4"
+   },
+   {
+    "type": "function_call_output",
+    "id": "fco_01a1294d-766e-71f1-8a05-3a8a8ac5d19e",
+    "call_id": "call_mock4",
+    "output": "01a1294d-7669-75f3-9c46-b5dc96b4d722"
+   }
+  ]
+ }
+}

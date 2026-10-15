@@ -1,0 +1,73 @@
+name: e2e-latest
+
+# Nightly: the same tests against the latest agent releases, to learn about
+# a breaking agent update before users do. Never blocks a PR; on failure it
+# opens (or comments on) one issue.
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest .
+      - run: mkdir -m 777 evidence
+      - run: >-
+          docker run --rm --network none
+          -v "$PWD/evidence:/evidence" -e CTXTRA_E2E_EVIDENCE=/evidence
+          ctxtra-e2e-latest go test -count=1 -v ./...
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-latest-evidence-linux
+          path: evidence
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: e2e/agents/install.sh latest
+      - working-directory: e2e
+        env:
+          CTXTRA_E2E_REQUIRE: "1"
+          CTXTRA_E2E_EVIDENCE: ${{ github.workspace }}/evidence
+        run: go test -count=1 -v ./...
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-latest-evidence-macos
+          path: evidence
+
+  report:
+    needs: [linux, macos]
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create e2e-latest --color d73a4a --force >/dev/null
+          n=$(gh issue list --label e2e-latest --state open --json number --jq '.[0].number')
+          if [ -n "$n" ]; then
+            gh issue comment "$n" --body "Still failing: $RUN"
+          else
+            gh issue create --label e2e-latest --title "e2e fails with the latest agent versions" \
+              --body "The nightly run against the latest Claude Code, Codex and Pi failed: $RUN"
+          fi

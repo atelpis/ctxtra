@@ -1,0 +1,127 @@
+# setup adds ctxtra's hooks after another tool's, keeps the rest of the
+# file, is idempotent, backs up what it changes, and --remove restores the
+# original file.
+
+exec ctxtra setup --dry-run --agent claude
+stdout '^ctxtra setup \(claude\): would change$'
+cmp .claude/settings.json original.json
+
+exec ctxtra setup --agent claude
+stdout '^ctxtra setup \(claude\): changed$'
+stdout '^hooks run '$BIN'$'
+cmpenv .claude/settings.json want.json
+exists .ctxtra/backups
+
+exec ctxtra setup --agent claude
+stdout 'nothing to change'
+cmpenv .claude/settings.json want.json
+
+exec ctxtra doctor
+stdout 'claude: set up for \[SessionStart SubagentStart\], runs .*/ctxtra \(ok\)'
+
+exec ctxtra setup --remove --agent claude
+stdout '^ctxtra setup --remove \(claude\): changed$'
+cmp .claude/settings.json original.json
+
+exec ctxtra setup --remove --agent claude
+stdout 'nothing to change'
+
+-- .claude/settings.json --
+{
+  "theme": "dark",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool session-start"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "true"
+          }
+        ]
+      }
+    ]
+  }
+}
+-- original.json --
+{
+  "theme": "dark",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool session-start"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "true"
+          }
+        ]
+      }
+    ]
+  }
+}
+-- want.json --
+{
+  "theme": "dark",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool session-start"
+          }
+        ]
+      },
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook claude SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "true"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook claude SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

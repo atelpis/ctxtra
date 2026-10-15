@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "description": "Agent versions the e2e tests run against. Install with `npm ci --ignore-scripts` in this folder.",
+  "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.300",
+    "@earendil-works/pi-coding-agent": "1.2.0",
+    "@openai/codex": "0.162.1"
+  }
+}

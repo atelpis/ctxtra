@@ -99,8 +99,13 @@ nothing and logs the error.
 ## Development
 
 ```bash
-go test ./...   # every test uses its own temporary HOME; the Pi test also needs node
+go test ./...             # unit tests and CLI tests; each uses its own temporary HOME; the Pi test also needs node
+cd e2e && go test -count=1 ./...   # real agents against a mock model; see e2e/README.md
 ```
+
+The CLI tests in `cmd/ctxtra/testdata/script` run the built binary: `setup`, the inspection commands,
+and the hook commands that `setup` writes, the way an agent runs them. Run one with
+`go test ./cmd/ctxtra -run TestScript/<name>`.
 
 Layout:
 

@@ -1,0 +1,60 @@
+# files, show and explain describe what a session in a folder gets, without
+# running any agent.
+
+gitrepo dev/svc https://github.com/acme/svc
+gitrepo dev/other https://github.com/acme/other
+
+exec ctxtra files dev/svc
+stdout '/ctx/svc.md'
+stdout 'deploy'
+! stdout 'other.md'
+
+exec ctxtra show dev/svc
+stdout '^Contents of .*/ctx/svc.md \(instructions added by ctxtra for this repository, ~/dev/svc, and all its worktrees; binding: svc '
+stdout '^CTXMARK-SVC$'
+stdout '<location>.*/skills/deploy/SKILL.md</location>'
+
+exec ctxtra explain dev/other
+stdout '^- svc \(~/.config/ctxtra/b.yaml\): gitRepos do not match github.com/acme/other'
+stdout '^\+ other \(~/.config/ctxtra/b.yaml\): gitRepos remote github.com/acme/other$'
+stdout '^total: 1 files, 0 skills'
+
+exec ctxtra files dev/other
+stdout '/ctx/other.md'
+! stdout 'svc.md'
+
+-- .config/ctxtra/config.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Config
+include: [b.yaml]
+-- .config/ctxtra/b.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: svc
+spec:
+  selector:
+    gitRepos:
+      - remote: github.com/acme/svc
+  files: [~/ctx/svc.md]
+  skills: [~/skills/deploy]
+---
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: other
+spec:
+  selector:
+    gitRepos:
+      - remote: github.com/acme/other
+  files: [~/ctx/other.md]
+-- ctx/svc.md --
+CTXMARK-SVC
+-- ctx/other.md --
+CTXMARK-OTHER
+-- skills/deploy/SKILL.md --
+---
+description: Deploy the service.
+---
+
+Steps.
