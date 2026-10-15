@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # Agent pins for the e2e tests: each bump is a PR that runs e2e.
+  - package-ecosystem: npm
+    directory: /e2e/agents
+    schedule:
+      interval: weekly
+    groups:
+      agents:
+        patterns: ["*"]
+  # Base images of e2e/Dockerfile (Go and Node versions).
+  - package-ecosystem: docker
+    directory: /e2e
+    schedule:
+      interval: weekly
+    groups:
+      images:
+        patterns: ["*"]
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

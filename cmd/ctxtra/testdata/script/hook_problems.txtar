@@ -1,0 +1,79 @@
+# The hook never breaks a session: a missing file, a broken config or a
+# missing binary still give the agent a valid answer and exit 0.
+
+exec ctxtra setup --agent claude
+
+# A missing bound file is skipped and reported to the user.
+runhook claude SessionStart notes
+stdout 'CTXMARK-PERSONAL'
+stdout '"systemMessage":"ctxtra: added 2 files \(me.md, notes.md\); 1 not found \(run ctxtra doctor\)"'
+stderr 'ctxtra: bound file not found: .*/ctx/gone.md'
+
+# Outside git, gitRepos selectors don't match; global and dirs ones do.
+stdout 'CTXMARK-NOTES'
+! stdout 'CTXMARK-REPO'
+
+# A config with a wrong apiVersion adds nothing.
+cp broken.yaml .config/ctxtra/config.yaml
+runhook claude SessionStart notes
+! stdout 'CTXMARK'
+stdout 'systemMessage'
+! exec ctxtra doctor
+stdout 'apiVersion'
+
+# The hook command answers {} when the binary is gone. Set up from a copy
+# of the binary, then delete the copy.
+mkdir bin
+exec cp $BIN bin/ctxtra
+exec bin/ctxtra setup --agent claude
+stdout 'hooks run ~/bin/ctxtra'
+rm bin/ctxtra
+runhook claude SessionStart notes
+stdout '^\{\}$'
+! exec ctxtra doctor
+stdout 'claude: .*MISSING'
+
+-- .config/ctxtra/config.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Config
+include: [b.yaml]
+-- .config/ctxtra/b.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: me
+spec:
+  selector:
+    global: true
+  files: [~/ctx/me.md, ~/ctx/gone.md]
+---
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: notes
+spec:
+  selector:
+    dirs: [~/notes/**]
+  files: [~/ctx/notes.md]
+---
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: repo
+spec:
+  selector:
+    gitRepos:
+      - remote: "**"
+  files: [~/ctx/repo.md]
+-- broken.yaml --
+apiVersion: ctxtra/v9
+kind: Config
+include: [b.yaml]
+-- ctx/me.md --
+CTXMARK-PERSONAL
+-- ctx/notes.md --
+CTXMARK-NOTES
+-- ctx/repo.md --
+CTXMARK-REPO
+-- notes/todo.md --
+plain folder

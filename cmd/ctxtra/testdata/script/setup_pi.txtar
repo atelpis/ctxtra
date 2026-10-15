@@ -1,0 +1,25 @@
+# Pi: setup writes a managed extension, never overwrites someone else's,
+# and --remove deletes only its own.
+
+exec ctxtra setup --agent pi
+stdout '^ctxtra setup \(pi\): changed$'
+grep '^// @ctxtra-managed' .pi/agent/extensions/ctxtra.ts
+grep '^// binary: '$BIN'$' .pi/agent/extensions/ctxtra.ts
+exists .pi/agent/extensions/other.ts
+
+exec ctxtra doctor
+stdout 'pi: set up, runs .*/ctxtra \(ok\)'
+
+exec ctxtra setup --remove --agent pi
+! exists .pi/agent/extensions/ctxtra.ts
+exists .pi/agent/extensions/other.ts
+
+cp foreign.ts .pi/agent/extensions/ctxtra.ts
+! exec ctxtra setup --agent pi
+stderr 'is not managed by ctxtra; left alone'
+cmp .pi/agent/extensions/ctxtra.ts foreign.ts
+
+-- .pi/agent/extensions/other.ts --
+export default function () {}
+-- foreign.ts --
+export default function mine() {}

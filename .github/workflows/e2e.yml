@@ -1,0 +1,52 @@
+name: e2e
+
+# Agent contract tests against the agent versions pinned in
+# e2e/agents/package-lock.json. No secrets: the agents talk only to the mock.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: docker build -f e2e/Dockerfile -t ctxtra-e2e .
+      # The container's user must be able to write the evidence folder.
+      - run: mkdir -m 777 evidence
+      - run: >-
+          docker run --rm --network none
+          -v "$PWD/evidence:/evidence" -e CTXTRA_E2E_EVIDENCE=/evidence
+          ctxtra-e2e go test -count=1 -v ./...
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-evidence-linux
+          path: evidence
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: e2e/agents/install.sh
+      - working-directory: e2e
+        env:
+          CTXTRA_E2E_REQUIRE: "1"
+          CTXTRA_E2E_EVIDENCE: ${{ github.workspace }}/evidence
+        run: go test -count=1 -v ./...
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-evidence-macos
+          path: evidence

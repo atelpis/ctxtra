@@ -1,0 +1,65 @@
+# Codex: setup asks the user to trust the hooks, doctor reports the trust
+# state per hook, and --remove leaves another tool's hooks alone.
+
+exec ctxtra setup --agent codex
+stdout '^ctxtra setup \(codex\): changed$'
+stdout 'codex: hooks run only after you trust them'
+grep '"statusMessage": "ctxtra: personal instructions"' .codex/hooks.json
+grep 'other-tool session-start' .codex/hooks.json
+
+# Ours is the second SessionStart entry: Codex keys trust by position.
+! exec ctxtra doctor
+stdout 'trust .*hooks.json:session_start:1:0: NOT TRUSTED'
+stdout 'trust .*hooks.json:subagent_start:0:0: NOT TRUSTED'
+
+expand trusted.toml .codex/config.toml
+exec ctxtra doctor
+stdout 'trust .*hooks.json:session_start:1:0: trust record present'
+stdout 'trust .*hooks.json:subagent_start:0:0: trust record present'
+
+# No change, so no new request to trust.
+exec ctxtra setup --agent codex
+stdout 'nothing to change'
+! stdout 'trust them'
+
+exec ctxtra setup --remove --agent codex
+cmp .codex/hooks.json original.json
+
+-- .codex/hooks.json --
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool session-start"
+          }
+        ]
+      }
+    ]
+  }
+}
+-- original.json --
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool session-start"
+          }
+        ]
+      }
+    ]
+  }
+}
+-- trusted.toml --
+model = "gpt-test"
+
+[hooks.state."$WORK/.codex/hooks.json:session_start:1:0"]
+trusted_hash = "sha256:test"
+
+[hooks.state."$WORK/.codex/hooks.json:subagent_start:0:0"]
+trusted_hash = "sha256:test"

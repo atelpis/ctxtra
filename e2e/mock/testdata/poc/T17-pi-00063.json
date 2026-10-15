@@ -1,0 +1,80 @@
+{
+ "source": "agentsmdcompose lab capture 20261010-235136-63210-T17-pi-run1/00063.json",
+ "api": "chat",
+ "path": "/v1/chat/completions",
+ "script": [
+  "read:/fixture/svc/internal/code.txt"
+ ],
+ "role": "main",
+ "reply": {
+  "tool": "read",
+  "args": {
+   "path": "/fixture/svc/internal/code.txt"
+  }
+ },
+ "body": {
+  "model": "mock-model",
+  "stream": true,
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "read",
+     "parameters": {
+      "type": "object",
+      "required": [
+       "path"
+      ],
+      "properties": {
+       "path": {
+        "type": "string",
+        "description": "Path to the file to read (relative or absolute)"
+       },
+       "offset": {
+        "type": "number",
+        "description": "Line number to start reading from (1-indexed)"
+       },
+       "limit": {
+        "type": "number",
+        "description": "Maximum number of lines to read"
+       }
+      }
+     }
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "bash"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "edit"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write"
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "system",
+    "content": "[removed]"
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "E2E-MAIN-TASK: reply with OK and nothing else."
+     }
+    ]
+   }
+  ]
+ }
+}

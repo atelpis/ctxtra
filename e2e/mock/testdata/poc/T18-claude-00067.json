@@ -1,0 +1,56 @@
+{
+ "source": "agentsmdcompose lab capture 20261010-235136-63210-T18-claude-run1/00067.json",
+ "api": "anthropic",
+ "path": "/v1/messages",
+ "script": [
+  "read:/fixture/proj/svc/internal/code.txt",
+  "subagent"
+ ],
+ "role": "side",
+ "reply": "text",
+ "body": {
+  "model": "claude-sonnet-5",
+  "system": [
+   {
+    "type": "text",
+    "text": "[removed] <severity>N</severity>"
+   }
+  ],
+  "messages": [
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "[removed]"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": [
+     {
+      "type": "text",
+      "text": "[removed]"
+     },
+     {
+      "type": "text",
+      "text": "E2E-MAIN-TASK: reply with OK and nothing else."
+     },
+     {
+      "type": "text",
+      "text": "SUBAGENT-PROBE: reply with OK and nothing else."
+     },
+     {
+      "type": "text",
+      "text": "[removed]"
+     },
+     {
+      "type": "text",
+      "text": "[removed]"
+     }
+    ]
+   }
+  ]
+ }
+}
