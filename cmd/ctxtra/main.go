@@ -1,5 +1,5 @@
 // Command ctxtra adds personal and team instruction files and skills to
-// coding-agent sessions (Claude Code, Codex CLI, Pi, Cursor Agent CLI).
+// coding-agent sessions (Claude Code, Codex CLI, Pi, OpenCode, Cursor Agent CLI).
 package main
 
 import (

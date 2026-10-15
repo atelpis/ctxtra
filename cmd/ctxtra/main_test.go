@@ -106,7 +106,8 @@ func environ(ts *testscript.TestScript) []string {
 	var env []string
 	for _, k := range []string{"PATH", "HOME", "TMPDIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
 		"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
-		"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR"} {
+		"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR",
+		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME"} {
 		if v := ts.Getenv(k); v != "" {
 			env = append(env, k+"="+v)
 		}
@@ -127,9 +128,9 @@ func expandFile(ts *testscript.TestScript, neg bool, args []string) {
 
 // runhook AGENT EVENT DIR: runs the hook command that setup wrote into the
 // agent's config for EVENT, with the hook input the agent sends for a
-// session in DIR, and makes its output available to stdout/stderr. For Pi,
-// whose extension isn't a shell command, it runs the binary named in the
-// extension the way the extension does.
+// session in DIR, and makes its output available to stdout/stderr. For Pi
+// and OpenCode, whose extensions aren't shell commands, it runs the binary
+// named in the extension the way the extension does.
 func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) != 3 {
 		ts.Fatalf("usage: runhook AGENT EVENT DIR")
@@ -142,15 +143,15 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	case "claude", "codex":
 		cfg := map[string]string{"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}[agent]
 		cmd = exec.Command("/bin/sh", "-c", hookCommand(ts, filepath.Join(home, cfg), event))
-	case "pi":
-		ext := ts.ReadFile(filepath.Join(home, ".pi/agent/extensions/ctxtra.ts"))
-		m := regexp.MustCompile(`(?m)^// binary: (.+)$`).FindStringSubmatch(ext)
+	case "pi", "opencode":
+		path := map[string]string{"pi": ".pi/agent/extensions/ctxtra.ts", "opencode": ".config/opencode/plugins/ctxtra.ts"}[agent]
+		m := regexp.MustCompile(`(?m)^// binary: (.+)$`).FindStringSubmatch(ts.ReadFile(filepath.Join(home, path)))
 		if m == nil {
-			ts.Fatalf("no binary in the Pi extension")
+			ts.Fatalf("no binary in %s", path)
 		}
 		bin := strings.Replace(m[1], "$HOME", home, 1)
 		input, _ = json.Marshal(map[string]string{"cwd": dir})
-		cmd = exec.Command(bin, "hook", "pi", event)
+		cmd = exec.Command(bin, "hook", agent, event)
 	default:
 		ts.Fatalf("runhook: unknown agent %q", agent)
 	}

@@ -46,6 +46,11 @@ func TestOutputPerAgent(t *testing.T) {
 	if f, s := pi["files"].([]any), pi["skills"].([]any); len(f) != 1 || len(s) != 1 || s[0] != filepath.Join(h, "s", "deploy", "SKILL.md") {
 		t.Errorf("pi: %v", pi)
 	}
+	oc := run("opencode", "context", input)
+	if s := oc["skills"].([]any); !strings.Contains(oc["text"].(string), "Rule A <&>") || strings.Contains(oc["text"].(string), "<name>deploy</name>") ||
+		len(s) != 1 || s[0].(map[string]any)["name"] != "deploy" {
+		t.Errorf("opencode: %v", oc)
+	}
 	// The user sees a summary at session start, not for subagents.
 	if m := run("claude", "SessionStart", input); m["systemMessage"] != "ctxtra: added 1 file (a.md) and 1 skill (deploy)" {
 		t.Errorf("summary: %v", m["systemMessage"])
@@ -69,12 +74,12 @@ func TestOutputPerAgent(t *testing.T) {
 		t.Errorf("unknown agent: %v", m)
 	}
 	b, err := os.ReadFile(filepath.Join(h, ".ctxtra", "log.jsonl"))
-	if err != nil || strings.Count(string(b), "\n") != 8 {
+	if err != nil || strings.Count(string(b), "\n") != 9 {
 		t.Errorf("log: %v %q", err, b)
 	}
-	// The malformed and unknown runs have no folder; the others are 5
+	// The malformed and unknown runs have no folder; the others are 6
 	// different agent and event pairs in this repository.
-	if runs := LastRuns(r, r); len(runs) != 5 || runs[0].Harness != "claude" {
+	if runs := LastRuns(r, r); len(runs) != 6 || runs[0].Harness != "claude" {
 		t.Errorf("last runs: %+v", runs)
 	}
 }

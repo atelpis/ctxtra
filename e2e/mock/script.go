@@ -8,20 +8,28 @@ import (
 
 // Step is one scripted action of the main agent.
 type Step struct {
-	kind string // "read", "subagent", "wait"
+	kind string // "read", "skill", "subagent", "wait"
 	path string
+	name string // skill
 }
 
 // Read makes the agent read the file at path (an absolute path).
 func Read(path string) Step { return Step{kind: "read", path: path} }
+
+// LoadSkill makes the agent load the skill name with its skill tool, or, for
+// agents without one, read its SKILL.md at path.
+func LoadSkill(name, path string) Step { return Step{kind: "skill", name: name, path: path} }
 
 // StartSubagent makes the agent start a subagent with SubagentTask. In Codex,
 // where subagents run in the background, it then also waits for it.
 func StartSubagent() Step { return Step{kind: "subagent"} }
 
 func (s Step) String() string {
-	if s.kind == "read" {
+	switch s.kind {
+	case "read":
 		return "read " + s.path
+	case "skill":
+		return "skill " + s.name
 	}
 	return s.kind
 }
@@ -48,11 +56,18 @@ func decide(api API, body map[string]any, script []Step) *call {
 	if len(results) >= len(steps) {
 		return nil
 	}
-	switch step := steps[len(results)]; step.kind {
+	step := steps[len(results)]
+	if step.kind == "skill" {
+		if _, _, ok := findTool(api, body, "skill"); ok { // OpenCode
+			return &call{name: "skill", args: map[string]any{"id": step.name}}
+		}
+		step.kind = "read"
+	}
+	switch step.kind {
 	case "read":
 		for _, c := range []call{
 			{name: "Read", args: map[string]any{"file_path": step.path}},                            // Claude
-			{name: "read", args: map[string]any{"path": step.path}},                                 // Pi
+			{name: "read", args: map[string]any{"path": step.path}},                                 // Pi, OpenCode
 			{name: "exec_command", args: map[string]any{"cmd": fmt.Sprintf("cat '%s'", step.path)}}, // Codex
 		} {
 			if ns, _, ok := findTool(api, body, c.name); ok {
@@ -64,6 +79,9 @@ func decide(api API, body map[string]any, script []Step) *call {
 		if _, _, ok := findTool(api, body, "Agent"); ok {
 			return &call{name: "Agent", args: map[string]any{"description": "e2e probe", "prompt": SubagentTask,
 				"subagent_type": "general-purpose"}}
+		}
+		if _, _, ok := findTool(api, body, "subagent"); ok { // OpenCode
+			return &call{name: "subagent", args: map[string]any{"agent": "general", "description": "e2e probe", "prompt": SubagentTask}}
 		}
 		if ns, _, ok := findTool(api, body, "spawn_agent"); ok {
 			return &call{namespace: ns, name: "spawn_agent", args: map[string]any{"message": SubagentTask}}

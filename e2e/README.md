@@ -1,6 +1,6 @@
 # Agent contract tests
 
-These tests run real agents (Claude Code, Codex CLI, Pi) with ctxtra set up, and check what reaches the
+These tests run real agents (Claude Code, Codex CLI, Pi, OpenCode) with ctxtra set up, and check what reaches the
 model. The model is a mock on `127.0.0.1` ([mock/](mock)) that records every request and answers with
 text or a scripted tool call, so the tests are free and deterministic.
 
@@ -29,7 +29,7 @@ body, ctxtra's log and Claude's debug log in `DIR/<test>/run<N>`. CI uploads tha
 
 Agent binaries are found in this order:
 
-1. `$CTXTRA_E2E_CLAUDE`, `$CTXTRA_E2E_CODEX`, `$CTXTRA_E2E_PI`
+1. `$CTXTRA_E2E_CLAUDE`, `$CTXTRA_E2E_CODEX`, `$CTXTRA_E2E_PI`, `$CTXTRA_E2E_OPENCODE`
 2. The pinned versions in `agents/`, installed with `agents/install.sh`
 3. `PATH`
 
@@ -49,7 +49,7 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 |---|---|
 | `TestStartup` | Bound files reach the model at session start, once each, in config order after the repo's `AGENTS.md`, in a worktree outside the project folder; a binding for another repo adds nothing; the hook ran; no checkout changed |
 | `TestSubagent` | A subagent gets the files; the main agent still has them once after tool calls |
-| `TestSkills` | The skill's name and description are listed, its body isn't, until the agent reads `SKILL.md`; a skill bound to another repo isn't listed |
+| `TestSkills` | The skill's name and description are listed, its body isn't, until the agent reads `SKILL.md` (or loads it with OpenCode's `skill` tool); a skill bound to another repo isn't listed |
 | `TestCoexist` | Another tool's session-start hook keeps working next to ctxtra's and after `setup --remove` |
 | `TestUntrustedHookAddsNothing` | Codex without hook trust: the session works and gets nothing from ctxtra |
 | `TestUserMessage` | Claude gets the one-line message for the user from the hook |
@@ -83,7 +83,7 @@ Dependabot opens a PR for new agent versions every week; the e2e workflow runs o
 
 ```bash
 cd e2e/agents
-npm install --ignore-scripts @anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest
+npm install --ignore-scripts @anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest @opencode/cli@latest
 ./install.sh && cd .. && go test -count=1 ./...
 ```
 

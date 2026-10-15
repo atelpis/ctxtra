@@ -212,8 +212,11 @@ func TestParseSkillDelimiters(t *testing.T) {
 		"---\ndescription: x\n":              false,
 		"description: x\n---\n":              false,
 	} {
-		if _, _, err := parseSkill(content); (err == nil) != ok {
+		if _, _, _, err := parseSkill(content); (err == nil) != ok {
 			t.Errorf("%q: err %v", content, err)
 		}
+	}
+	if _, _, body, _ := parseSkill("---\r\ndescription: x\r\n---\r\n\r\n# Deploy\r\nsteps\r\n"); body != "# Deploy\nsteps" {
+		t.Errorf("body %q", body)
 	}
 }

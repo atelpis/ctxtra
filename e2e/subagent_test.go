@@ -20,7 +20,7 @@ func TestSubagent(t *testing.T) {
 		r.First(mock.Main).Has("TEAM", "PERSONAL")
 		r.Last(mock.Main).Has("TEAM", "PERSONAL", "CODE")
 		r.First(mock.Subagent).Has("PERSONAL")
-		s.hookRan("SubagentStart")
+		s.hookRan("SubagentStart", "subagent")
 	})
 }
 

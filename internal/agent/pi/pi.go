@@ -4,18 +4,12 @@
 package pi
 
 import (
-	"bytes"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/agent/hookjson"
-	"github.com/atelpis/ctxtra/internal/fsutil"
+	"github.com/atelpis/ctxtra/internal/agent/extfile"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -24,11 +18,6 @@ import (
 type Agent struct{}
 
 var _ agent.Agent = Agent{}
-
-const (
-	mark       = "// @ctxtra-managed"
-	binaryMark = "// binary: "
-)
 
 func (Agent) Name() string { return "pi" }
 
@@ -52,43 +41,10 @@ func (Agent) Detect() bool {
 // Setup writes or removes the extension. An extension file that ctxtra
 // didn't write is left alone.
 func (a Agent) Setup(o agent.Options, r *agent.Report) error {
-	path := a.ConfigPath()
-	old, err := os.ReadFile(path)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return err
-	}
-	exists := err == nil
-	if exists && !bytes.HasPrefix(old, []byte(mark)) {
-		return fmt.Errorf("%s exists and is not managed by ctxtra; left alone", path)
-	}
-	if !o.Remove {
-		written, changed, err := fsutil.WriteAtomic(path, []byte(Extension(o.Binary)), paths.BackupDir(), o.DryRun)
-		if changed {
-			r.Changes = append(r.Changes, written)
-		}
-		return err
-	}
-	if !exists {
-		return nil
-	}
-	r.Changes = append(r.Changes, path)
-	if o.DryRun {
-		return nil
-	}
-	return os.Remove(path)
+	return extfile.Setup(a.ConfigPath(), Extension(o.Binary), o, r)
 }
 
-func (a Agent) Status() agent.Status {
-	b, err := os.ReadFile(a.ConfigPath())
-	if err != nil || !bytes.HasPrefix(b, []byte(mark)) {
-		return agent.Status{State: "not set up", OK: true}
-	}
-	bin, ok := extensionBinary(string(b))
-	if !ok {
-		return agent.Status{State: "set up by an unknown version; run ctxtra setup"}
-	}
-	return hookjson.BinaryStatus("set up", []string{bin})
-}
+func (a Agent) Status() agent.Status { return extfile.Status(a.ConfigPath()) }
 
 // Answer lists the files with their content, the skills by SKILL.md path
 // (Pi loads them as native skills), and a summary the extension shows the
@@ -112,28 +68,8 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 
 func (Agent) PreviewLimit() int { return 0 }
 
-// Extension is the extension that runs bin. The path is in a comment for
-// Status, and in code as a JSON string, which is also a valid TypeScript
-// string.
-func Extension(bin string) string {
-	js, _ := json.Marshal(bin)
-	expr := string(js)
-	if t := paths.Tilde(bin); strings.HasPrefix(t, "~/") {
-		rel, _ := json.Marshal(t[2:])
-		expr = fmt.Sprintf("join(homedir(), %s)", rel)
-	}
-	return mark + "\n" + binaryMark + agent.ShellPath(bin) + "\n" + fmt.Sprintf(extensionBody, expr)
-}
-
-// extensionBinary returns the binary in the comment that Extension writes.
-func extensionBinary(ext string) (string, bool) {
-	for line := range strings.Lines(ext) {
-		if v, ok := strings.CutPrefix(strings.TrimRight(line, "\n"), binaryMark); ok && v != "" {
-			return agent.ExpandShellPath(v), true
-		}
-	}
-	return "", false
-}
+// Extension is the extension that runs bin.
+func Extension(bin string) string { return extfile.Content(bin, extensionBody) }
 
 // extensionBody runs the binary asynchronously, so Pi's event loop never
 // waits on it, with a 10 second timeout and room for the largest output

@@ -18,7 +18,7 @@ import (
 // Hit is a file or a skill added to the session.
 type Hit struct {
 	Path    string // the file, or the skill's SKILL.md
-	Content string // files only
+	Content string // a file's text; a skill's SKILL.md text after the frontmatter
 	Origin  string // the binding that added it
 	Global  bool   // from a binding with `global: true`
 	// Skills only.
@@ -93,7 +93,7 @@ func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
 		if !ok {
 			continue
 		}
-		name, desc, err := parseSkill(content)
+		name, desc, body, err := parseSkill(content)
 		if err != nil {
 			t.Problems = append(t.Problems, fmt.Sprintf("%s: %v; skipped", f, err))
 			continue
@@ -101,7 +101,8 @@ func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
 		if name == "" {
 			name = filepath.Base(filepath.Dir(f))
 		}
-		r.Skills = append(r.Skills, Hit{Path: f, Origin: t.Origin, Global: b.Selector.Global, Name: name, Description: desc})
+		r.Skills = append(r.Skills, Hit{Path: f, Origin: t.Origin, Global: b.Selector.Global, Name: name, Description: desc,
+			Content: body})
 	}
 	r.Missing = append(r.Missing, t.Missing...)
 	for _, p := range t.Problems {

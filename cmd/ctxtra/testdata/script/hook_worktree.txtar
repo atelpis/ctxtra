@@ -2,7 +2,7 @@
 # config order, in a worktree outside the project folder. Claude and Codex
 # show the user a summary at session start, not for subagents.
 
-exec ctxtra setup --agent claude --agent codex --agent pi
+exec ctxtra setup --agent claude --agent codex --agent pi --agent opencode
 gitrepo dev/svc git@github.com:Acme/Svc.git
 exec git -C dev/svc worktree add -q -b feature ../../elsewhere/svc-feature
 
@@ -29,6 +29,12 @@ stdout '"files":\[\{"path":"[^"]*/ctx/work.md".*\{"path":"[^"]*/ctx/svc.md".*\{"
 stdout '"skills":\["[^"]*/skills/deploy/SKILL.md"\]'
 stdout '"message":"ctxtra: added 3 files'
 
+# OpenCode gets files as system text, skills as native skills with their body.
+runhook opencode context elsewhere/svc-feature
+stdout '"text":"Contents of [^"]*/ctx/work.md.*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
+stdout '"skills":\[\{"name":"deploy","description":"Deploy the service.","path":"[^"]*/skills/deploy/SKILL.md","content":"CTXMARK-SKILLBODY"\}\]'
+! stdout 'available_skills'
+
 # A repo the bindings don't select gets only the global file.
 gitrepo dev/other git@github.com:someone/other.git
 runhook claude SessionStart dev/other
@@ -41,6 +47,7 @@ stdout '"harness":"claude","event":"SessionStart","dir":"[^"]*/elsewhere/svc-fea
 stdout '"harness":"claude","event":"SubagentStart"'
 stdout '"harness":"codex","event":"SessionStart"'
 stdout '"harness":"pi","event":"before_agent_start"'
+stdout '"harness":"opencode","event":"context"'
 
 # The worktree and the main checkout stay clean.
 exec git -C dev/svc status --porcelain
