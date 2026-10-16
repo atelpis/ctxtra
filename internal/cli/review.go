@@ -56,7 +56,7 @@ func (s *sources) review(r *source.Repo, src config.Source, commit string, full 
 	if err != nil {
 		return err
 	}
-	oldGen, newGen := src.Gen(), source.GenDir(src.Git, commit)
+	oldGen, newGen := src.Gen(), source.GenDir(src.Remote(), commit)
 	before := config.LoadAt(s.file, fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes), src.Name, src.Commit)
 	after := config.LoadAt(s.file, fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes), src.Name, commit)
 	u := &used{files: map[string]bool{}}

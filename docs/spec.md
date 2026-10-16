@@ -69,7 +69,8 @@ The config file itself is always read.
   `[include]` and `[includeIf]` in a repository's config aren't supported. A repository it can't read counts
   as untrusted.
 
-A source has a name (letters, digits, `.`, `_`, `-`) and exactly one kind: `trusted-path` or `git`.
+A source has a name (letters, digits, `.`, `_`, `-`) and exactly one kind: `trusted-path`, `git` or
+`pinned-path`.
 
 `ctxtra://<source>/<path>` works in `bindings` and in `files` and `skills` of any binding file. The path as
 written must stay inside the source: `..` that leaves it, and absolute paths, are errors. For a trusted
@@ -115,10 +116,59 @@ added ctxtra://team-ctx/bindings/billing.yaml
 |---|---|
 | `ctxtra add <git URL> [<binding file>] [--as NAME] [--branch B]` | Fetches the branch, adds the source with its current commit, and the binding file to `bindings`. The name defaults to the repository name. Without a binding file, it lists the binding files in the repository. |
 | `ctxtra add ctxtra://<source>/<binding file>` | Adds a binding file of a source you have, at its accepted commit. |
-| `ctxtra add <binding file> [--trust] [--as NAME]` | Adds a binding file on your disk. A file in a repository with a remote needs `--trust`, which adds the repository as a `trusted-path` source. |
+| `ctxtra add <binding file> [--trust] [--as NAME]` | Adds a binding file on your disk. A file in a clone with a remote is imported as a `git` source (below); with `--trust`, the repository is added as a `trusted-path` source instead. |
 | `ctxtra add --trust <folder> [--as NAME]` | Adds a folder as a `trusted-path` source. |
+| `ctxtra add --pinned-path <clone> [--as NAME]` | Adds your clone as a `pinned-path` source (below). |
+| `ctxtra remove <source>` | Removes the source and its `bindings` entries, and lists the lines of your binding files that still use it. |
+| `ctxtra remove <bindings entry>` | Removes one entry from `bindings`. |
 | `ctxtra sync [--full] [SOURCE]...` | For each pinned source: makes sure the accepted commit is in the store, fetches the branch, shows what changed (below), and on `y` writes the new commit to the config. |
 | `ctxtra sync --restore [SOURCE]...` | Fetches exactly the commits in the config, and changes nothing in it. Use it on a new laptop, or when the store is gone. It fails when a commit can't be fetched (removed by a force-push, or never pushed). |
+
+### A clone you already have
+
+```text
+$ ctxtra add ~/dev/team-ctx/bindings/billing.yaml
+~/dev/team-ctx is a clone of git@github.com:acme/team-ctx.git (not trusted), added as source team-ctx
+starts at your local commit 9f8e7d6; later sync follows origin/main (remote not checked yet)
+added ctxtra://team-ctx/bindings/billing.yaml (pinned: changes apply after `ctxtra sync`)
+```
+
+- A binding file in a clone with a remote is imported: a `git` source with the clone's remote and the
+  upstream of its current branch, starting at the clone's committed `HEAD`. Uncommitted changes are not
+  used. Later, `sync` follows the remote branch, not the clone. A clone with several remotes, or without an
+  upstream, needs `--remote` or `--branch`.
+- Paths under the clone in your own bindings keep working, and are served from the source:
+  `~/dev/team-ctx/jira-ticket.md` is `ctxtra://team-ctx/jira-ticket.md`, also after the clone moves or is
+  deleted. `doctor` suggests the `ctxtra://` form. This mapping is kept in `~/.ctxtra/mappings.json`, by
+  the source's name and URL; it is never guessed from a matching remote. A `trusted-path` source that covers
+  the folder comes first.
+- A missing file under the clone is skipped, not read from disk. When the source is removed, renamed or its
+  URL changes, paths under the clone are skipped with `not in the config any more`, not read from disk.
+  `ctxtra remove` lists them.
+- If `mappings.json` is deleted, paths under old clones are ordinary paths again: checked as usual, and
+  skipped in a repository with a remote. If it is broken, ctxtra can't tell which paths were mapped: every
+  plain path outside your `trusted-path` sources is skipped, and ctxtra doesn't write the file, until you
+  fix or delete it.
+- Reading the clone never fetches: git runs without transports and without lazy fetching.
+- If the repository is yours (your dotfiles), `ctxtra add --trust <the file>` converts the source to
+  `trusted-path` under the same name: its `ctxtra://` references are read from disk from then on. With
+  `--as NAME`, a separate trusted source is added instead, and the pinned one stays: paths under the clone
+  are then live, `ctxtra://` references to the pinned source stay pinned. Use this to edit the team
+  repository and see your uncommitted changes.
+
+### Your clone, pinned
+
+```yaml
+sources:
+  team-ctx-dev:
+    pinned-path: ~/dev/team-ctx
+    commit: '1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d'
+```
+
+A `pinned-path` source is pinned like a `git` source, but `sync` follows the clone's committed `HEAD`
+(detached works too) instead of a remote: for trying your commits before you push them. ctxtra fetches the
+commit from the clone; it never copies the clone's working tree, index, config or hooks. It adds no mapping:
+reference its files as `ctxtra://team-ctx-dev/<path>`.
 
 ### Review
 
@@ -176,15 +226,22 @@ config while `sync` waited for your answer, nothing is accepted.
   (`run: ctxtra sync --restore`), and the references to it are skipped; the rest of the binding still
   applies.
 - `<id>` comes from the URL: a source whose URL changes doesn't use the old data.
-- Old commits are not deleted yet.
-- `~/.ctxtra/state.json`: per source, the last check and the dismissed commit. It only feeds the notices:
-  losing it changes nothing a session gets.
+- A commit is deleted from the store 30 days after the last session that used it started (`sync` cleans
+  up). The accepted commits are never deleted: of this config, and of every config that `add` or `sync`
+  used (with `$CTXTRA_CONFIG`, for example), listed in `~/.ctxtra/configs.json`. If one of those, or that
+  list, can't be read, nothing is deleted. A session marks a commit as used before it reads from it; while
+  cleaning decides about that commit, the session waits up to a second, and else skips the source's files
+  for this session. A session that runs longer than 30 days on an old commit can lose its skill files.
+- `~/.ctxtra/state.json`: per source, the last check and the dismissed commit. Losing it loses the notices.
+- `~/.ctxtra/mappings.json`: the folders of imported clones (above). `~/.ctxtra/configs.json`: the config
+  files `add` and `sync` used.
 
 ### How ctxtra runs git
 
 - It runs your `git`, so ssh keys, the ssh agent and credential helpers work. Only `add` and `sync` run
   git, and they may prompt. Sessions never fetch.
-- Only the https and ssh transports. No hooks, no submodules, no automatic maintenance. Nothing is checked
+- Only the https and ssh transports, and the file transport only to fetch from a clone you named (an
+  imported clone, a `pinned-path` source). No hooks, no submodules, no automatic maintenance. Nothing is checked
   out, so `.gitattributes` filters (git-lfs, smudge) never run. Diffs use no external diff and no textconv.
 - Environment variables that point git at another repository or config are cleared.
 - Every file path in a commit is checked before anything is written: no `..`, no `.git`, no control
@@ -306,7 +363,8 @@ Problems never make ctxtra add more than the config says:
 | `sources.<name>.trusted-path` | no | A folder of your own files. Absolute or starts with `~`. |
 | `sources.<name>.git` | no | A team repository: `https://`, `ssh://` or `user@host:path`. |
 | `sources.<name>.branch` | with `git` | The branch `sync` follows. |
-| `sources.<name>.commit` | no | With `git`: the accepted commit, a full ID in quotes. |
+| `sources.<name>.pinned-path` | no | Your clone, pinned to its committed `HEAD`. Absolute or starts with `~`. |
+| `sources.<name>.commit` | no | With `git` or `pinned-path`: the accepted commit, a full ID in quotes. |
 | `bindings` | no | List of binding files. Relative to the config's folder; `~` and `ctxtra://` work. |
 | `budget.maxChars` | no | Integer ≥ 0, in characters. 0 or missing: no limit. |
 

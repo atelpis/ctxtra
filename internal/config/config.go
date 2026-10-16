@@ -21,10 +21,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
 	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/atelpis/ctxtra/internal/state"
 	"github.com/atelpis/ctxtra/internal/trust"
 )
 
@@ -57,7 +59,14 @@ type Config struct {
 	Bindings       []Binding
 	MaxChars       int // budget.maxChars, in characters (Unicode code points); 0 means no limit
 	Problems       []string
+	Notes          []string        // hints, for doctor
 	pinned         map[string]bool // paths resolved into the store
+	mappings       *state.Mappings // of imported clones; read when needed
+	mappingsErr    error
+	touched        map[string]bool // generations touched for this load
+	storeBusy      error           // a touch failed: don't wait again
+	waitLeft       time.Duration   // what touches may still wait for the store
+	waitSet        bool
 }
 
 // Reader reads the config and binding files. One Reader is shared by
@@ -133,7 +142,7 @@ func loadConfig(path string, rd Reader, name, commit string) *Config {
 	c.Trust = c.policy()
 	seen := map[string]bool{}
 	for _, e := range entries {
-		file, err := c.ref(e.Value, filepath.Dir(path), nil)
+		file, src, err := c.ref(e.Value, filepath.Dir(path), nil)
 		if err != nil {
 			c.problem(path, fmt.Errorf("line %d: %w", e.Line, err))
 			continue
@@ -144,7 +153,7 @@ func loadConfig(path string, rd Reader, name, commit string) *Config {
 		}
 		seen[file] = true
 		c.BindingFiles = append(c.BindingFiles, file)
-		c.loadBindings(file, rd, c.pinnedSource(e.Value))
+		c.loadBindings(file, rd, src)
 	}
 	return c
 }
@@ -326,7 +335,7 @@ func (c *Config) pathList(n *yaml.Node, what, file string, in *Source) ([]string
 		if strings.ContainsAny(p, "*?[") {
 			return nil, fmt.Errorf("line %d: %s entry %q looks like a glob; list each path by name", n.Line, what, p)
 		}
-		r, err := c.ref(p, base, in)
+		r, _, err := c.ref(p, base, in)
 		var unavailable errUnavailable
 		switch {
 		case errors.As(err, &unavailable):

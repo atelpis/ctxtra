@@ -34,6 +34,11 @@ Usage:
                           add one of your binding files; --trust adds its repository
                           as a trusted source (read from disk, changes apply right away)
   ctxtra add --trust <folder>  add a folder of your own files as a trusted source
+  ctxtra add --pinned-path <clone> [--as NAME]
+                          add your clone of a team repository as a pinned source that
+                          follows its committed HEAD, to try changes before you push
+  ctxtra remove <source>|<bindings entry>
+                          remove a source with its bindings entries, or one entry
   ctxtra add ctxtra://<source>/<binding file>
                           add a binding file from a source you have
   ctxtra sync [--full] [SOURCE]...
@@ -89,6 +94,8 @@ func Run(args []string, stdio IO, version string) int {
 		return runAdd(rest, stdio)
 	case "sync":
 		return runSync(rest, stdio)
+	case "remove":
+		return runRemove(rest, stdio)
 	case "files", "show", "explain", "doctor":
 		fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 		fs.SetOutput(stdio.Err)

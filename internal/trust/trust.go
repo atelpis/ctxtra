@@ -112,7 +112,7 @@ func (e *Error) Error() string {
 			what, paths.Tilde(e.Repo), e.Err)
 	}
 	return fmt.Sprintf("%s in %s, which has the remote %s and is not a trusted source; skipped. "+
-		"If the repository is yours, add it to sources: in config.yaml with trusted-path: %s",
+		"If the repository is yours: ctxtra add --trust %s; to pin it, add the file with ctxtra add",
 		what, paths.Tilde(e.Repo), e.Remote, paths.Tilde(e.Repo))
 }
 

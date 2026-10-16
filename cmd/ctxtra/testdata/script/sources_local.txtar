@@ -13,10 +13,11 @@ stdout '^  trusted: changes apply right away$'
 exec ctxtra add .config/ctxtra/bindings.yaml
 stdout 'bindings.yaml is in bindings already'
 
-# A binding file in a repository with a remote: refused, with the ways out.
+# A binding file in a clone with a remote is imported as a pinned source;
+# this clone's branch has no upstream, so add asks which branch to follow.
 ! exec ctxtra add dev/dotfiles/ctxtra/work.yaml
-stderr 'is not a trusted source'
-stderr 'If the repository is yours: ctxtra add --trust ~/dev/dotfiles/ctxtra/work.yaml'
+stderr 'has no upstream on origin; choose the branch to follow with --branch'
+stderr 'if the repository is yours, read it from disk instead: ctxtra add --trust ~/dev/dotfiles/ctxtra/work.yaml'
 
 # --trust adds the repository as a trusted source and the file through it.
 exec ctxtra add --trust dev/dotfiles/ctxtra/work.yaml

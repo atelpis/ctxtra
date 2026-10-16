@@ -135,3 +135,54 @@ func TestEditRefusesInvalidConfig(t *testing.T) {
 		t.Error("Parse accepted two documents")
 	}
 }
+
+func TestRemoveAndReplace(t *testing.T) {
+	in := `apiVersion: ctxtra/v1alpha1
+kind: Config
+sources:
+  dotfiles: {trusted-path: ~/dev/dotfiles}   # live
+  team:
+    git: https://h/team
+    branch: main
+    commit: '` + commitA + `'
+bindings:
+  - bindings.yaml        # mine
+  - ctxtra://team/b.yaml
+`
+	cases := []struct {
+		name, want string
+		edit       func([]byte) ([]byte, error)
+	}{
+		{"remove a binding", strings.Replace(in, "  - ctxtra://team/b.yaml\n", "", 1),
+			func(d []byte) ([]byte, error) { return RemoveBinding(d, "ctxtra://team/b.yaml") }},
+		{"remove a source", strings.Replace(in, "  team:\n    git: https://h/team\n    branch: main\n    commit: '"+commitA+"'\n", "", 1),
+			func(d []byte) ([]byte, error) { return RemoveSource(d, "team") }},
+		{"remove a flow source", strings.Replace(in, "  dotfiles: {trusted-path: ~/dev/dotfiles}   # live\n", "", 1),
+			func(d []byte) ([]byte, error) { return RemoveSource(d, "dotfiles") }},
+		{"replace a source", strings.Replace(in, "    git: https://h/team\n    branch: main\n    commit: '"+commitA+"'\n", "    trusted-path: ~/dev/team\n", 1),
+			func(d []byte) ([]byte, error) {
+				return ReplaceSource(d, "team", [][2]string{{"trusted-path", "~/dev/team"}})
+			}},
+	}
+	for _, c := range cases {
+		out, err := c.edit([]byte(in))
+		if err != nil || string(out) != c.want {
+			t.Errorf("%s: %v\n%s", c.name, err, out)
+		}
+	}
+	// The last entry takes its key with it.
+	one := "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n  a: {trusted-path: /a}\nbindings:\n  - x.yaml\n"
+	out, _ := RemoveBinding([]byte(one), "x.yaml")
+	out, _ = RemoveSource(out, "a")
+	if string(out) != "apiVersion: ctxtra/v1alpha1\nkind: Config\n" {
+		t.Errorf("last entries:\n%s", out)
+	}
+	if _, err := RemoveBinding([]byte(one), "y.yaml"); err == nil {
+		t.Error("removing a missing binding")
+	}
+	// A flow list is encoded again.
+	out, err := RemoveBinding([]byte("apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [a.yaml, b.yaml]\n"), "a.yaml")
+	if err != nil || string(out) != "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n" {
+		t.Errorf("flow list: %v\n%s", err, out)
+	}
+}
