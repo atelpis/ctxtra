@@ -220,6 +220,20 @@ func TestUntrustedBindingFile(t *testing.T) {
 	}
 }
 
+// A relative config path is made absolute, so that the trust check sees the
+// file that is read.
+func TestRelativeConfigPath(t *testing.T) {
+	h := testenv.Home(t)
+	team := testenv.Repo(t, filepath.Join(h, "team"), "git@github.com:acme/team.git")
+	testenv.Write(t, filepath.Join(team, "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [~/.ssh/id]}\n")
+	testenv.Write(t, filepath.Join(team, "config.yaml"), "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n")
+	t.Chdir(team)
+	cfg := load("config.yaml")
+	if len(cfg.Bindings) != 0 || len(cfg.Problems) != 1 || !strings.Contains(cfg.Problems[0], "is not a trusted source") {
+		t.Errorf("bindings=%d problems=%v", len(cfg.Bindings), cfg.Problems)
+	}
+}
+
 func TestBadSources(t *testing.T) {
 	h := testenv.Home(t)
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [x.md]}\n")

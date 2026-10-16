@@ -77,6 +77,11 @@ func (b Binding) ID() string { return b.Name + " (" + paths.Tilde(b.Source) + ")
 // Load reads the config at path and every binding file it includes. A missing
 // config is not an error: there is nothing to inject.
 func Load(path string, rd Reader) *Config {
+	// Every path is made absolute from here on: the trust check and the read
+	// must see the same file.
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
 	c := &Config{File: path, Trust: trust.New(nil)}
 	data, err := rd.Read(path)
 	if errors.Is(err, os.ErrNotExist) {

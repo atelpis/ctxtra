@@ -107,6 +107,9 @@ func (p *Policy) Check(path string) error {
 	if p == nil {
 		p = New(nil)
 	}
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("%s: not an absolute path; skipped", path)
+	}
 	links, final, err := resolveLinks(path)
 	if err != nil {
 		return fmt.Errorf("%s: %w; skipped", paths.Tilde(path), err)

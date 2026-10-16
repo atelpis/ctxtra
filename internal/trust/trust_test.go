@@ -47,6 +47,7 @@ func TestRepositories(t *testing.T) {
 	check(t, p, filepath.Join(own, "AGENTS.md"), "")
 	check(t, p, filepath.Join(team, "AGENTS.md"), "has the remote github.com/acme/team and is not a trusted source")
 	check(t, p, filepath.Join(team, "sub", "missing.md"), "has the remote github.com/acme/team")
+	check(t, p, "AGENTS.md", "not an absolute path")
 
 	var e *Error
 	if err := p.Check(filepath.Join(team, "AGENTS.md")); !errors.As(err, &e) || e.Repo != team {
