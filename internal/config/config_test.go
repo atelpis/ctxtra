@@ -2,11 +2,13 @@ package config
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/atelpis/ctxtra/internal/trust"
 )
 
 func load(path string) *Config {
@@ -15,12 +17,12 @@ func load(path string) *Config {
 
 const head = "apiVersion: ctxtra/v1alpha1\nkind: Binding\n"
 
-// setup writes a config that includes bindings.yaml and returns the loaded
+// setup writes a config that lists bindings.yaml and returns the loaded
 // config.
 func setup(t *testing.T, h, bindings string) *Config {
 	t.Helper()
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "bindings.yaml"), bindings)
-	return load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: [bindings.yaml]\n"))
+	return load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [bindings.yaml]\n"))
 }
 
 func TestLoad(t *testing.T) {
@@ -50,7 +52,7 @@ spec:
 `)
 	cfg := load(testenv.Config(t, h, `apiVersion: ctxtra/v1alpha1
 kind: Config
-include:
+bindings:
   - personal.yaml
   - ~/team/bindings/go.yaml
 budget:
@@ -59,7 +61,7 @@ budget:
 	if len(cfg.Problems) > 0 {
 		t.Fatalf("problems: %v", cfg.Problems)
 	}
-	if cfg.MaxChars != 40000 || len(cfg.Includes) != 2 || len(cfg.Bindings) != 3 {
+	if cfg.MaxChars != 40000 || len(cfg.BindingFiles) != 2 || len(cfg.Bindings) != 3 {
 		t.Fatalf("got %+v", cfg)
 	}
 	soul, work, goB := cfg.Bindings[0], cfg.Bindings[1], cfg.Bindings[2]
@@ -131,12 +133,12 @@ func TestStrictConfig(t *testing.T) {
 	h := testenv.Home(t)
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [x.md]}\n")
 	cases := map[string]string{
-		"no apiVersion":      "kind: Config\ninclude: [b.yaml]\n",
-		"wrong kind":         "apiVersion: ctxtra/v1alpha1\nkind: Binding\ninclude: [b.yaml]\n",
-		"unknown key":        "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: [b.yaml]\nrules: []\n",
-		"two documents":      "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: [b.yaml]\n---\nkind: Config\n",
-		"include not a list": "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: b.yaml\n",
-		"broken YAML":        "apiVersion: [",
+		"no apiVersion":       "kind: Config\nbindings: [b.yaml]\n",
+		"wrong kind":          "apiVersion: ctxtra/v1alpha1\nkind: Binding\nbindings: [b.yaml]\n",
+		"unknown key":         "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\nrules: []\n",
+		"two documents":       "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n---\nkind: Config\n",
+		"bindings not a list": "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: b.yaml\n",
+		"broken YAML":         "apiVersion: [",
 	}
 	for name, y := range cases {
 		cfg := load(testenv.Config(t, h, y))
@@ -147,14 +149,14 @@ func TestStrictConfig(t *testing.T) {
 	// A broken budget rejects the whole config: the bindings without the
 	// budget would add more than intended.
 	for _, b := range []string{"{maxChars: -1}", "{maxChars: '5'}", "{maxchars: 5}", "5"} {
-		cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: [b.yaml]\nbudget: "+b+"\n"))
+		cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\nbudget: "+b+"\n"))
 		if len(cfg.Problems) == 0 || len(cfg.Bindings) != 0 {
 			t.Errorf("budget %s: bindings=%d problems=%v", b, len(cfg.Bindings), cfg.Problems)
 		}
 	}
-	cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: [b.yaml, ./b.yaml, missing.yaml]\n"))
+	cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml, ./b.yaml, missing.yaml]\n"))
 	if len(cfg.Bindings) != 1 || len(cfg.Problems) != 2 {
-		t.Errorf("duplicate and missing includes: bindings=%d problems=%v", len(cfg.Bindings), cfg.Problems)
+		t.Errorf("duplicate and missing binding files: bindings=%d problems=%v", len(cfg.Bindings), cfg.Problems)
 	}
 	if cfg := load(filepath.Join(h, "nope.yaml")); len(cfg.Problems) != 0 || len(cfg.Bindings) != 0 {
 		t.Errorf("a missing config is not a problem: %v", cfg.Problems)
@@ -173,5 +175,81 @@ func TestBrokenDocumentIsSkippedAlone(t *testing.T) {
 	cfg = setup(t, h, good+"---\nspec: [\n")
 	if len(cfg.Bindings) != 0 || len(cfg.Problems) != 1 {
 		t.Errorf("syntax error: bindings %v, problems %v", cfg.Bindings, cfg.Problems)
+	}
+}
+
+func TestSources(t *testing.T) {
+	h := testenv.Home(t)
+	dot := testenv.Repo(t, filepath.Join(h, "dev", "dotfiles"), "git@github.com:me/dotfiles.git")
+	testenv.Write(t, filepath.Join(dot, "ctxtra", "work.yaml"), head+`metadata: {name: work}
+spec:
+  selector: {global: true}
+  files: [work.md, ctxtra://dotfiles/notes/me.md, ~/notes/x.md]
+  skills: [ctxtra://dotfiles/skills/deploy]
+`)
+	cfg := load(testenv.Config(t, h, `apiVersion: ctxtra/v1alpha1
+kind: Config
+sources:
+  dotfiles:
+    trusted-path: ~/dev/dotfiles
+bindings:
+  - ctxtra://dotfiles/ctxtra/work.yaml
+`))
+	if len(cfg.Problems) > 0 || len(cfg.Bindings) != 1 {
+		t.Fatalf("bindings=%d problems=%v", len(cfg.Bindings), cfg.Problems)
+	}
+	b := cfg.Bindings[0]
+	want := []string{filepath.Join(dot, "ctxtra", "work.md"), filepath.Join(dot, "notes", "me.md"), filepath.Join(h, "notes", "x.md")}
+	if !slices.Equal(b.Files, want) || b.Skills[0] != filepath.Join(dot, "skills", "deploy") {
+		t.Errorf("files %v, skills %v", b.Files, b.Skills)
+	}
+	if len(cfg.Sources) != 1 || cfg.Sources[0] != (trust.Root{Name: "dotfiles", Path: dot}) {
+		t.Errorf("sources %v", cfg.Sources)
+	}
+}
+
+// A binding file in a repository with a remote is read only from a trusted
+// source.
+func TestUntrustedBindingFile(t *testing.T) {
+	h := testenv.Home(t)
+	team := testenv.Repo(t, filepath.Join(h, "team"), "git@github.com:acme/team.git")
+	testenv.Write(t, filepath.Join(team, "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [~/.ssh/id]}\n")
+	cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [~/team/b.yaml]\n"))
+	if len(cfg.Bindings) != 0 || len(cfg.Problems) != 1 || !strings.Contains(cfg.Problems[0], "is not a trusted source") {
+		t.Errorf("bindings=%d problems=%v", len(cfg.Bindings), cfg.Problems)
+	}
+}
+
+func TestBadSources(t *testing.T) {
+	h := testenv.Home(t)
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [x.md]}\n")
+	const cfgHead = "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n"
+	cases := map[string]string{
+		"empty":            cfgHead + "sources: {}\n",
+		"list":             cfgHead + "sources: [a]\n",
+		"no kind":          cfgHead + "sources: {a: {}}\n",
+		"unknown kind":     cfgHead + "sources: {a: {git: x}}\n",
+		"two kinds":        cfgHead + "sources: {a: {trusted-path: /x, git: y}}\n",
+		"relative path":    cfgHead + "sources: {a: {trusted-path: x}}\n",
+		"bad name":         cfgHead + "sources: {a/b: {trusted-path: /x}}\n",
+		"null path":        cfgHead + "sources: {a: {trusted-path: ~}}\n",
+		"duplicate source": cfgHead + "sources:\n  a: {trusted-path: /x}\n  a: {trusted-path: /y}\n",
+	}
+	for name, y := range cases {
+		cfg := load(testenv.Config(t, h, y))
+		if len(cfg.Bindings) != 0 || len(cfg.Problems) != 1 {
+			t.Errorf("%s: bindings=%d problems=%v", name, len(cfg.Bindings), cfg.Problems)
+		}
+	}
+}
+
+func TestBadReferences(t *testing.T) {
+	h := testenv.Home(t)
+	for _, ref := range []string{"ctxtra://nope/a.md", "ctxtra://dot", "ctxtra://dot/", "ctxtra://dot/../x.md", "ctxtra://dot/a/../../x.md", "ctxtra://dot//etc/passwd"} {
+		testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: ['"+ref+"']}\n")
+		cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources: {dot: {trusted-path: ~/dot}}\nbindings: [b.yaml, '"+ref+"']\n"))
+		if len(cfg.Bindings) != 0 || len(cfg.Problems) != 2 {
+			t.Errorf("%s: bindings=%d problems=%v", ref, len(cfg.Bindings), cfg.Problems)
+		}
 	}
 }

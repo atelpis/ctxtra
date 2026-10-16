@@ -42,7 +42,7 @@ the hooks again in Codex; `doctor` shows which binary the hooks run and whether 
 ```yaml
 apiVersion: ctxtra/v1alpha1
 kind: Config
-include:
+bindings:
   - bindings.yaml
 ```
 
@@ -71,6 +71,19 @@ spec:
     - ~/notes/agents/work.md
   skills:
     - ~/notes/skills/deploy
+```
+
+Files in a git repository that has a remote are read only if you declare the repository as a source of
+your own files. Its content may come from other people, so ctxtra skips it otherwise and says how to trust
+it. Files outside git and in repositories without a remote are always read.
+
+```yaml
+sources:
+  dotfiles:
+    trusted-path: ~/dev/dotfiles
+bindings:
+  - bindings.yaml
+  - ctxtra://dotfiles/ctxtra/work.yaml   # the same as ~/dev/dotfiles/ctxtra/work.yaml
 ```
 
 Full spec: [docs/spec.md](docs/spec.md).
@@ -124,5 +137,6 @@ Layout:
 - `internal/hook`: the entry point the agents run, and the log.
 - `internal/setup`: finds the binary and runs each agent's setup.
 - `internal/cli`: the commands.
+- `internal/trust`: decides whether a file on disk may be read (outside git, no remote, or a trusted source).
 - Helpers: `gitrepo`, `fsutil` (bounded, non-blocking reads and atomic writes), `jsonorder`, `paths`,
   `testenv` (tests only).

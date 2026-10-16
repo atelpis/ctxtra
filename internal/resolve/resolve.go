@@ -13,6 +13,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/gitrepo"
 	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/atelpis/ctxtra/internal/trust"
 )
 
 // Hit is a file or a skill added to the session.
@@ -64,7 +65,7 @@ func Resolve(dir string, cfg *config.Config, rd config.Reader) *Result {
 	dir = paths.Real(dir)
 	res := &Result{Dir: dir, Repo: gitrepo.Identify(dir), MaxChars: cfg.MaxChars}
 	res.Problems = append(res.Problems, cfg.Problems...)
-	l := &loader{rd: rd, files: map[string]bool{}, skills: map[string]bool{}}
+	l := &loader{rd: rd, trust: cfg.Trust, files: map[string]bool{}, skills: map[string]bool{}}
 	for _, b := range cfg.Bindings {
 		t := Trace{Origin: b.ID()}
 		t.Matched, t.Reason = b.Selector.Match(dir, res.Repo)
@@ -79,17 +80,18 @@ func Resolve(dir string, cfg *config.Config, rd config.Reader) *Result {
 }
 
 func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
-	for _, f := range b.Files {
-		f = paths.Real(f)
+	for _, raw := range b.Files {
+		f := paths.Real(raw)
 		t.Files = append(t.Files, f)
-		if content, ok := l.load(t, f, l.files); ok {
+		if content, ok := l.load(t, raw, f, l.files); ok {
 			r.Files = append(r.Files, Hit{Path: f, Content: content, Origin: t.Origin, Global: b.Selector.Global})
 		}
 	}
 	for _, dir := range b.Skills {
-		f := paths.Real(filepath.Join(dir, "SKILL.md"))
+		raw := filepath.Join(dir, "SKILL.md")
+		f := paths.Real(raw)
 		t.Skills = append(t.Skills, f)
-		content, ok := l.load(t, f, l.skills)
+		content, ok := l.load(t, raw, f, l.skills)
 		if !ok {
 			continue
 		}
@@ -114,13 +116,19 @@ func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
 // apart: the same SKILL.md can be both an instruction file and a skill.
 type loader struct {
 	rd            config.Reader
+	trust         *trust.Policy
 	files, skills map[string]bool
 }
 
-// load reads path unless added already to seen. A missing file goes to
-// t.Missing, other errors to t.Problems.
-func (l *loader) load(t *Trace, path string, seen map[string]bool) (string, bool) {
+// load reads path, the real path of raw, unless added already to seen. raw
+// is checked with trust first: the check needs the symlinks on the way. A
+// missing file goes to t.Missing, other errors to t.Problems.
+func (l *loader) load(t *Trace, raw, path string, seen map[string]bool) (string, bool) {
 	if seen[path] {
+		return "", false
+	}
+	if err := l.trust.Check(raw); err != nil {
+		t.Problems = append(t.Problems, err.Error())
 		return "", false
 	}
 	b, err := l.rd.Read(path)

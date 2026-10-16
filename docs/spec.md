@@ -10,7 +10,9 @@
 - **Binding:** a document of kind `Binding`. It says: in sessions that match this selector, add these
   instruction files and these skills.
 - **Binding file:** a YAML file with one or more bindings, separated by `---`.
-- **Config:** the file that lists which binding files you use.
+- **Config:** the file that lists which binding files you use, and declares your sources.
+- **Source:** a folder of your own files, declared in the config. Files in it are referenced as
+  `ctxtra://<source>/<path>`.
 
 Instruction files are plain Markdown. Skills are folders with a `SKILL.md`, the same format other agent
 tools use. Neither has anything specific to ctxtra.
@@ -23,13 +25,52 @@ tools use. Neither has anything specific to ctxtra.
 apiVersion: ctxtra/v1alpha1
 kind: Config
 
-include:                              # binding files, applied in this order
+sources:
+  dotfiles:
+    trusted-path: ~/dev/dotfiles      # a repo of your own: read from disk, changes apply right away
+
+bindings:                             # binding files, applied in this order
   - bindings/personal.yaml            # relative to this file's folder
-  - ~/dev/acme-context/bindings/go.yaml
+  - ctxtra://dotfiles/ctxtra/go.yaml  # a file in the dotfiles source
 
 budget:
   maxChars: 40000                     # optional; 0 or missing = no limit
 ```
+
+## Sources and trust
+
+ctxtra reads a file from disk only if the file is yours. A file counts as yours when it is:
+
+- outside git,
+- in a git repository with no remote, or
+- under a `trusted-path` source.
+
+A file in a repository that has a remote and isn't a trusted source is skipped, with a problem that says
+how to trust the repository. Its content may come from other people, and a binding file there could add
+any file on your disk to the session. This covers binding files, instruction files and `SKILL.md` files.
+The config file itself is always read.
+
+- `trusted-path` must be absolute or start with `~`. It is usually the top of a repository, but can be a
+  folder inside one: then only the files under that folder are trusted.
+- It trusts one repository. A repository nested below it (a submodule, a clone in a subfolder) needs its
+  own source, unless it has no remote. A file is read only if every repository around it is trusted.
+- Folders are compared as folders, not as text: `~/dev/dotfiles` doesn't cover `~/dev/dotfiles-evil`, and
+  a symlink to the folder or another spelling of it on a case-insensitive disk is the same folder. A second
+  clone or a worktree in another folder is a different folder: add it as its own source if you want it.
+- Symlinks are followed only when every symlink on the way, and the file it leads to, pass the same check.
+  A link in an untrusted repository can't lead to your files, and a link in your files can't lead into an
+  untrusted repository.
+- ctxtra finds repositories by reading `.git` and the repository's git config, without running git.
+  `[include]` and `[includeIf]` in a repository's config aren't supported. A repository it can't read counts
+  as untrusted.
+
+A source has a name (letters, digits, `.`, `_`, `-`) and exactly one kind. `trusted-path` is the only kind
+so far.
+
+`ctxtra://<source>/<path>` works in `bindings` and in `files` and `skills` of any binding file. It is the
+same as the path under the source's folder. The path as written must stay inside the source: `..` that
+leaves it, and absolute paths, are errors. A symlink in the source is followed by the rules above, so it
+can lead outside the source, but only to a file that is trusted on its own.
 
 ## Binding file
 
@@ -90,7 +131,8 @@ any of them matches.
 ## Files and skills
 
 - `files` and `skills` are lists. A binding needs at least one of them.
-- Each path is absolute, starts with `~`, or is relative to the binding file's folder.
+- Each path is absolute, starts with `~`, is relative to the binding file's folder, or is a
+  `ctxtra://<source>/<path>` reference.
 - Globs are not supported: list each file and skill folder by name.
 - Each file is added once per session, at its first position, and the same for each skill. Two skills with
   the same `name`: the first is used, the other is reported.
@@ -102,7 +144,7 @@ any of them matches.
 
 ## Order and budget
 
-Bindings apply in config order: the `include` list, then the documents of each file in order.
+Bindings apply in config order: the `bindings` list, then the documents of each file in order.
 
 With `budget.maxChars`, whole files are dropped from the end until the added text fits. The budget counts
 characters (Unicode code points), not bytes, and covers the whole added text, headers included. The skill
@@ -112,12 +154,14 @@ list is never dropped. `ctxtra explain` shows what was dropped.
 
 Problems never make ctxtra add more than the config says:
 
-- A config with a wrong `apiVersion` or `kind`, an invalid `budget`, or broken YAML, is ignored as a whole.
+- A config with a wrong `apiVersion` or `kind`, an invalid `budget` or source, or broken YAML, is ignored as
+  a whole.
 - A broken binding is skipped. The other bindings in the same file still apply. This includes a document
   that isn't a map or uses anchors. A YAML syntax error skips the whole file, because the parser can't tell
   where the next document starts.
 - Unknown keys, duplicate keys, null values, empty lists, YAML anchors and aliases are errors.
 - A missing file is reported. The session still starts.
+- A file that isn't trusted (see [Sources and trust](#sources-and-trust)) is skipped and reported.
 
 `ctxtra doctor` lists every problem.
 
@@ -137,7 +181,8 @@ Problems never make ctxtra add more than the config says:
 |---|---|---|
 | `apiVersion` | yes | `ctxtra/v1alpha1` |
 | `kind` | yes | `Config` |
-| `include` | no | List of binding files. Relative to the config's folder; `~` works. |
+| `sources.<name>.trusted-path` | no | A folder of your own files. Absolute or starts with `~`. |
+| `bindings` | no | List of binding files. Relative to the config's folder; `~` and `ctxtra://` work. |
 | `budget.maxChars` | no | Integer ≥ 0, in characters. 0 or missing: no limit. |
 
 **Binding** (`kind: Binding`)

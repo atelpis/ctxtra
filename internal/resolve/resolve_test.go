@@ -17,7 +17,7 @@ const head = "apiVersion: ctxtra/v1alpha1\nkind: Binding\n"
 func load(t *testing.T, h, bindings, budget string) *config.Config {
 	t.Helper()
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), bindings)
-	return config.Load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: [b.yaml]\n"+budget),
+	return config.Load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n"+budget),
 		fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes))
 }
 
@@ -159,7 +159,7 @@ func TestTotalLimitCoversConfig(t *testing.T) {
 	testenv.Write(t, filepath.Join(h, "b.md"), strings.Repeat("B", 10))
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
 		head+"metadata: {name: x}\nspec: {selector: {global: true}, files: [~/a.md, ~/b.md]}\n")
-	cfgPath := testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: [b.yaml]\n")
+	cfgPath := testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n")
 	size := func(p string) int {
 		st, err := os.Stat(p)
 		if err != nil {

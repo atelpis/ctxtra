@@ -58,7 +58,7 @@ exec git -C elsewhere/svc-feature status --porcelain
 -- .config/ctxtra/config.yaml --
 apiVersion: ctxtra/v1alpha1
 kind: Config
-include:
+bindings:
   - work.yaml
   - me.yaml
 -- .config/ctxtra/work.yaml --
