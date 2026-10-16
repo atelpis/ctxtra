@@ -81,7 +81,15 @@ func (b Binding) ID() string { return b.Name + " (" + paths.Tilde(b.Source) + ")
 
 // Load reads the config at path and every binding file it includes. A missing
 // config is not an error: there is nothing to inject.
-func Load(path string, rd Reader) *Config {
+func Load(path string, rd Reader) *Config { return loadConfig(path, rd, "", "") }
+
+// LoadAt is Load as if the pinned source name were at commit, for sync to
+// see what the config would use from a new commit.
+func LoadAt(path string, rd Reader, name, commit string) *Config {
+	return loadConfig(path, rd, name, commit)
+}
+
+func loadConfig(path string, rd Reader, name, commit string) *Config {
 	// Every path is made absolute from here on: the trust check and the read
 	// must see the same file.
 	if abs, err := filepath.Abs(path); err == nil {
@@ -116,6 +124,11 @@ func Load(path string, rd Reader) *Config {
 	if err != nil {
 		c.problem(path, fmt.Errorf("%s; nothing from this file is used", flat(err)))
 		return c
+	}
+	for i := range c.Sources {
+		if name != "" && c.Sources[i].Name == name && c.Sources[i].Pinned() {
+			c.Sources[i].Commit = commit
+		}
 	}
 	c.Trust = c.policy()
 	seen := map[string]bool{}

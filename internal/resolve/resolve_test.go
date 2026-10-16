@@ -6,9 +6,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/atelpis/ctxtra/internal/config"
 	"github.com/atelpis/ctxtra/internal/fsutil"
+	"github.com/atelpis/ctxtra/internal/source"
+	"github.com/atelpis/ctxtra/internal/state"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
@@ -218,5 +221,53 @@ func TestParseSkillDelimiters(t *testing.T) {
 	}
 	if _, _, body, _ := parseSkill("---\r\ndescription: x\r\n---\r\n\r\n# Deploy\r\nsteps\r\n"); body != "# Deploy\nsteps" {
 		t.Errorf("body %q", body)
+	}
+}
+
+// Sessions that use a pinned source say when it wasn't checked for new
+// commits for a while, and when a newer commit wasn't accepted.
+func TestNotices(t *testing.T) {
+	h := testenv.Home(t)
+	url, commit := "https://h/team", strings.Repeat("a", 40)
+	testenv.Write(t, filepath.Join(source.GenDir(url, commit), "a.md"), "A")
+	testenv.Write(t, filepath.Join(h, "n", "me.md"), "me")
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
+		head+"metadata: {name: team}\nspec: {selector: {dirs: [~/work]}, files: [ctxtra://team/a.md]}\n---\n"+
+			head+"metadata: {name: me}\nspec: {selector: {global: true}, files: [~/n/me.md]}\n")
+	cfgPath := testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n  team: {git: '"+url+"', branch: main, commit: '"+commit+"'}\nbindings: [b.yaml]\n")
+	notices := func(dir string) []string {
+		t.Helper()
+		res, _ := Session(dir, cfgPath)
+		if len(res.Problems) > 0 {
+			t.Fatalf("problems %v", res.Problems)
+		}
+		return res.Notices
+	}
+	work := filepath.Join(h, "work")
+	os.MkdirAll(work, 0o755)
+
+	if got := notices(work); !slices.Equal(got, []string{"team not checked for new commits on this machine yet; run ctxtra sync"}) {
+		t.Errorf("never checked: %v", got)
+	}
+	if got := notices(h); len(got) != 0 {
+		t.Errorf("a session that doesn't use the source: %v", got)
+	}
+	id := source.ID(url)
+	state.Update(id, url, "main", func(e *state.Source) { e.LastCheck = time.Now().Add(-3 * 24 * time.Hour) })
+	if got := notices(work); len(got) != 0 {
+		t.Errorf("checked 3 days ago: %v", got)
+	}
+	state.Update(id, url, "main", func(e *state.Source) {
+		e.LastCheck = time.Now().Add(-12*24*time.Hour - time.Hour)
+		e.Dismissed = strings.Repeat("b", 40)
+	})
+	want := []string{"team last checked 12 days ago; run ctxtra sync to check for changes", "team bbbbbbb not accepted (dismissed); you have aaaaaaa"}
+	if got := notices(work); !slices.Equal(got, want) {
+		t.Errorf("old check and dismissed: %v", got)
+	}
+	// State about another branch of the repository is kept apart.
+	state.Update(id, url, "other", func(e *state.Source) { e.LastCheck = time.Now(); e.Dismissed = "" })
+	if got := notices(work); !slices.Equal(got, want) {
+		t.Errorf("state of another branch: %v", got)
 	}
 }
