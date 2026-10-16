@@ -1,6 +1,7 @@
 package config
 
 import (
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -8,7 +9,6 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/testenv"
-	"github.com/atelpis/ctxtra/internal/trust"
 )
 
 func load(path string) *Config {
@@ -203,7 +203,7 @@ bindings:
 	if !slices.Equal(b.Files, want) || b.Skills[0] != filepath.Join(dot, "skills", "deploy") {
 		t.Errorf("files %v, skills %v", b.Files, b.Skills)
 	}
-	if len(cfg.Sources) != 1 || cfg.Sources[0] != (trust.Root{Name: "dotfiles", Path: dot}) {
+	if len(cfg.Sources) != 1 || cfg.Sources[0] != (Source{Name: "dotfiles", Line: 4, TrustedPath: dot}) {
 		t.Errorf("sources %v", cfg.Sources)
 	}
 }
@@ -264,6 +264,51 @@ func TestBadReferences(t *testing.T) {
 		cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources: {dot: {trusted-path: ~/dot}}\nbindings: [b.yaml, '"+ref+"']\n"))
 		if len(cfg.Bindings) != 0 || len(cfg.Problems) != 2 {
 			t.Errorf("%s: bindings=%d problems=%v", ref, len(cfg.Bindings), cfg.Problems)
+		}
+	}
+}
+
+// The store is read only through ctxtra:// references: by a plain path or a
+// symlink, a pinned source's binding file would escape its limits.
+func TestStoreByPlainPath(t *testing.T) {
+	h := testenv.Home(t)
+	gen := filepath.Join(h, ".ctxtra", "store", "0123456789abcdef", strings.Repeat("a", 40))
+	testenv.Write(t, filepath.Join(gen, "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [~/.ssh/id]}\n")
+	symlink := filepath.Join(h, "link.yaml")
+	if err := os.Symlink(filepath.Join(gen, "b.yaml"), symlink); err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(gen, "b.yaml"), symlink} {
+		cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: ['"+p+"']\n"))
+		if len(cfg.Bindings) != 0 || len(cfg.Problems) != 1 || !strings.Contains(cfg.Problems[0], "can't be referenced by its path") {
+			t.Errorf("%s: bindings=%d problems=%v", p, len(cfg.Bindings), cfg.Problems)
+		}
+	}
+}
+
+// A pinned source that isn't in the store skips only its references: the
+// user's own files in the same binding still apply.
+func TestUnavailablePinnedSource(t *testing.T) {
+	h := testenv.Home(t)
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [~/me.md, ctxtra://team/x.md, ctxtra://new/y.md]}\n")
+	cfg := load(testenv.Config(t, h, `apiVersion: ctxtra/v1alpha1
+kind: Config
+sources:
+  team: {git: https://h/team, branch: main, commit: '`+strings.Repeat("a", 40)+`'}
+  new: {git: https://h/new, branch: main}
+bindings: [b.yaml, ctxtra://team/b.yaml]
+`))
+	if len(cfg.Bindings) != 1 || !slices.Equal(cfg.Bindings[0].Files, []string{filepath.Join(h, "me.md")}) {
+		t.Errorf("bindings %v", cfg.Bindings)
+	}
+	want := []string{"ctxtra://team/x.md: team aaaaaaa is not in ctxtra's store; run: ctxtra sync --restore",
+		"ctxtra://new/y.md: the source new has no accepted commit yet; run: ctxtra sync new", "ctxtra://team/b.yaml: team aaaaaaa"}
+	if len(cfg.Problems) != 3 {
+		t.Fatalf("problems %v", cfg.Problems)
+	}
+	for i, w := range want {
+		if !strings.Contains(cfg.Problems[i], w) {
+			t.Errorf("problem %d: %s, want %q", i, cfg.Problems[i], w)
 		}
 	}
 }

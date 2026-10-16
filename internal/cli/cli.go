@@ -12,6 +12,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/agent/registry"
 	"github.com/atelpis/ctxtra/internal/hook"
 	"github.com/atelpis/ctxtra/internal/setup"
+	"github.com/atelpis/ctxtra/internal/term"
 )
 
 // IO is where commands read and write.
@@ -26,6 +27,19 @@ Usage:
   ctxtra setup [--agent A]... [--remove] [--dry-run]
                           add hooks that run this binary to your user-level agent configs;
                           --remove removes only ctxtra's entries
+  ctxtra add <git URL> [<binding file in the repo>] [--as NAME] [--branch BRANCH]
+                          add a team repository as a pinned source; its files change
+                          only when you accept a new commit with sync
+  ctxtra add <binding file> [--trust] [--as NAME]
+                          add one of your binding files; --trust adds its repository
+                          as a trusted source (read from disk, changes apply right away)
+  ctxtra add --trust <folder>  add a folder of your own files as a trusted source
+  ctxtra add ctxtra://<source>/<binding file>
+                          add a binding file from a source you have
+  ctxtra sync [SOURCE]...  fetch pinned sources, show what changed, and accept it
+  ctxtra sync --restore [SOURCE]...
+                          fetch exactly the commits in the config (a new laptop, a lost
+                          store); changes nothing in the config
   ctxtra files [DIR]      files and skills a session in DIR gets (default: .)
   ctxtra show [DIR]       the exact text a session in DIR gets
   ctxtra explain [DIR]    why each binding matches or not
@@ -44,6 +58,12 @@ func Run(args []string, stdio IO, version string) int {
 		return 0
 	}
 	cmd, rest := args[0], args[1:]
+	if cmd != "hook" {
+		// Output can hold text from sources (selectors, paths, diffs): no
+		// control characters reach the terminal. The hook's stdout is JSON
+		// for the agent and stays as it is.
+		stdio.Out, stdio.Err = term.Writer{W: stdio.Out}, term.Writer{W: stdio.Err}
+	}
 	switch cmd {
 	case "-h", "--help", "help":
 		fmt.Fprint(stdio.Out, usage)
@@ -60,9 +80,13 @@ func Run(args []string, stdio IO, version string) int {
 		if len(rest) > 1 {
 			event = rest[1]
 		}
-		return hook.Run(rest[0], event, hookInput(stdio.In), stdio.Out, stdio.Err)
+		return hook.Run(rest[0], event, hookInput(stdio.In), stdio.Out, term.Writer{W: stdio.Err})
 	case "setup":
 		return runSetup(rest, stdio)
+	case "add":
+		return runAdd(rest, stdio)
+	case "sync":
+		return runSync(rest, stdio)
 	case "files", "show", "explain", "doctor":
 		fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 		fs.SetOutput(stdio.Err)

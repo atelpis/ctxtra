@@ -86,6 +86,15 @@ bindings:
   - ctxtra://dotfiles/ctxtra/work.yaml   # the same as ~/dev/dotfiles/ctxtra/work.yaml
 ```
 
+A team repository can be added by URL. ctxtra keeps its own copy and serves the commit you accepted; a
+new commit reaches your sessions after `ctxtra sync` shows you the diff and you accept it:
+
+```bash
+ctxtra add git@github.com:acme/team-ctx.git bindings/billing.yaml
+ctxtra sync                 # review and accept new commits
+ctxtra sync --restore       # a new laptop: fetch exactly the accepted commits
+```
+
 Full spec: [docs/spec.md](docs/spec.md).
 
 ## Check
@@ -137,6 +146,7 @@ Layout:
 - `internal/hook`: the entry point the agents run, and the log.
 - `internal/setup`: finds the binary and runs each agent's setup.
 - `internal/cli`: the commands.
+- `internal/source`: fetches pinned sources with git and keeps their accepted commits in the store.
 - `internal/trust`: decides whether a file on disk may be read (outside git, no remote, or a trusted source).
 - Helpers: `gitrepo`, `fsutil` (bounded, non-blocking reads and atomic writes), `jsonorder`, `paths`,
   `testenv` (tests only).

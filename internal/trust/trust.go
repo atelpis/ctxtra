@@ -48,6 +48,7 @@ type Root struct {
 // about each folder, so one Policy is used for one session.
 type Policy struct {
 	roots []rootInfo
+	deny  []rootInfo
 	dirs  map[string]dirInfo
 	rd    *fsutil.Reader // git metadata, with its own limits
 }
@@ -60,20 +61,36 @@ type rootInfo struct {
 // dirInfo is what a folder says about trust.
 type dirInfo struct {
 	root bool   // the folder is a trusted root
+	deny bool   // the folder is denied
 	repo bool   // the folder is the top of a git repository
 	err  error  // set when the repository can't be read
 	url  string // a remote of the repository, normalized; "" when it has none
 	has  bool   // the repository has a remote
 }
 
-// New returns a Policy for the given trusted roots.
-func New(roots []Root) *Policy {
+// New returns a Policy for the given trusted roots. Files under a denied
+// root are never trusted, wherever they are.
+func New(roots []Root, deny ...Root) *Policy {
 	p := &Policy{dirs: map[string]dirInfo{}, rd: fsutil.NewReader(maxGitFile, maxGitBytes)}
 	for _, r := range roots {
 		fi, _ := os.Stat(r.Path)
 		p.roots = append(p.roots, rootInfo{r, fi})
 	}
+	for _, r := range deny {
+		fi, _ := os.Stat(r.Path)
+		p.deny = append(p.deny, rootInfo{r, fi})
+	}
 	return p
+}
+
+// DeniedError is a file under a denied root.
+type DeniedError struct {
+	Path string
+	Root Root
+}
+
+func (e *DeniedError) Error() string {
+	return fmt.Sprintf("%s is in %s, which can't be referenced by its path; skipped", paths.Tilde(e.Path), e.Root.Name)
 }
 
 // Error is why a file is not trusted.
@@ -119,6 +136,9 @@ func (p *Policy) Check(path string) error {
 			if e, ok := err.(*Error); ok && l != path {
 				e.Path, e.Via = path, l
 			}
+			if e, ok := err.(*DeniedError); ok {
+				e.Path = path
+			}
 			return err
 		}
 	}
@@ -132,6 +152,9 @@ func (p *Policy) checkOne(path string) error {
 	trusted := false
 	for dir := filepath.Dir(path); ; dir = filepath.Dir(dir) {
 		d := p.dir(dir)
+		if d.deny {
+			return &DeniedError{Path: path, Root: p.deniedRoot(dir)}
+		}
 		trusted = trusted || d.root
 		if d.repo {
 			switch {
@@ -154,7 +177,9 @@ func (p *Policy) dir(dir string) dirInfo {
 	}
 	var d dirInfo
 	if fi, err := os.Stat(dir); err == nil {
-		d.root = slices.ContainsFunc(p.roots, func(r rootInfo) bool { return r.fi != nil && os.SameFile(fi, r.fi) })
+		same := func(r rootInfo) bool { return r.fi != nil && os.SameFile(fi, r.fi) }
+		d.root = slices.ContainsFunc(p.roots, same)
+		d.deny = slices.ContainsFunc(p.deny, same)
 	}
 	switch _, err := os.Lstat(filepath.Join(dir, ".git")); {
 	case err == nil:
@@ -165,6 +190,16 @@ func (p *Policy) dir(dir string) dirInfo {
 	}
 	p.dirs[dir] = d
 	return d
+}
+
+func (p *Policy) deniedRoot(dir string) Root {
+	fi, _ := os.Stat(dir)
+	for _, r := range p.deny {
+		if fi != nil && r.fi != nil && os.SameFile(fi, r.fi) {
+			return r.Root
+		}
+	}
+	return Root{Name: dir}
 }
 
 func notFound(err error) bool {

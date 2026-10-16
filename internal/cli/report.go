@@ -10,6 +10,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/hook"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
+	"github.com/atelpis/ctxtra/internal/source"
 )
 
 // report implements the commands that show what a session gets.
@@ -150,11 +151,7 @@ func (r report) doctor(dir string) int {
 	}
 	fmt.Fprintf(r.Out, "  binding files: %d, bindings: %d\n", len(cfg.BindingFiles), len(cfg.Bindings))
 	for _, src := range cfg.Sources {
-		state := ""
-		if _, err := os.Stat(src.Path); err != nil {
-			state = " (not found)"
-		}
-		fmt.Fprintf(r.Out, "  source %s: trusted-path %s%s\n", src.Name, paths.Tilde(src.Path), state)
+		fmt.Fprintf(r.Out, "  source %s: %s\n", src.Name, describeSource(src))
 	}
 	for _, p := range res.Problems {
 		ok = false
@@ -217,4 +214,23 @@ func mentions(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// describeSource is one line about a source and its state, for doctor.
+func describeSource(s config.Source) string {
+	if !s.Pinned() {
+		state := ""
+		if _, err := os.Stat(s.TrustedPath); err != nil {
+			state = " (not found)"
+		}
+		return "trusted-path " + paths.Tilde(s.TrustedPath) + state
+	}
+	d := fmt.Sprintf("git %s, branch %s, ", s.Git, s.Branch)
+	switch {
+	case s.Commit == "":
+		return d + "no accepted commit yet (run: ctxtra sync " + s.Name + ")"
+	case !source.Has(s.Git, s.Commit):
+		return d + "pinned to " + source.Short(s.Commit) + ", NOT IN THE STORE (run: ctxtra sync --restore)"
+	}
+	return d + "pinned to " + source.Short(s.Commit)
 }
