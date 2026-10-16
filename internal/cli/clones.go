@@ -314,7 +314,11 @@ func (s *sources) remove(what string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(s.Out, "removed source %s and %d bindings entries\n", src.Name, n)
+		entries := "entries"
+		if n == 1 {
+			entries = "entry"
+		}
+		fmt.Fprintf(s.Out, "removed source %s and %d bindings %s\n", src.Name, n, entries)
 		s.stillUsed(src, prefix)
 		return nil
 	}
