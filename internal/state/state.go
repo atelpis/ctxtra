@@ -1,11 +1,18 @@
-// Package state keeps what ctxtra learns about pinned sources on this
-// machine: when each was last checked for new commits, and the commit the
-// user didn't accept. None of it changes what a session gets: losing the
-// file only loses the notices.
+// Package state keeps what ctxtra learns on this machine.
+//
+// state.json holds when each pinned source was last checked for new
+// commits, and the commit the user didn't accept. None of it changes what a
+// session gets: losing it loses the notices.
+//
+// mappings.json holds the folders of imported clones (see Mapping), and
+// configs.json the config files add and sync used. They change what a
+// session gets, so they are kept apart, and a broken file is reported,
+// never rewritten.
 package state
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"time"
 
@@ -64,18 +71,36 @@ func (s State) Get(id, url, branch string) Source {
 // Update changes the entry of the source id under a lock and writes the
 // file atomically.
 func Update(id, url, branch string, change func(*Source)) error {
+	return update(func(s *State) error {
+		e := s.Get(id, url, branch)
+		change(&e)
+		s.Sources[key(id, branch)] = e
+		return nil
+	})
+}
+
+func update(change func(*State) error) error {
 	unlock, err := fsutil.Lock(filepath.Join(paths.StateDir(), "state.lock"))
 	if err != nil {
 		return err
 	}
 	defer unlock()
 	s := Load()
-	e := s.Get(id, url, branch)
-	change(&e)
-	s.Sources[key(id, branch)] = e
-	b, err := json.MarshalIndent(s, "", "  ")
+	if err := change(&s); err != nil {
+		return err
+	}
+	return writeJSON(Path(), s)
+}
+
+// writeJSON writes v to path atomically, if it fits the size the readers
+// accept.
+func writeJSON(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
 		return err
 	}
-	return fsutil.WriteFile(Path(), append(b, '\n'), 0o600)
+	if len(b) >= maxBytes {
+		return fmt.Errorf("%s would be larger than %d bytes", paths.Tilde(path), maxBytes)
+	}
+	return fsutil.WriteFile(path, append(b, '\n'), 0o600)
 }

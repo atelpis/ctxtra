@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
@@ -289,5 +290,113 @@ func TestLargeCommit(t *testing.T) {
 	}
 	if st, err := os.Stat(filepath.Join(gen, "b.md")); err != nil || st.Size() != 9<<20 {
 		t.Errorf("b.md: %v %v", st, err)
+	}
+}
+
+// A pinned-path source takes the clone's committed HEAD, detached too,
+// never the working tree.
+func TestFetchHead(t *testing.T) {
+	h := testenv.Home(t)
+	clone := testenv.Repo(t, filepath.Join(h, "clone"), "https://github.com/acme/team")
+	first := head(t, clone)
+	testenv.Write(t, filepath.Join(clone, "AGENTS.md"), "uncommitted\n")
+	ctx := context.Background()
+	r := Open(clone)
+	got, err := r.FetchHead(ctx, clone)
+	if err != nil || got != first {
+		t.Fatalf("%s %v, want %s", got, err, first)
+	}
+	gen, err := r.Materialize(ctx, got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(gen, "AGENTS.md")); string(b) != "team\n" {
+		t.Errorf("AGENTS.md %q", b)
+	}
+	second := commit(t, clone, map[string]string{"b.md": "b"})
+	testenv.Run(t, clone, "git", "checkout", "-q", "--detach", second)
+	if got, err := r.FetchHead(ctx, clone); err != nil || got != second {
+		t.Errorf("detached: %s %v", got, err)
+	}
+	// Restore from the clone by commit ID.
+	os.RemoveAll(filepath.Join(h, ".ctxtra"))
+	if err := Open(clone).FetchCommit(ctx, first); err != nil {
+		t.Errorf("restore from the clone: %v", err)
+	}
+	// The file transport stays off for other sources.
+	if _, err := Open("https://h/x").gitMax(ctx, false, nil, maxOutput, "ls-remote", "--", "file://"+clone); err == nil {
+		t.Error("file transport allowed for a git source")
+	}
+}
+
+func TestInspectClone(t *testing.T) {
+	dir, url := team(t)
+	h := os.Getenv("HOME")
+	clone := filepath.Join(h, "dev", "team")
+	testenv.Run(t, h, "git", "clone", "-q", url, clone)
+	os.MkdirAll(filepath.Join(clone, "sub"), 0o755)
+	c, err := InspectClone(context.Background(), filepath.Join(clone, "sub"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Top != clone || c.Head != head(t, dir) || c.Remotes["origin"] != url || c.Upstream != "origin" || c.Branch != "main" {
+		t.Errorf("%+v", c)
+	}
+	testenv.Run(t, clone, "git", "remote", "add", "fork", "git@github.com:me/team.git")
+	testenv.Run(t, clone, "git", "checkout", "-q", "-b", "local")
+	c, _ = InspectClone(context.Background(), clone)
+	if len(c.Remotes) != 2 || c.Upstream != "" {
+		t.Errorf("no upstream, two remotes: %+v", c)
+	}
+	if _, err := InspectClone(context.Background(), h); err == nil {
+		t.Error("a folder outside git")
+	}
+}
+
+func TestClean(t *testing.T) {
+	testenv.Home(t)
+	old := time.Now().Add(-40 * 24 * time.Hour)
+	mk := func(url, commit string, mtime time.Time) string {
+		p := GenDir(url, commit)
+		testenv.Write(t, filepath.Join(p, "a.md"), "a")
+		os.Chmod(filepath.Join(p, "a.md"), 0o400)
+		os.Chtimes(p, mtime, mtime)
+		return p
+	}
+	a, b, c := strings.Repeat("a", 40), strings.Repeat("b", 40), strings.Repeat("c", 40)
+	kept := mk("https://h/x", a, old)
+	gone := mk("https://h/x", b, old)
+	recent := mk("https://h/x", c, time.Now())
+	used := mk("https://h/y", a, old)
+	Touch(used, 0)
+	tmp := filepath.Join(filepath.Dir(kept), ".tmp-1")
+	os.MkdirAll(tmp, 0o700)
+	os.Chtimes(tmp, old, old)
+	if n := Clean(map[string]bool{kept: true}, 30*24*time.Hour); n != 1 {
+		t.Errorf("deleted %d", n)
+	}
+	for p, want := range map[string]bool{kept: true, gone: false, recent: true, used: true, tmp: false} {
+		if Exists(p) != want {
+			t.Errorf("%s exists: %v", p, !want)
+		}
+	}
+}
+
+// A session waits for cleaning only a short time, and then doesn't use the
+// generation.
+func TestTouchWaitsBounded(t *testing.T) {
+	testenv.Home(t)
+	unlock, err := storeLock(false, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	err = Touch(GenDir("https://h/x", strings.Repeat("a", 40)), 100*time.Millisecond)
+	unlock()
+	if err == nil || time.Since(start) > time.Second {
+		t.Errorf("Touch under Clean's lock: %v after %v", err, time.Since(start))
+	}
+	if err := Touch(GenDir("https://h/x", strings.Repeat("a", 40)), 0); err != nil {
+		t.Errorf("Touch after: %v", err)
 	}
 }

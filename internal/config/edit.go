@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -352,6 +353,9 @@ func insertAfter(data []byte, n int, text string) []byte {
 	if n > len(ls) {
 		return appendText(data, text)
 	}
+	if n < 1 {
+		return append([]byte(text), data...)
+	}
 	if !strings.HasSuffix(ls[n-1], "\n") {
 		ls[n-1] += "\n"
 	}
@@ -426,4 +430,202 @@ func appendItem(data []byte, l *yaml.Node, val string) ([]byte, bool) {
 		return nil, false
 	}
 	return insertAfter(data, lastLine(l), prefix+val+"\n"), true
+}
+
+// RemoveBinding removes entry from bindings, and bindings itself when it
+// becomes empty.
+func RemoveBinding(data []byte, entry string) ([]byte, error) {
+	doc, err := root(data)
+	if err != nil {
+		return nil, err
+	}
+	list := get(doc, "bindings")
+	i := -1
+	if list != nil {
+		i = slices.IndexFunc(list.Content, func(n *yaml.Node) bool { return n.Value == entry })
+	}
+	if i < 0 {
+		return nil, fmt.Errorf("%s is not in bindings", entry)
+	}
+	last := len(list.Content) == 1
+	want := func(m map[string]any) {
+		if last {
+			delete(m, "bindings")
+			return
+		}
+		l := m["bindings"].([]any)
+		m["bindings"] = slices.Delete(slices.Clone(l), i, i+1)
+	}
+	item := list.Content[i]
+	if list.Style&yaml.FlowStyle == 0 && block(list) && alone(data, item) {
+		from := item.Line
+		if last {
+			from = keyLine(doc, "bindings")
+		}
+		if out := deleteLines(data, from, item.Line); same(data, out, want) {
+			return out, nil
+		}
+	}
+	return reencode(doc, func() {
+		if last {
+			unset(doc, "bindings")
+		} else {
+			list.Content = slices.Delete(list.Content, i, i+1)
+		}
+	})
+}
+
+// RemoveSource removes the source name, and sources itself when it becomes
+// empty.
+func RemoveSource(data []byte, name string) ([]byte, error) {
+	doc, err := root(data)
+	if err != nil {
+		return nil, err
+	}
+	sources := get(doc, "sources")
+	if get(sources, name) == nil {
+		return nil, fmt.Errorf("no source %q in the config", name)
+	}
+	last := len(sources.Content) == 2
+	want := func(m map[string]any) {
+		if last {
+			delete(m, "sources")
+		} else {
+			delete(m["sources"].(map[string]any), name)
+		}
+	}
+	if from, to, ok := entryLines(sources, name); ok {
+		if last {
+			from = keyLine(doc, "sources")
+		}
+		if out := deleteLines(data, from, to); same(data, out, want) {
+			return out, nil
+		}
+	}
+	return reencode(doc, func() {
+		if last {
+			unset(doc, "sources")
+		} else {
+			unset(sources, name)
+		}
+	})
+}
+
+// ReplaceSource replaces the keys of the source name with kv, in place:
+// references to the source keep working, with the new kind.
+func ReplaceSource(data []byte, name string, kv [][2]string) ([]byte, error) {
+	doc, err := root(data)
+	if err != nil {
+		return nil, err
+	}
+	sources := get(doc, "sources")
+	if get(sources, name) == nil {
+		return nil, fmt.Errorf("no source %q in the config", name)
+	}
+	want := func(m map[string]any) {
+		e := map[string]any{}
+		for _, p := range kv {
+			e[p[0]] = p[1]
+		}
+		m["sources"].(map[string]any)[name] = e
+	}
+	if from, to, ok := entryLines(sources, name); ok {
+		k := sources.Content[slices.IndexFunc(sources.Content, func(n *yaml.Node) bool { return n.Value == name })]
+		indent := strings.Repeat(" ", k.Column-1)
+		var b strings.Builder
+		b.WriteString(indent + key(name) + ":\n")
+		for _, p := range kv {
+			b.WriteString(indent + "  " + p[0] + ": " + value(p) + "\n")
+		}
+		out := insertAfter(deleteLines(data, from, to), from-1, b.String())
+		if same(data, out, want) {
+			return out, nil
+		}
+	}
+	return reencode(doc, func() {
+		e := &yaml.Node{Kind: yaml.MappingNode}
+		for _, p := range kv {
+			set(e, p[0], &yaml.Node{Kind: yaml.ScalarNode, Value: p[1]})
+		}
+		set(sources, name, e)
+	})
+}
+
+// value is a key's value as YAML text: commits in quotes, as the docs show
+// them.
+func value(p [2]string) string {
+	if p[0] == "commit" {
+		return "'" + p[1] + "'"
+	}
+	return scalar(p[1])
+}
+
+// entryLines are the first and last line of the entry name in the block map
+// m, when the text edit can handle it.
+func entryLines(m *yaml.Node, name string) (int, int, bool) {
+	if m == nil || m.Style&yaml.FlowStyle != 0 {
+		return 0, 0, false
+	}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		k, v := m.Content[i], m.Content[i+1]
+		if k.Value != name {
+			continue
+		}
+		if v.Style&yaml.FlowStyle != 0 {
+			// A one-line flow entry: name: {git: ...}
+			if lastLine(v) == k.Line && (i+2 >= len(m.Content) || m.Content[i+2].Line > k.Line) {
+				return k.Line, k.Line, true
+			}
+			return 0, 0, false
+		}
+		if !block(v) {
+			return 0, 0, false
+		}
+		return k.Line, lastLine(v), true
+	}
+	return 0, 0, false
+}
+
+// keyLine is the line of the top-level key k.
+func keyLine(doc *yaml.Node, k string) int {
+	for i := 0; i+1 < len(doc.Content); i += 2 {
+		if doc.Content[i].Value == k {
+			return doc.Content[i].Line
+		}
+	}
+	return 0
+}
+
+// alone reports whether the list item n is the only thing on its line.
+func alone(data []byte, n *yaml.Node) bool {
+	tok, ok := token(n)
+	ls := lines(data)
+	if !ok || n.Line < 1 || n.Line > len(ls) {
+		return false
+	}
+	line := ls[n.Line-1]
+	start := n.Column - 1
+	if start > len(line) || strings.TrimSpace(line[:start]) != "-" || !strings.HasPrefix(line[start:], tok) {
+		return false
+	}
+	rest := strings.TrimSpace(line[start+len(tok):])
+	return rest == "" || strings.HasPrefix(rest, "#")
+}
+
+// deleteLines removes the lines from to to (1-based, inclusive).
+func deleteLines(data []byte, from, to int) []byte {
+	ls := lines(data)
+	if from < 1 || to > len(ls) || from > to {
+		return data
+	}
+	return []byte(strings.Join(ls[:from-1], "") + strings.Join(ls[to:], ""))
+}
+
+func unset(m *yaml.Node, k string) {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == k {
+			m.Content = slices.Delete(m.Content, i, i+2)
+			return
+		}
+	}
 }

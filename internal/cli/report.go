@@ -157,6 +157,9 @@ func (r report) doctor(dir string) int {
 	for _, src := range cfg.Sources {
 		fmt.Fprintf(r.Out, "  source %s: %s\n", src.Name, describeSource(src))
 	}
+	for _, n := range cfg.Notes {
+		fmt.Fprintf(r.Out, "  NOTE: %s\n", n)
+	}
 	for _, p := range res.Problems {
 		ok = false
 		fmt.Fprintf(r.Out, "  PROBLEM: %s\n", p)
@@ -233,14 +236,17 @@ func describeSource(s config.Source) string {
 		return "trusted-path " + paths.Tilde(s.TrustedPath) + state
 	}
 	d := fmt.Sprintf("git %s, branch %s, ", s.Git, s.Branch)
+	if s.PinnedPath != "" {
+		d = "pinned-path " + paths.Tilde(s.PinnedPath) + ", follows its committed HEAD, "
+	}
 	switch {
 	case s.Commit == "":
 		return d + "no accepted commit yet (run: ctxtra sync " + s.Name + ")"
-	case !source.Has(s.Git, s.Commit):
+	case !source.Has(s.Remote(), s.Commit):
 		return d + "pinned to " + source.Short(s.Commit) + ", NOT IN THE STORE (run: ctxtra sync --restore)"
 	}
 	d += "pinned to " + source.Short(s.Commit)
-	e := state.Load().Get(source.ID(s.Git), s.Git, s.Branch)
+	e := state.Load().Get(source.ID(s.Remote()), s.Remote(), s.Branch)
 	if e.LastCheck.IsZero() {
 		d += ", not checked for new commits on this machine yet"
 	} else {

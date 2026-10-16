@@ -5,16 +5,18 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/source"
+	"github.com/atelpis/ctxtra/internal/state"
 	"github.com/atelpis/ctxtra/internal/trust"
 )
 
-// Source is one entry of sources. It has exactly one kind: TrustedPath or
-// Git.
+// Source is one entry of sources. It has exactly one kind: TrustedPath,
+// Git or PinnedPath.
 type Source struct {
 	Name string
 	Line int
@@ -22,18 +24,31 @@ type Source struct {
 	TrustedPath string // absolute, ~ expanded
 	// git: a repository pinned to Commit, read from ctxtra's store. Commit
 	// is "" until the first sync.
-	Git, Branch, Commit string
+	Git, Branch string
+	// pinned-path: a clone on this disk, pinned to Commit like git; sync
+	// follows the clone's committed HEAD.
+	PinnedPath string // absolute, ~ expanded
+	Commit     string
 }
 
 // Pinned reports whether s is read from the store.
-func (s Source) Pinned() bool { return s.Git != "" }
+func (s Source) Pinned() bool { return s.Remote() != "" }
+
+// Remote is where a pinned source's commits come from: the git URL, or the
+// clone of a pinned-path source. "" for a trusted source.
+func (s Source) Remote() string {
+	if s.Git != "" {
+		return s.Git
+	}
+	return s.PinnedPath
+}
 
 // errUnavailable marks a reference to a pinned source whose accepted commit
 // isn't in the store: only that reference is skipped, not the binding.
 type errUnavailable struct{ error }
 
 // Gen is the store folder of the accepted commit.
-func (s Source) Gen() string { return source.GenDir(s.Git, s.Commit) }
+func (s Source) Gen() string { return source.GenDir(s.Remote(), s.Commit) }
 
 // Source returns the source called name.
 func (c *Config) Source(name string) (Source, bool) {
@@ -97,29 +112,33 @@ func (c *Config) decodeSources(n *yaml.Node) error {
 }
 
 func decodeSource(n *yaml.Node) (Source, error) {
-	f, err := fields(n, "trusted-path", "git", "branch", "commit")
+	f, err := fields(n, "trusted-path", "git", "pinned-path", "branch", "commit")
 	if err != nil {
 		return Source{}, err
 	}
+	kinds := 0
+	for _, k := range []string{"trusted-path", "git", "pinned-path"} {
+		if f[k] != nil {
+			kinds++
+		}
+	}
 	var s Source
 	switch {
-	case f["trusted-path"] != nil && f["git"] != nil:
-		return Source{}, fmt.Errorf("line %d: a source is either trusted-path or git, not both", n.Line)
+	case kinds > 1:
+		return Source{}, fmt.Errorf("line %d: a source has one kind: trusted-path, git or pinned-path", n.Line)
+	case f["branch"] != nil && f["git"] == nil:
+		return Source{}, fmt.Errorf("line %d: branch is only for git sources", f["branch"].Line)
+	case f["commit"] != nil && f["trusted-path"] != nil:
+		return Source{}, fmt.Errorf("line %d: commit is only for git and pinned-path sources", f["commit"].Line)
 	case f["trusted-path"] != nil:
-		for _, k := range []string{"branch", "commit"} {
-			if v := f[k]; v != nil {
-				return Source{}, fmt.Errorf("line %d: %s is only for git sources", v.Line, k)
-			}
-		}
-		v := f["trusted-path"]
-		p, err := str(v, "trusted-path")
-		if err != nil {
+		if s.TrustedPath, err = folder(f["trusted-path"], "trusted-path"); err != nil {
 			return Source{}, err
 		}
-		if !filepath.IsAbs(p) && p != "~" && !strings.HasPrefix(p, "~/") {
-			return Source{}, fmt.Errorf("line %d: trusted-path must be absolute or start with ~", v.Line)
+		return s, nil
+	case f["pinned-path"] != nil:
+		if s.PinnedPath, err = folder(f["pinned-path"], "pinned-path"); err != nil {
+			return Source{}, err
 		}
-		s.TrustedPath = filepath.Clean(paths.Expand(p))
 	case f["git"] != nil:
 		if err := require(n, f, "branch"); err != nil {
 			return Source{}, err
@@ -136,30 +155,28 @@ func decodeSource(n *yaml.Node) (Source, error) {
 		if err := source.CheckBranch(s.Branch); err != nil {
 			return Source{}, fmt.Errorf("line %d: %w", f["branch"].Line, err)
 		}
-		if v := f["commit"]; v != nil {
-			s.Commit, _ = str(v, "commit")
-			if !source.ValidCommit(s.Commit) {
-				return Source{}, fmt.Errorf("line %d: commit must be a full commit ID in quotes: 40 or 64 lower-case hex digits", v.Line)
-			}
-		}
 	default:
-		return Source{}, fmt.Errorf("line %d: a source needs trusted-path or git", n.Line)
+		return Source{}, fmt.Errorf("line %d: a source needs trusted-path, git or pinned-path", n.Line)
+	}
+	if v := f["commit"]; v != nil {
+		s.Commit, _ = str(v, "commit")
+		if !source.ValidCommit(s.Commit) {
+			return Source{}, fmt.Errorf("line %d: commit must be a full commit ID in quotes: 40 or 64 lower-case hex digits", v.Line)
+		}
 	}
 	return s, nil
 }
 
-// pinnedSource is the pinned source a ctxtra:// reference points into, or
-// nil.
-func (c *Config) pinnedSource(ref string) *Source {
-	rest, ok := strings.CutPrefix(ref, Scheme)
-	if !ok {
-		return nil
+// folder reads a folder path that is absolute or starts with ~.
+func folder(v *yaml.Node, what string) (string, error) {
+	p, err := str(v, what)
+	if err != nil {
+		return "", err
 	}
-	name, _, _ := strings.Cut(rest, "/")
-	if s, ok := c.Source(name); ok && s.Pinned() {
-		return &s
+	if !filepath.IsAbs(p) && p != "~" && !strings.HasPrefix(p, "~/") {
+		return "", fmt.Errorf("line %d: %s must be absolute or start with ~", v.Line, what)
 	}
-	return nil
+	return filepath.Clean(paths.Expand(p)), nil
 }
 
 // ref resolves a path in the config or a binding file: a ctxtra://
@@ -170,44 +187,125 @@ func (c *Config) pinnedSource(ref string) *Source {
 // binding file may only reference files in the same source: by a relative
 // path, or by ctxtra:// with its own name. Its content is someone else's, so
 // it must not reach the user's files.
-func (c *Config) ref(s, base string, in *Source) (string, error) {
+//
+// ref also returns the pinned source the path is in, or nil.
+func (c *Config) ref(s, base string, in *Source) (string, *Source, error) {
 	rest, isRef := strings.CutPrefix(s, Scheme)
 	if !isRef {
 		if in == nil {
-			return paths.Resolve(base, s), nil
+			return c.mapped(s, paths.Resolve(base, s))
 		}
 		p := filepath.Join(base, filepath.FromSlash(s))
 		if filepath.IsAbs(filepath.FromSlash(s)) || strings.HasPrefix(s, "~") || !within(in.Gen(), p) {
-			return "", fmt.Errorf("%s is not a path in the source %s", s, in.Name)
+			return "", nil, fmt.Errorf("%s is not a path in the source %s", s, in.Name)
 		}
 		c.pin(p)
-		return p, nil
+		return p, in, nil
 	}
 	name, p, _ := strings.Cut(rest, "/")
 	src, ok := c.Source(name)
 	switch {
 	case !ok:
-		return "", fmt.Errorf("%s: unknown source %q", s, name)
+		return "", nil, fmt.Errorf("%s: unknown source %q", s, name)
 	case in != nil && name != in.Name:
-		return "", fmt.Errorf("%s: a binding file in the source %s can't reference other sources", s, in.Name)
+		return "", nil, fmt.Errorf("%s: a binding file in the source %s can't reference other sources", s, in.Name)
 	}
 	p = filepath.Clean(filepath.FromSlash(p))
 	if p == "." || filepath.IsAbs(p) || p == ".." || strings.HasPrefix(p, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("%s: needs a path inside the source", s)
+		return "", nil, fmt.Errorf("%s: needs a path inside the source", s)
 	}
 	if !src.Pinned() {
-		return filepath.Join(src.TrustedPath, p), nil
+		return filepath.Join(src.TrustedPath, p), nil, nil
+	}
+	return c.inStore(s, src, p)
+}
+
+// inStore is the path p in the accepted commit of the pinned source src.
+// s is the reference as written, for messages.
+func (c *Config) inStore(s string, src Source, p string) (string, *Source, error) {
+	if src.Commit != "" && !c.touched[src.Gen()] && source.Has(src.Remote(), src.Commit) {
+		// Before anything is read from it: the store keeps what sessions
+		// use. All touches of one load share one wait budget; after a
+		// failed one, every generation not touched yet is skipped at once.
+		err := c.storeBusy
+		if err == nil {
+			if !c.waitSet {
+				c.waitLeft, c.waitSet = source.TouchWait, true
+			}
+			start := time.Now()
+			err = touch(src.Gen(), max(c.waitLeft, 0))
+			c.waitLeft -= time.Since(start)
+			c.storeBusy = err
+		}
+		if err != nil {
+			return "", nil, errUnavailable{fmt.Errorf("%s: ctxtra's store is being cleaned (%v); skipped, try again", s, err)}
+		}
+		if c.touched == nil {
+			c.touched = map[string]bool{}
+		}
+		c.touched[src.Gen()] = true
 	}
 	switch {
 	case src.Commit == "":
-		return "", errUnavailable{fmt.Errorf("%s: the source %s has no accepted commit yet; run: ctxtra sync %s; skipped", s, name, name)}
-	case !source.Has(src.Git, src.Commit):
-		return "", errUnavailable{fmt.Errorf("%s: %s %s is not in ctxtra's store; run: ctxtra sync --restore; skipped", s, name, source.Short(src.Commit))}
+		return "", nil, errUnavailable{fmt.Errorf("%s: the source %s has no accepted commit yet; run: ctxtra sync %s; skipped", s, src.Name, src.Name)}
+	case !source.Has(src.Remote(), src.Commit):
+		return "", nil, errUnavailable{fmt.Errorf("%s: %s %s is not in ctxtra's store; run: ctxtra sync --restore; skipped", s, src.Name, source.Short(src.Commit))}
 	}
-	p = filepath.Join(src.Gen(), p)
+	p = filepath.Join(src.Gen(), filepath.FromSlash(p))
 	c.pin(p)
-	return p, nil
+	return p, &src, nil
 }
+
+// mapped serves a plain path p from the source a clone was imported as,
+// when p is under the clone's folder. A trusted-path source that covers p
+// comes first. The source, by name and URL, must still be in the config:
+// the path is not read from disk instead.
+//
+// When mappings.json can't be read, ctxtra can't tell which paths were
+// mapped: every plain path outside the trusted-path sources is skipped
+// until the file is fixed or deleted.
+func (c *Config) mapped(s, p string) (string, *Source, error) {
+	if c.mappings == nil {
+		ms, err := state.LoadMappings()
+		c.mappings, c.mappingsErr = &ms, err
+	}
+	if len(*c.mappings) == 0 && c.mappingsErr == nil {
+		return p, nil, nil
+	}
+	real := paths.Real(p)
+	for _, src := range c.Sources {
+		if src.TrustedPath == "" {
+			continue
+		}
+		root := paths.Real(src.TrustedPath)
+		if within(src.TrustedPath, p) || within(root, real) {
+			return p, nil, nil
+		}
+	}
+	if c.mappingsErr != nil {
+		return "", nil, errUnavailable{fmt.Errorf("%s: %v; until then, paths outside trusted-path sources are skipped", s, c.mappingsErr)}
+	}
+	m, rel, ok := c.mappings.Lookup(p)
+	if !ok {
+		m, rel, ok = c.mappings.Lookup(real)
+	}
+	if !ok {
+		return p, nil, nil
+	}
+	i := slices.IndexFunc(c.Sources, func(src Source) bool { return src.Name == m.Source && src.Git == m.URL })
+	if i < 0 {
+		return "", nil, errUnavailable{fmt.Errorf("%s: %s was imported as the source %s (%s), which is not in the config any more; skipped, not read from disk",
+			s, paths.Tilde(m.Path), m.Source, m.URL)}
+	}
+	src := c.Sources[i]
+	if rel != "." {
+		c.Notes = append(c.Notes, fmt.Sprintf("%s is served from %s; you can write it as %s%s/%s", s, src.Name, Scheme, src.Name, rel))
+	}
+	return c.inStore(s, src, rel)
+}
+
+// touch is source.Touch; a variable for tests.
+var touch = source.Touch
 
 func (c *Config) pin(p string) {
 	if c.pinned == nil {

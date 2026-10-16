@@ -103,7 +103,7 @@ func (r *Result) addNotices(cfg *config.Config) {
 			s := state.Load()
 			st = &s
 		}
-		e := st.Get(source.ID(src.Git), src.Git, src.Branch)
+		e := st.Get(source.ID(src.Remote()), src.Remote(), src.Branch)
 		switch age := now().Sub(e.LastCheck); {
 		case e.LastCheck.IsZero():
 			r.Notices = append(r.Notices, src.Name+" not checked for new commits on this machine yet; run ctxtra sync")

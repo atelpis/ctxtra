@@ -6,8 +6,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/atelpis/ctxtra/internal/fsutil"
+	"github.com/atelpis/ctxtra/internal/source"
+	"github.com/atelpis/ctxtra/internal/state"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
@@ -310,5 +313,149 @@ bindings: [b.yaml, ctxtra://team/b.yaml]
 		if !strings.Contains(cfg.Problems[i], w) {
 			t.Errorf("problem %d: %s, want %q", i, cfg.Problems[i], w)
 		}
+	}
+}
+
+func TestPinnedPathSource(t *testing.T) {
+	h := testenv.Home(t)
+	c := strings.Repeat("a", 40)
+	cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n  dev: {pinned-path: ~/dev/team, commit: '"+c+"'}\n"))
+	if len(cfg.Problems) > 0 || cfg.Sources[0].PinnedPath != filepath.Join(h, "dev", "team") || !cfg.Sources[0].Pinned() ||
+		cfg.Sources[0].Gen() != source.GenDir(filepath.Join(h, "dev", "team"), c) {
+		t.Errorf("%+v %v", cfg.Sources, cfg.Problems)
+	}
+	for _, y := range []string{"{pinned-path: x}", "{pinned-path: /x, branch: main}", "{pinned-path: /x, git: https://h/x, branch: main}", "{trusted-path: /x, commit: '" + c + "'}"} {
+		if cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n  dev: "+y+"\n")); len(cfg.Problems) != 1 {
+			t.Errorf("%s: %v", y, cfg.Problems)
+		}
+	}
+}
+
+// Plain paths under an imported clone are served from its source; a
+// trusted-path source that covers them comes first; when the source is
+// gone, they are skipped.
+func TestCloneMapping(t *testing.T) {
+	h := testenv.Home(t)
+	url, c := "https://h/team", strings.Repeat("a", 40)
+	clone := filepath.Join(h, "dev", "team")
+	testenv.Write(t, filepath.Join(clone, "a.md"), "on disk")
+	testenv.Write(t, filepath.Join(source.GenDir(url, c), "a.md"), "in the store")
+	if _, err := state.Map(clone, "team", url); err != nil {
+		t.Fatal(err)
+	}
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [~/dev/team/a.md]}\n")
+	files := func(sources string) ([]string, []string) {
+		cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\n"+sources+"bindings: [b.yaml]\n"))
+		if len(cfg.Bindings) == 0 {
+			return nil, cfg.Problems
+		}
+		return cfg.Bindings[0].Files, cfg.Problems
+	}
+	got, problems := files("sources:\n  team: {git: '" + url + "', branch: main, commit: '" + c + "'}\n")
+	if !slices.Equal(got, []string{filepath.Join(source.GenDir(url, c), "a.md")}) || len(problems) != 0 {
+		t.Errorf("mapped: %v %v", got, problems)
+	}
+	got, _ = files("sources:\n  team: {git: '" + url + "', branch: main, commit: '" + c + "'}\n  live: {trusted-path: ~/dev/team}\n")
+	if !slices.Equal(got, []string{filepath.Join(clone, "a.md")}) {
+		t.Errorf("trusted first: %v", got)
+	}
+	got, problems = files("")
+	if len(got) != 0 || len(problems) != 1 || !strings.Contains(problems[0], "not in the config any more; skipped, not read from disk") {
+		t.Errorf("source removed: %v %v", got, problems)
+	}
+	// Another source with the same URL is not the imported one: the mapping
+	// is by name and URL, whatever the order.
+	other := "  dev: {git: '" + url + "', branch: dev, commit: '" + strings.Repeat("b", 40) + "'}\n"
+	got, problems = files("sources:\n" + other)
+	if len(got) != 0 || len(problems) != 1 {
+		t.Errorf("only another alias: %v %v", got, problems)
+	}
+	got, _ = files("sources:\n" + other + "  team: {git: '" + url + "', branch: main, commit: '" + c + "'}\n")
+	if !slices.Equal(got, []string{filepath.Join(source.GenDir(url, c), "a.md")}) {
+		t.Errorf("two aliases: %v", got)
+	}
+	if _, err := state.Map(filepath.Join(clone, "sub"), "other", "https://h/other"); err == nil {
+		t.Error("a mapping inside a mapped folder")
+	}
+	// With a broken mappings file, ctxtra can't tell whether a path was
+	// mapped: plain paths are skipped, also where the clone was replaced by a
+	// folder outside git, except under a trusted-path source.
+	os.WriteFile(state.MappingsPath(), []byte("{"), 0o600)
+	os.RemoveAll(filepath.Join(clone, ".git"))
+	got, problems = files("")
+	if len(got) != 0 || len(problems) != 1 || !strings.Contains(problems[0], "mappings.json can't be read") {
+		t.Errorf("broken mappings: %v %v", got, problems)
+	}
+	testenv.Write(t, filepath.Join(clone, "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [a.md]}\n")
+	cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n  live: {trusted-path: ~/dev/team}\nbindings: [ctxtra://live/b.yaml]\n"))
+	if len(cfg.Bindings) != 1 || !slices.Equal(cfg.Bindings[0].Files, []string{filepath.Join(clone, "a.md")}) || len(cfg.Problems) != 0 {
+		t.Errorf("broken mappings, trusted: %v %v", cfg.Bindings, cfg.Problems)
+	}
+	if _, err := state.Map(filepath.Join(h, "x"), "x", "https://h/x"); err == nil {
+		t.Error("a broken mappings file was written")
+	}
+}
+
+// While cleaning holds the store, a session waits once, not once per
+// reference.
+func TestStoreBusyWaitsOnce(t *testing.T) {
+	h := testenv.Home(t)
+	c1, c2 := strings.Repeat("a", 40), strings.Repeat("b", 40)
+	for _, c := range []string{c1, c2} {
+		for _, f := range []string{"x.md", "y.md", "z.md"} {
+			testenv.Write(t, filepath.Join(source.GenDir("https://h/"+c[:1], c), f), f)
+		}
+	}
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [~/me.md, ctxtra://a/x.md, ctxtra://a/y.md, ctxtra://b/z.md]}\n")
+	cfgPath := testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n  a: {git: 'https://h/a', branch: main, commit: '"+c1+"'}\n  b: {git: 'https://h/b', branch: main, commit: '"+c2+"'}\nbindings: [b.yaml]\n")
+	unlock, err := fsutil.Lock(filepath.Join(h, ".ctxtra", "store.lock"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	start := time.Now()
+	cfg := load(cfgPath)
+	if d := time.Since(start); d > 1500*time.Millisecond {
+		t.Errorf("load took %v", d)
+	}
+	if len(cfg.Bindings) != 1 || !slices.Equal(cfg.Bindings[0].Files, []string{filepath.Join(h, "me.md")}) || len(cfg.Problems) != 3 {
+		t.Errorf("bindings %v problems %v", cfg.Bindings, cfg.Problems)
+	}
+}
+
+// Waits that end well count against the budget too: each touch gets what
+// the earlier ones left.
+func TestStoreWaitBudget(t *testing.T) {
+	h := testenv.Home(t)
+	var waits []time.Duration
+	old := touch
+	t.Cleanup(func() { touch = old })
+	touch = func(dir string, wait time.Duration) error {
+		waits = append(waits, wait)
+		if wait < 450*time.Millisecond {
+			time.Sleep(wait)
+			return fsutil.ErrLockTimeout
+		}
+		time.Sleep(450 * time.Millisecond)
+		return nil
+	}
+	var srcs, refs string
+	for _, n := range []string{"a", "b", "c", "d"} {
+		c := strings.Repeat(n, 40)
+		testenv.Write(t, filepath.Join(source.GenDir("https://h/"+n, c), "x.md"), "x")
+		srcs += "  " + n + ": {git: 'https://h/" + n + "', branch: main, commit: '" + c + "'}\n"
+		refs += ", ctxtra://" + n + "/x.md"
+	}
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), head+"metadata: {name: a}\nspec: {selector: {global: true}, files: [~/me.md"+refs+"]}\n")
+	start := time.Now()
+	cfg := load(testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n"+srcs+"bindings: [b.yaml]\n"))
+	if d := time.Since(start); d > 1300*time.Millisecond {
+		t.Errorf("load took %v, waits %v", d, waits)
+	}
+	if len(waits) != 3 || waits[0] != source.TouchWait || waits[1] >= waits[0] || waits[2] >= waits[1] {
+		t.Errorf("waits %v", waits)
+	}
+	if len(cfg.Bindings) != 1 || len(cfg.Bindings[0].Files) != 3 || len(cfg.Problems) != 2 {
+		t.Errorf("files %v problems %v", cfg.Bindings, cfg.Problems)
 	}
 }
