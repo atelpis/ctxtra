@@ -98,6 +98,7 @@ any of them matches.
   folder name). Other keys are ignored.
 - Claude Code, Codex and Cursor get the file contents and a list of the skills (name, description, path),
   and read a `SKILL.md` when a task needs it. Pi gets files as context files and skills as native skills.
+  OpenCode gets files in the system prompt and skills as native skills, which its `skill` tool loads.
 
 ## Order and budget
 

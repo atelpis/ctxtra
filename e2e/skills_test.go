@@ -9,8 +9,8 @@ import (
 )
 
 // The model sees each bound skill's name and description, not its body;
-// when the agent reads the SKILL.md, the body reaches the model. A skill
-// bound to another repository isn't listed.
+// when the agent loads the skill, the body reaches the model. A skill bound
+// to another repository isn't listed.
 func TestSkills(t *testing.T) {
 	forEachAgent(t, nil, func(t *testing.T, a Agent) {
 		s := newSession(t, a)
@@ -32,9 +32,12 @@ spec:
   skills: [~/skills/other]
 `)
 		s.Setup()
-		r := s.Run(repo, driver.Options{}, mock.Read(filepath.Join(deploy, "SKILL.md")))
-		r.First(mock.Main).Has("DEPLOYDESC").Lacks("DEPLOYBODY", "OTHERDESC", "OTHERBODY").
-			Contains(filepath.Join(deploy, "SKILL.md"))
+		path := filepath.Join(deploy, "SKILL.md")
+		r := s.Run(repo, driver.Options{}, mock.LoadSkill("deploy", path))
+		first := r.First(mock.Main).Has("DEPLOYDESC").Lacks("DEPLOYBODY", "OTHERDESC", "OTHERBODY")
+		if !driver.Has(a, driver.SkillTool) {
+			first.Contains(path)
+		}
 		r.Last(mock.Main).Has("DEPLOYBODY")
 	})
 }

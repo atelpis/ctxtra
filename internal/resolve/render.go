@@ -15,14 +15,28 @@ func (r *Result) Render() string {
 	if r == nil {
 		return ""
 	}
-	blocks := make([]string, 0, len(r.Files)+1)
-	for _, h := range r.Files {
-		blocks = append(blocks, r.block(h))
-	}
+	blocks := r.fileBlocks()
 	if len(r.Skills) > 0 {
 		blocks = append(blocks, r.skillBlock())
 	}
 	return strings.Join(blocks, blockSep)
+}
+
+// RenderFiles is Render without the list of skills, for agents that get the
+// skills as native skills.
+func (r *Result) RenderFiles() string {
+	if r == nil {
+		return ""
+	}
+	return strings.Join(r.fileBlocks(), blockSep)
+}
+
+func (r *Result) fileBlocks() []string {
+	blocks := make([]string, 0, len(r.Files)+1)
+	for _, h := range r.Files {
+		blocks = append(blocks, r.block(h))
+	}
+	return blocks
 }
 
 func (r *Result) block(h Hit) string {

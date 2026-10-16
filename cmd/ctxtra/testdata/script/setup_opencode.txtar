@@ -1,0 +1,25 @@
+# OpenCode: setup writes a managed plugin, never overwrites someone else's,
+# and --remove deletes only its own.
+
+exec ctxtra setup --agent opencode
+stdout '^ctxtra setup \(opencode\): changed$'
+grep '^// @ctxtra-managed' .config/opencode/plugins/ctxtra.ts
+grep '^// binary: '$BIN'$' .config/opencode/plugins/ctxtra.ts
+exists .config/opencode/plugins/other.ts
+
+exec ctxtra doctor
+stdout 'opencode: set up, runs .*/ctxtra \(ok\)'
+
+exec ctxtra setup --remove --agent opencode
+! exists .config/opencode/plugins/ctxtra.ts
+exists .config/opencode/plugins/other.ts
+
+cp foreign.ts .config/opencode/plugins/ctxtra.ts
+! exec ctxtra setup --agent opencode
+stderr 'is not managed by ctxtra; left alone'
+cmp .config/opencode/plugins/ctxtra.ts foreign.ts
+
+-- .config/opencode/plugins/other.ts --
+export default { id: "other", setup() {} }
+-- foreign.ts --
+export default { id: "mine", setup() {} }

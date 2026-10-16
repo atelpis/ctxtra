@@ -29,6 +29,9 @@ const (
 	// Untrusted: the agent can run with hooks that the user hasn't trusted,
 	// which must then add nothing.
 	Untrusted Cap = "untrusted"
+	// SkillTool: the agent loads a skill by name with a skill tool
+	// (mock.LoadSkill), and its skill list doesn't show the SKILL.md path.
+	SkillTool Cap = "skill-tool"
 )
 
 // Driver is one agent.
@@ -55,7 +58,7 @@ type Options struct {
 }
 
 // All is every driver.
-var All = []Driver{Claude{}, Codex{}, Pi{}}
+var All = []Driver{Claude{}, Codex{}, Pi{}, OpenCode{}}
 
 // Has reports whether d declares c.
 func Has(d Driver, c Cap) bool {

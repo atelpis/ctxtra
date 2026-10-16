@@ -49,6 +49,17 @@ export default function (pi: any) {
 	});
 }
 `)
+	case "opencode":
+		s.Write(".config/opencode/plugins/other-tool.ts", `import { readFileSync } from "node:fs";
+export default {
+	id: "other-tool",
+	async setup(ctx: any) {
+		await ctx.session.hook("context", (event: any) => {
+			event.system.push({ type: "text", text: readFileSync("`+path+`", "utf8") });
+		});
+	},
+};
+`)
 	default:
 		s.t.Fatalf("otherTool: no hook for %s", agent)
 	}
