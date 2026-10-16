@@ -6,9 +6,11 @@
 // entries are left out and reported in Problems: a broken config never adds
 // more than intended.
 //
-// A source is a folder of the user's own files (trusted-path). Files in it are
-// referenced as ctxtra://<source>/<path>. Every file read from disk, except
-// the config itself, is checked with package trust first.
+// A source is a folder of the user's own files (trusted-path), or a git
+// repository pinned to an accepted commit (git), read from ctxtra's store.
+// Files in a source are referenced as ctxtra://<source>/<path>. Every file
+// read from disk, except the config itself, is checked with package trust
+// first.
 package config
 
 import (
@@ -17,7 +19,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -47,12 +48,16 @@ const (
 // Config is the loaded config with all its bindings.
 type Config struct {
 	File         string
-	Sources      []trust.Root
+	Sources      []Source
 	Trust        *trust.Policy // checks every file read from disk
 	BindingFiles []string      // resolved
-	Bindings     []Binding
-	MaxChars     int // budget.maxChars, in characters (Unicode code points); 0 means no limit
-	Problems     []string
+	// BindingEntries are the bindings entries as written; only Parse sets
+	// them.
+	BindingEntries []string
+	Bindings       []Binding
+	MaxChars       int // budget.maxChars, in characters (Unicode code points); 0 means no limit
+	Problems       []string
+	pinned         map[string]bool // paths resolved into the store
 }
 
 // Reader reads the config and binding files. One Reader is shared by
@@ -82,7 +87,8 @@ func Load(path string, rd Reader) *Config {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	c := &Config{File: path, Trust: trust.New(nil)}
+	c := &Config{File: path}
+	c.Trust = c.policy()
 	data, err := rd.Read(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return c
@@ -111,10 +117,10 @@ func Load(path string, rd Reader) *Config {
 		c.problem(path, fmt.Errorf("%s; nothing from this file is used", flat(err)))
 		return c
 	}
-	c.Trust = trust.New(c.Sources)
+	c.Trust = c.policy()
 	seen := map[string]bool{}
 	for _, e := range entries {
-		file, err := c.ref(e.Value, filepath.Dir(path))
+		file, err := c.ref(e.Value, filepath.Dir(path), nil)
 		if err != nil {
 			c.problem(path, fmt.Errorf("line %d: %w", e.Line, err))
 			continue
@@ -125,7 +131,7 @@ func Load(path string, rd Reader) *Config {
 		}
 		seen[file] = true
 		c.BindingFiles = append(c.BindingFiles, file)
-		c.loadBindings(file, rd)
+		c.loadBindings(file, rd, c.pinnedSource(e.Value))
 	}
 	return c
 }
@@ -163,65 +169,6 @@ func (c *Config) decode(d document) ([]*yaml.Node, error) {
 	return v.Content, nil
 }
 
-// decodeSources reads the sources map. Each source has exactly one kind; the
-// only kind so far is trusted-path, a folder of the user's own files.
-func (c *Config) decodeSources(n *yaml.Node) error {
-	if n.Kind != yaml.MappingNode || len(n.Content) == 0 {
-		return fmt.Errorf("line %d: sources must be a non-empty map of names to sources", n.Line)
-	}
-	names := map[string]bool{}
-	for i := 0; i+1 < len(n.Content); i += 2 {
-		k, v := n.Content[i], n.Content[i+1]
-		name, err := str(k, "source name")
-		if err != nil {
-			return err
-		}
-		if !reName.MatchString(name) {
-			return fmt.Errorf("line %d: source name %q may only contain letters, digits, '.', '_' and '-'", k.Line, name)
-		}
-		if names[name] {
-			return fmt.Errorf("line %d: duplicate source %q", k.Line, name)
-		}
-		names[name] = true
-		f, err := fields(v, "trusted-path")
-		if err != nil {
-			return err
-		}
-		if err := require(v, f, "trusted-path"); err != nil {
-			return err
-		}
-		p, err := str(f["trusted-path"], "trusted-path")
-		if err != nil {
-			return err
-		}
-		if !filepath.IsAbs(p) && p != "~" && !strings.HasPrefix(p, "~/") {
-			return fmt.Errorf("line %d: trusted-path must be absolute or start with ~", f["trusted-path"].Line)
-		}
-		c.Sources = append(c.Sources, trust.Root{Name: name, Path: filepath.Clean(paths.Expand(p))})
-	}
-	return nil
-}
-
-// ref resolves a path in the config or a binding file: a ctxtra:// reference
-// to a file in a source, or a path that is absolute, starts with ~, or is
-// relative to base.
-func (c *Config) ref(s, base string) (string, error) {
-	rest, ok := strings.CutPrefix(s, Scheme)
-	if !ok {
-		return paths.Resolve(base, s), nil
-	}
-	name, p, _ := strings.Cut(rest, "/")
-	i := slices.IndexFunc(c.Sources, func(r trust.Root) bool { return r.Name == name })
-	if i < 0 {
-		return "", fmt.Errorf("%s: unknown source %q", s, name)
-	}
-	p = filepath.Clean(filepath.FromSlash(p))
-	if p == "." || filepath.IsAbs(p) || p == ".." || strings.HasPrefix(p, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("%s: needs a path inside the source", s)
-	}
-	return filepath.Join(c.Sources[i].Path, p), nil
-}
-
 func (c *Config) decodeBudget(n *yaml.Node) error {
 	f, err := fields(n, "maxChars")
 	if err != nil {
@@ -240,11 +187,14 @@ func (c *Config) decodeBudget(n *yaml.Node) error {
 }
 
 // loadBindings adds the Binding documents of one binding file. A broken
-// document is skipped; the others in the file still apply.
-func (c *Config) loadBindings(file string, rd Reader) {
-	if err := c.Trust.Check(file); err != nil {
-		c.problem(file, err)
-		return
+// document is skipped; the others in the file still apply. in is the pinned
+// source the file is in, or nil.
+func (c *Config) loadBindings(file string, rd Reader, in *Source) {
+	if in == nil {
+		if err := c.Trust.Check(file); err != nil {
+			c.problem(file, err)
+			return
+		}
 	}
 	data, err := rd.Read(file)
 	if err != nil {
@@ -265,7 +215,7 @@ func (c *Config) loadBindings(file string, rd Reader) {
 		err := d.err
 		var b Binding
 		if err == nil {
-			b, err = c.decodeBinding(d.node, file)
+			b, err = c.decodeBinding(d.node, file, in)
 		}
 		if err == nil && names[b.Name] {
 			err = fmt.Errorf("line %d: duplicate name %q", d.node.Line, b.Name)
@@ -279,9 +229,12 @@ func (c *Config) loadBindings(file string, rd Reader) {
 	}
 }
 
+// ValidName reports whether name can be a binding or source name.
+func ValidName(name string) bool { return reName.MatchString(name) }
+
 var reName = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$`)
 
-func (c *Config) decodeBinding(doc *yaml.Node, file string) (Binding, error) {
+func (c *Config) decodeBinding(doc *yaml.Node, file string, in *Source) (Binding, error) {
 	f, err := fields(doc, "apiVersion", "kind", "metadata", "spec")
 	if err != nil {
 		return Binding{}, err
@@ -319,14 +272,13 @@ func (c *Config) decodeBinding(doc *yaml.Node, file string) (Binding, error) {
 	if b.Selector, err = decodeSelector(spec["selector"]); err != nil {
 		return Binding{}, err
 	}
-	base := filepath.Dir(file)
 	if v := spec["files"]; v != nil {
-		if b.Files, err = c.pathList(v, "files", base); err != nil {
+		if b.Files, err = c.pathList(v, "files", file, in); err != nil {
 			return Binding{}, err
 		}
 	}
 	if v := spec["skills"]; v != nil {
-		if b.Skills, err = c.pathList(v, "skills", base); err != nil {
+		if b.Skills, err = c.pathList(v, "skills", file, in); err != nil {
 			return Binding{}, err
 		}
 	}
@@ -347,21 +299,30 @@ func header(doc *yaml.Node, f map[string]*yaml.Node, kind string) error {
 	return nil
 }
 
-// pathList resolves listed paths with ref. Globs are not supported: every
-// file and skill folder is listed by name.
-func (c *Config) pathList(n *yaml.Node, what, base string) ([]string, error) {
+// pathList resolves the paths listed in file with ref. Globs are not
+// supported: every file and skill folder is listed by name. A reference to
+// a pinned source that isn't available is skipped alone, with a problem.
+func (c *Config) pathList(n *yaml.Node, what, file string, in *Source) ([]string, error) {
 	list, err := strList(n, what)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]string, len(list))
-	for i, p := range list {
+	base := filepath.Dir(file)
+	var out []string
+	for _, p := range list {
 		if strings.ContainsAny(p, "*?[") {
 			return nil, fmt.Errorf("line %d: %s entry %q looks like a glob; list each path by name", n.Line, what, p)
 		}
-		if out[i], err = c.ref(p, base); err != nil {
+		r, err := c.ref(p, base, in)
+		var unavailable errUnavailable
+		switch {
+		case errors.As(err, &unavailable):
+			c.problem(file, fmt.Errorf("line %d: %w", n.Line, err))
+			continue
+		case err != nil:
 			return nil, fmt.Errorf("line %d: %w", n.Line, err)
 		}
+		out = append(out, r)
 	}
 	return out, nil
 }

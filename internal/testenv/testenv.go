@@ -3,9 +3,12 @@
 package testenv
 
 import (
+	"net/http/cgi"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -92,4 +95,35 @@ func Config(t *testing.T, home, yaml string) string {
 func Skill(t *testing.T, dir, front string) {
 	t.Helper()
 	Write(t, filepath.Join(dir, "SKILL.md"), "---\n"+front+"\n---\n\nBody of "+filepath.Base(dir)+".\n")
+}
+
+// GitServer serves the git repositories in root over https with git
+// http-backend, so that tests can fetch with the transports ctxtra allows. A
+// repository root/x is at <url>/x. Git doesn't verify the test certificate:
+// GitServer sets GIT_SSL_NO_VERIFY for the test.
+func GitServer(t *testing.T, root string) string {
+	t.Helper()
+	url, stop, err := StartGitServer(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(stop)
+	t.Setenv("GIT_SSL_NO_VERIFY", "1")
+	return url
+}
+
+// StartGitServer is GitServer for callers without a *testing.T. The caller
+// sets GIT_SSL_NO_VERIFY=1 for git.
+func StartGitServer(root string) (url string, stop func(), err error) {
+	out, err := exec.Command("git", "--exec-path").Output()
+	if err != nil {
+		return "", nil, err
+	}
+	backend := filepath.Join(strings.TrimSpace(string(out)), "git-http-backend")
+	h := &cgi.Handler{
+		Path: backend,
+		Env:  []string{"GIT_PROJECT_ROOT=" + root, "GIT_HTTP_EXPORT_ALL=1", "GIT_CONFIG_NOSYSTEM=1", "GIT_CONFIG_GLOBAL=" + os.DevNull},
+	}
+	srv := httptest.NewTLSServer(h)
+	return srv.URL, srv.Close, nil
 }

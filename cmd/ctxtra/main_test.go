@@ -18,6 +18,8 @@ import (
 	"testing"
 
 	"github.com/rogpeppe/go-internal/testscript"
+
+	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
@@ -31,9 +33,10 @@ func TestScript(t *testing.T) {
 		RequireExplicitExec: true,
 		RequireUniqueNames:  true,
 		Cmds: map[string]func(*testscript.TestScript, bool, []string){
-			"runhook": runHook,
-			"gitrepo": gitRepo,
-			"expand":  expandFile,
+			"runhook":   runHook,
+			"gitrepo":   gitRepo,
+			"gitcommit": gitCommit,
+			"expand":    expandFile,
 		},
 	})
 }
@@ -58,8 +61,15 @@ func setupEnv(e *testscript.Env) error {
 	if bin == "" {
 		return fmt.Errorf("ctxtra not found in PATH %q", e.Getenv("PATH"))
 	}
+	// $GITSRV serves the repositories in $WORK/srv over https, for the
+	// sources tests: ctxtra fetches only over https and ssh.
+	srv, stop, err := testenv.StartGitServer(filepath.Join(work, "srv"))
+	if err != nil {
+		return err
+	}
+	e.Defer(stop)
 	for k, v := range map[string]string{
-		"HOME": home, "BIN": bin,
+		"HOME": home, "BIN": bin, "GITSRV": srv, "GIT_SSL_NO_VERIFY": "1",
 		"GIT_CONFIG_GLOBAL": os.DevNull, "GIT_CONFIG_NOSYSTEM": "1",
 		"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
 		"GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
@@ -92,6 +102,16 @@ func gitRepo(ts *testscript.TestScript, neg bool, args []string) {
 	}
 }
 
+// gitcommit DIR: commits everything in the repository in DIR.
+func gitCommit(ts *testscript.TestScript, neg bool, args []string) {
+	if neg || len(args) != 1 {
+		ts.Fatalf("usage: gitcommit DIR")
+	}
+	dir := ts.MkAbs(args[0])
+	git(ts, dir, "add", "-A")
+	git(ts, dir, "commit", "-q", "-m", "change")
+}
+
 func git(ts *testscript.TestScript, dir string, args ...string) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
@@ -107,7 +127,7 @@ func environ(ts *testscript.TestScript) []string {
 	for _, k := range []string{"PATH", "HOME", "TMPDIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
 		"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
 		"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR",
-		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME"} {
+		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "GIT_SSL_NO_VERIFY"} {
 		if v := ts.Getenv(k); v != "" {
 			env = append(env, k+"="+v)
 		}

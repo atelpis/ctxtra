@@ -11,8 +11,8 @@
   instruction files and these skills.
 - **Binding file:** a YAML file with one or more bindings, separated by `---`.
 - **Config:** the file that lists which binding files you use, and declares your sources.
-- **Source:** a folder of your own files, declared in the config. Files in it are referenced as
-  `ctxtra://<source>/<path>`.
+- **Source:** a folder of your own files (trusted), or a team git repository pinned to a commit you
+  accepted (pinned), declared in the config. Files in it are referenced as `ctxtra://<source>/<path>`.
 
 Instruction files are plain Markdown. Skills are folders with a `SKILL.md`, the same format other agent
 tools use. Neither has anything specific to ctxtra.
@@ -28,10 +28,15 @@ kind: Config
 sources:
   dotfiles:
     trusted-path: ~/dev/dotfiles      # a repo of your own: read from disk, changes apply right away
+  team-ctx:
+    git: git@github.com:acme/team-ctx.git
+    branch: main                      # where sync looks for new commits
+    commit: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432'   # the accepted version; sync changes it
 
 bindings:                             # binding files, applied in this order
   - bindings/personal.yaml            # relative to this file's folder
   - ctxtra://dotfiles/ctxtra/go.yaml  # a file in the dotfiles source
+  - ctxtra://team-ctx/bindings/billing.yaml
 
 budget:
   maxChars: 40000                     # optional; 0 or missing = no limit
@@ -64,13 +69,89 @@ The config file itself is always read.
   `[include]` and `[includeIf]` in a repository's config aren't supported. A repository it can't read counts
   as untrusted.
 
-A source has a name (letters, digits, `.`, `_`, `-`) and exactly one kind. `trusted-path` is the only kind
-so far.
+A source has a name (letters, digits, `.`, `_`, `-`) and exactly one kind: `trusted-path` or `git`.
 
-`ctxtra://<source>/<path>` works in `bindings` and in `files` and `skills` of any binding file. It is the
-same as the path under the source's folder. The path as written must stay inside the source: `..` that
-leaves it, and absolute paths, are errors. A symlink in the source is followed by the rules above, so it
-can lead outside the source, but only to a file that is trusted on its own.
+`ctxtra://<source>/<path>` works in `bindings` and in `files` and `skills` of any binding file. The path as
+written must stay inside the source: `..` that leaves it, and absolute paths, are errors. For a trusted
+source it is the same as the path under the source's folder. A symlink there is followed by the rules
+above, so it can lead outside the source, but only to a file that is trusted on its own.
+
+## Pinned sources
+
+A `git` source is a team repository. ctxtra keeps its own copy, so you don't need a clone, and serves one
+commit of it: the one in `commit`. A new commit on the branch reaches your sessions only after you review
+and accept it with `ctxtra sync`, or after you change `commit` yourself.
+
+```text
+$ ctxtra add git@github.com:acme/team-ctx.git bindings/billing.yaml
+fetched team-ctx: main at abc1234 (git@github.com:acme/team-ctx.git)
+added source team-ctx (pinned: changes apply after `ctxtra sync`)
+added ctxtra://team-ctx/bindings/billing.yaml
+  binding billing: for github.com/acme/billing
+    files: services-overview.md
+```
+
+- `git` is an `https://` or `ssh://` URL, or `user@host:path`. Other transports and local paths are errors.
+- `branch` is required. `add` uses the remote's default branch unless you pass `--branch`.
+- `commit` is a full commit ID in quotes: 40 hex digits, or 64 for SHA-256 repositories. A source without
+  `commit` is inactive until `ctxtra sync <name>`, which accepts the branch as it is, like `add`.
+- **The first version is accepted without review**, the same decision as cloning the repository: read a
+  team repository before you add it. `add` shows its bindings and its executable files.
+- Accepting a commit accepts every file in it. `sync` shows the diff of every changed file.
+- Anyone who can edit your config can choose the version, for example through a dotfiles repository that
+  others push to. A `commit` copied from another laptop was reviewed there.
+- A binding file in a pinned source may only reference files in the same source: relative paths, or
+  `ctxtra://` with its own name. Absolute paths, `~`, `..` that leaves the source and other sources are
+  errors, and the binding is skipped. A team repository can't add your files to a session, and can't
+  declare sources: only your config does.
+- Files are read from ctxtra's store (below), never from a clone. Symlinks and submodules in the
+  repository are left out.
+- ctxtra doesn't check for new commits by itself. Run `ctxtra sync` regularly.
+
+### Commands
+
+| Command | Does |
+|---|---|
+| `ctxtra add <git URL> [<binding file>] [--as NAME] [--branch B]` | Fetches the branch, adds the source with its current commit, and the binding file to `bindings`. The name defaults to the repository name. Without a binding file, it lists the binding files in the repository. |
+| `ctxtra add ctxtra://<source>/<binding file>` | Adds a binding file of a source you have, at its accepted commit. |
+| `ctxtra add <binding file> [--trust] [--as NAME]` | Adds a binding file on your disk. A file in a repository with a remote needs `--trust`, which adds the repository as a `trusted-path` source. |
+| `ctxtra add --trust <folder> [--as NAME]` | Adds a folder as a `trusted-path` source. |
+| `ctxtra sync [SOURCE]...` | For each pinned source: makes sure the accepted commit is in the store, fetches the branch, shows the diff, and on `y` writes the new commit to the config. |
+| `ctxtra sync --restore [SOURCE]...` | Fetches exactly the commits in the config, and changes nothing in it. Use it on a new laptop, or when the store is gone. It fails when a commit can't be fetched (removed by a force-push, or never pushed). |
+
+When a new commit doesn't continue the accepted one, `sync` warns: the branch was force-pushed. Accepting
+it is still your choice.
+
+`add` and `sync` change the config as text: they replace the `commit` value or add lines, and keep your
+comments and layout. In a flow-style map (`{...}`) they write the file again from its YAML, which keeps
+comments but not the layout. A changed config is checked before it is written, written atomically, and the
+old one is kept in `~/.ctxtra/backups`. A symlinked config stays a symlink. If the source changed in the
+config while `sync` waited for your answer, nothing is accepted.
+
+### Store
+
+- `~/.ctxtra/git/<id>.git`: a bare repository per source.
+- `~/.ctxtra/store/<id>/<commit>/`: the files of each accepted commit, private and read-only. Sessions
+  read only these, and only through `ctxtra://`: a plain path into the store is an error, because a
+  pinned source's binding file read that way could reference any file. A missing commit is reported
+  (`run: ctxtra sync --restore`), and the references to it are skipped; the rest of the binding still
+  applies.
+- `<id>` comes from the URL: a source whose URL changes doesn't use the old data.
+- Old commits are not deleted yet.
+
+### How ctxtra runs git
+
+- It runs your `git`, so ssh keys, the ssh agent and credential helpers work. Only `add` and `sync` run
+  git, and they may prompt. Sessions never fetch.
+- Only the https and ssh transports. No hooks, no submodules, no automatic maintenance. Nothing is checked
+  out, so `.gitattributes` filters (git-lfs, smudge) never run. Diffs use no external diff and no textconv.
+- Environment variables that point git at another repository or config are cleared.
+- Every file path in a commit is checked before anything is written: no `..`, no `.git`, no control
+  characters, no two file or folder names that a case-insensitive or Unicode-normalizing disk would merge.
+  A commit over the limits (10,000 entries, 10 MiB per file, 100 MiB in total) is refused as a whole. A
+  repository larger than 1 GiB with its history is refused too, and git's output is limited.
+- Control characters in diffs, paths and messages are shown as escapes, so they can't hide lines in your
+  terminal.
 
 ## Binding file
 
@@ -182,6 +263,9 @@ Problems never make ctxtra add more than the config says:
 | `apiVersion` | yes | `ctxtra/v1alpha1` |
 | `kind` | yes | `Config` |
 | `sources.<name>.trusted-path` | no | A folder of your own files. Absolute or starts with `~`. |
+| `sources.<name>.git` | no | A team repository: `https://`, `ssh://` or `user@host:path`. |
+| `sources.<name>.branch` | with `git` | The branch `sync` follows. |
+| `sources.<name>.commit` | no | With `git`: the accepted commit, a full ID in quotes. |
 | `bindings` | no | List of binding files. Relative to the config's folder; `~` and `ctxtra://` work. |
 | `budget.maxChars` | no | Integer ≥ 0, in characters. 0 or missing: no limit. |
 

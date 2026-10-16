@@ -1,0 +1,105 @@
+# add for files on your disk: a plain binding file, a binding file in your
+# own repository with --trust, and a folder with --trust.
+
+gitrepo dev/dotfiles git@github.com:me/dotfiles.git
+gitrepo srv/team
+
+# A binding file outside git: added as a plain path; the config is created.
+exec ctxtra add .config/ctxtra/bindings.yaml
+stdout '^created ~/.config/ctxtra/config.yaml$'
+stdout '^added bindings.yaml$'
+stdout '^  binding me: for every session$'
+stdout '^  trusted: changes apply right away$'
+exec ctxtra add .config/ctxtra/bindings.yaml
+stdout 'bindings.yaml is in bindings already'
+
+# A binding file in a repository with a remote: refused, with the ways out.
+! exec ctxtra add dev/dotfiles/ctxtra/work.yaml
+stderr 'is not a trusted source'
+stderr 'If the repository is yours: ctxtra add --trust ~/dev/dotfiles/ctxtra/work.yaml'
+
+# --trust adds the repository as a trusted source and the file through it.
+exec ctxtra add --trust dev/dotfiles/ctxtra/work.yaml
+stdout '^added source dotfiles \(trusted-path: ~/dev/dotfiles\); changes apply right away$'
+stdout '^added ctxtra://dotfiles/ctxtra/work.yaml$'
+stdout '^  binding work: for github.com/acme/\*\*$'
+stdout '^    files: ~/dev/dotfiles/work.md$'
+exec ctxtra files notes
+! stdout work.md
+
+# A folder.
+exec ctxtra add --trust notes --as my-notes
+stdout '^added source my-notes \(trusted-path: ~/notes\); changes apply right away$'
+exec ctxtra add --trust notes
+stdout 'is the trusted source my-notes already'
+! exec ctxtra add notes
+stderr 'is a folder'
+
+# sync has nothing to do for trusted sources.
+exec ctxtra sync
+stdout '^no pinned sources$'
+! exec ctxtra sync dotfiles
+stderr 'is a trusted-path source'
+
+# A git source written by hand without a commit is inactive until the
+# first sync, which accepts the branch as it is, like add.
+expand handwritten.yaml .config/ctxtra/config.yaml
+! exec ctxtra files notes
+stderr 'ctxtra://team/a.md: the source team has no accepted commit yet; run: ctxtra sync team'
+exec ctxtra sync
+stdout '^team: accepted main at [0-9a-f]{7}, the first version'
+exec ctxtra files notes
+stdout '/.ctxtra/store/.*/a.md'
+
+# Bad input.
+! exec ctxtra add file:///tmp/x
+stderr 'not a git URL ctxtra can fetch'
+! exec ctxtra add $GITSRV/team
+stderr 'already the source team'
+! exec ctxtra add $GITSRV/team/ --as dotfiles
+stderr 'a source named dotfiles already exists \(trusted-path ~/dev/dotfiles\)'
+
+-- handwritten.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Config
+sources:
+  dotfiles:
+    trusted-path: ~/dev/dotfiles
+  team:
+    git: $GITSRV/team
+    branch: main
+bindings: [bindings.yaml, team.yaml]
+-- .config/ctxtra/team.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: team
+spec:
+  selector:
+    global: true
+  files: [ctxtra://team/a.md]
+-- .config/ctxtra/bindings.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: me
+spec:
+  selector:
+    global: true
+  files: [~/notes/me.md]
+-- notes/me.md --
+mine
+-- dev/dotfiles/ctxtra/work.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: work
+spec:
+  selector:
+    gitRepos:
+      - remote: github.com/acme/**
+  files: [../work.md]
+-- dev/dotfiles/work.md --
+work
+-- srv/team/a.md --
+team

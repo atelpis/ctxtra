@@ -13,7 +13,6 @@ import (
 	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/gitrepo"
 	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/trust"
 )
 
 // Hit is a file or a skill added to the session.
@@ -65,7 +64,7 @@ func Resolve(dir string, cfg *config.Config, rd config.Reader) *Result {
 	dir = paths.Real(dir)
 	res := &Result{Dir: dir, Repo: gitrepo.Identify(dir), MaxChars: cfg.MaxChars}
 	res.Problems = append(res.Problems, cfg.Problems...)
-	l := &loader{rd: rd, trust: cfg.Trust, files: map[string]bool{}, skills: map[string]bool{}}
+	l := &loader{rd: rd, cfg: cfg, files: map[string]bool{}, skills: map[string]bool{}}
 	for _, b := range cfg.Bindings {
 		t := Trace{Origin: b.ID()}
 		t.Matched, t.Reason = b.Selector.Match(dir, res.Repo)
@@ -116,20 +115,23 @@ func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
 // apart: the same SKILL.md can be both an instruction file and a skill.
 type loader struct {
 	rd            config.Reader
-	trust         *trust.Policy
+	cfg           *config.Config
 	files, skills map[string]bool
 }
 
 // load reads path, the real path of raw, unless added already to seen. raw
-// is checked with trust first: the check needs the symlinks on the way. A
+// is checked with the config's trust policy first (the check needs the
+// symlinks on the way), unless it is in a pinned source's store folder. A
 // missing file goes to t.Missing, other errors to t.Problems.
 func (l *loader) load(t *Trace, raw, path string, seen map[string]bool) (string, bool) {
 	if seen[path] {
 		return "", false
 	}
-	if err := l.trust.Check(raw); err != nil {
-		t.Problems = append(t.Problems, err.Error())
-		return "", false
+	if !l.cfg.Pinned(raw) {
+		if err := l.cfg.Trust.Check(raw); err != nil {
+			t.Problems = append(t.Problems, err.Error())
+			return "", false
+		}
 	}
 	b, err := l.rd.Read(path)
 	switch {

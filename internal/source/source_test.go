@@ -1,0 +1,293 @@
+package source
+
+import (
+	"context"
+	"errors"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/atelpis/ctxtra/internal/testenv"
+)
+
+// team creates a repository served by a test git server and returns its
+// folder and URL.
+func team(t *testing.T) (dir, url string) {
+	t.Helper()
+	h := testenv.Home(t)
+	dir = testenv.Repo(t, filepath.Join(h, "srv", "team"), "")
+	return dir, testenv.GitServer(t, filepath.Join(h, "srv")) + "/team"
+}
+
+func head(t *testing.T, dir string) string {
+	t.Helper()
+	out, err := exec.Command("git", "-C", dir, "rev-parse", "HEAD").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func commit(t *testing.T, dir string, files map[string]string) string {
+	t.Helper()
+	for p, c := range files {
+		testenv.Write(t, filepath.Join(dir, p), c)
+	}
+	testenv.Run(t, dir, "git", "add", "-A")
+	testenv.Run(t, dir, "git", "commit", "-q", "-m", "change")
+	return head(t, dir)
+}
+
+func TestFetchAndMaterialize(t *testing.T) {
+	dir, url := team(t)
+	testenv.Write(t, filepath.Join(dir, "skills", "deploy", "run.sh"), "#!/bin/sh\n")
+	os.Chmod(filepath.Join(dir, "skills", "deploy", "run.sh"), 0o755)
+	os.Symlink("/etc/passwd", filepath.Join(dir, "link.md"))
+	first := commit(t, dir, map[string]string{"a.md": "A\n"})
+	ctx := context.Background()
+	r := Open(url)
+
+	if b, err := r.DefaultBranch(ctx); err != nil || b != "main" {
+		t.Fatalf("default branch %q %v", b, err)
+	}
+	got, err := r.FetchBranch(ctx, "main")
+	if err != nil || got != first {
+		t.Fatalf("fetch: %s %v, want %s", got, err, first)
+	}
+	gen, err := r.Materialize(ctx, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(gen, "a.md")); string(b) != "A\n" {
+		t.Errorf("a.md: %q", b)
+	}
+	if st, err := os.Stat(filepath.Join(gen, "skills", "deploy", "run.sh")); err != nil || st.Mode().Perm() != 0o500 {
+		t.Errorf("run.sh: %v %v", st, err)
+	}
+	if Exists(filepath.Join(gen, "link.md")) {
+		t.Error("a symlink entry was written")
+	}
+	if !Has(url, first) || gen != GenDir(url, first) {
+		t.Errorf("Has %v, gen %s", Has(url, first), gen)
+	}
+
+	// A new commit, then a force-push that removes it: the accepted commit
+	// stays available from ctxtra's copy, and fetching a removed commit by ID
+	// fails.
+	second := commit(t, dir, map[string]string{"a.md": "A2\n", "b.md": "\x1b[2Jhidden\n"})
+	if got, _ := r.FetchBranch(ctx, "main"); got != second {
+		t.Fatalf("second fetch %s", got)
+	}
+	if !r.IsAncestor(ctx, first, second) || r.IsAncestor(ctx, second, first) {
+		t.Error("IsAncestor")
+	}
+	d, err := r.Diff(ctx, first, second)
+	if err != nil || !strings.Contains(d, "+A2") || !strings.Contains(d, `\u001b[2Jhidden`) {
+		t.Errorf("diff %v:\n%s", err, d)
+	}
+	testenv.Run(t, dir, "git", "reset", "-q", "--hard", first)
+	third := commit(t, dir, map[string]string{"c.md": "C\n"})
+	testenv.Run(t, dir, "git", "reflog", "expire", "--expire=now", "--all")
+	testenv.Run(t, dir, "git", "gc", "-q", "--prune=now")
+	if got, _ := r.FetchBranch(ctx, "main"); got != third || r.IsAncestor(ctx, second, third) {
+		t.Errorf("after force-push: %s", got)
+	}
+
+	// A fresh store, as on a new laptop: restore fetches exact commits.
+	os.RemoveAll(filepath.Join(os.Getenv("HOME"), ".ctxtra"))
+	r = Open(url)
+	if err := r.FetchCommit(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Materialize(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.FetchCommit(ctx, second); err == nil || !strings.Contains(err.Error(), "force-push") {
+		t.Errorf("removed commit: %v", err)
+	}
+}
+
+func TestTreeRefusesBadCommits(t *testing.T) {
+	dir, url := team(t)
+	ctx := context.Background()
+	r := Open(url)
+	big := commit(t, dir, map[string]string{"big.md": strings.Repeat("x", MaxFileBytes+1)})
+	if _, err := r.FetchBranch(ctx, "main"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Materialize(ctx, big); err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Errorf("big file: %v", err)
+	}
+	if Has(url, big) {
+		t.Error("a refused commit is in the store")
+	}
+	entries, _ := os.ReadDir(filepath.Dir(GenDir(url, big)))
+	if len(entries) != 0 {
+		t.Errorf("leftovers in the store: %v", entries)
+	}
+}
+
+func TestChecks(t *testing.T) {
+	for _, u := range []string{"https://github.com/a/b.git", "ssh://git@host:22/a/b", "git@github.com:a/b.git", "host:a/b"} {
+		if err := CheckURL(u); err != nil {
+			t.Errorf("%s: %v", u, err)
+		}
+	}
+	for _, u := range []string{"", "-oProxyCommand=x", "file:///tmp/x", "/tmp/x", "./x", "ext::sh -c x", "http://h/a", "git://h/a", "https://h/a b", "c:/x", "x@-oProxyCommand=y:a", "ssh://-oProxyCommand=y/a", "https://-x/a", ".:x"} {
+		if CheckURL(u) == nil {
+			t.Errorf("%s: accepted", u)
+		}
+	}
+	for _, b := range []string{"main", "release/1.2", "feature_x"} {
+		if err := CheckBranch(b); err != nil {
+			t.Errorf("%s: %v", b, err)
+		}
+	}
+	for _, b := range []string{"", "-x", "a..b", "a/", "a.lock", "a/.b", "a b", "a//b", "HEAD^"} {
+		if CheckBranch(b) == nil {
+			t.Errorf("%s: accepted", b)
+		}
+	}
+	for _, p := range []string{"", "/a", "a//b", "a/../b", ".git/config", "x/.GIT/y", "a\\b", "a\nb", "./a"} {
+		if CheckPath(p) == nil {
+			t.Errorf("%q: accepted", p)
+		}
+	}
+	if !ValidCommit(strings.Repeat("a", 40)) || !ValidCommit(strings.Repeat("0", 64)) || ValidCommit("abc1234") || ValidCommit(strings.Repeat("A", 40)) {
+		t.Error("ValidCommit")
+	}
+}
+
+func TestNames(t *testing.T) {
+	cases := map[string][]string{
+		"folder case":     {"A/x.md", "a/y.md"},
+		"file case":       {"README.md", "readme.md"},
+		"file and folder": {"a", "A/b"},
+		"unicode":         {"café.md", "café.md"},
+		"german sharp s":  {"straße.md", "STRASSE.md"},
+	}
+	for name, ps := range cases {
+		ns := names{}
+		var err error
+		for _, p := range ps {
+			if err = ns.add(p); err != nil {
+				break
+			}
+		}
+		if err == nil {
+			t.Errorf("%s: no collision found", name)
+		}
+	}
+	ns := names{}
+	for _, p := range []string{"a/x.md", "a/y.md", "a/b/z.md", "b.md"} {
+		if err := ns.add(p); err != nil {
+			t.Errorf("%s: %v", p, err)
+		}
+	}
+}
+
+func TestRepoSizeLimit(t *testing.T) {
+	dir, url := team(t)
+	// 3 MB of random data in the history, gone at the branch's head.
+	testenv.Run(t, dir, "sh", "-c", "head -c 3000000 /dev/urandom > big.bin")
+	commit(t, dir, nil)
+	testenv.Run(t, dir, "git", "rm", "-q", "big.bin")
+	commit(t, dir, nil)
+	old := maxRepoBytes
+	maxRepoBytes = 1 << 20
+	t.Cleanup(func() { maxRepoBytes = old })
+	if _, err := Open(url).FetchBranch(context.Background(), "main"); !errors.Is(err, errRepoSize) {
+		t.Errorf("fetch of a large history: %v", err)
+	}
+}
+
+// Two fetches of different branches at the same time each get their own
+// branch's commit.
+func TestConcurrentFetches(t *testing.T) {
+	dir, url := team(t)
+	main := head(t, dir)
+	testenv.Run(t, dir, "git", "checkout", "-q", "-b", "other")
+	other := commit(t, dir, map[string]string{"o.md": "o"})
+	ctx := context.Background()
+	r := Open(url)
+	if _, err := r.FetchBranch(ctx, "main"); err != nil { // creates the repository
+		t.Fatal(err)
+	}
+	type result struct{ got, want string }
+	results := make(chan result, 20)
+	for i := range 20 {
+		go func() {
+			branch, want := "main", main
+			if i%2 == 1 {
+				branch, want = "other", other
+			}
+			got, _ := Open(url).FetchBranch(ctx, branch)
+			results <- result{got, want}
+		}()
+	}
+	for range 20 {
+		if r := <-results; r.got != r.want {
+			t.Errorf("got %s, want %s", r.got, r.want)
+		}
+	}
+}
+
+func TestSHA256(t *testing.T) {
+	h := testenv.Home(t)
+	dir := filepath.Join(h, "srv", "team")
+	testenv.Write(t, filepath.Join(dir, "a.md"), "A\n")
+	testenv.Run(t, dir, "git", "init", "-q", "-b", "main", "--object-format=sha256")
+	testenv.Run(t, dir, "git", "add", ".")
+	testenv.Run(t, dir, "git", "commit", "-q", "-m", "init")
+	url := testenv.GitServer(t, filepath.Join(h, "srv")) + "/team"
+	ctx := context.Background()
+	r := Open(url)
+	c, err := r.FetchBranch(ctx, "main")
+	if err != nil || len(c) != 64 || !ValidCommit(c) {
+		t.Fatalf("%q %v", c, err)
+	}
+	gen, err := r.Materialize(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(gen, "a.md")); string(b) != "A\n" {
+		t.Errorf("a.md %q", b)
+	}
+}
+
+// The caps hold for real subprocess output: exec copies with ReadFrom when
+// the writer has one.
+func TestOutputCaps(t *testing.T) {
+	testenv.Home(t)
+	r := Open("https://h/x")
+	if out, err := r.gitMax(context.Background(), false, nil, 1, "version"); err == nil || !strings.Contains(err.Error(), "more than 1 bytes") {
+		t.Errorf("stdout over the cap: %q %v", out, err)
+	}
+	c := &capped{max: 10, drop: true}
+	cmd := exec.Command("sh", "-c", "head -c 100000 /dev/zero >&2")
+	cmd.Stderr = c
+	if err := cmd.Run(); err != nil || c.buf.Len() != 10 || !c.over {
+		t.Errorf("stderr: %v, %d bytes", err, c.buf.Len())
+	}
+}
+
+// A commit within the limits is materialized, also when its files are more
+// than one git command may print otherwise.
+func TestLargeCommit(t *testing.T) {
+	dir, url := team(t)
+	c := commit(t, dir, map[string]string{"a.md": strings.Repeat("a", 9<<20), "b.md": strings.Repeat("b", 9<<20)})
+	r := Open(url)
+	ctx := context.Background()
+	if _, err := r.FetchBranch(ctx, "main"); err != nil {
+		t.Fatal(err)
+	}
+	gen, err := r.Materialize(ctx, c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(filepath.Join(gen, "b.md")); err != nil || st.Size() != 9<<20 {
+		t.Errorf("b.md: %v %v", st, err)
+	}
+}

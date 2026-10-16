@@ -1,0 +1,146 @@
+# A team repository added by URL is pinned: sessions read the accepted
+# commit from ctxtra's store, and a new commit applies only after sync shows
+# it and the user accepts it.
+
+chmod 755 srv/team-ctx/skills/deploy/run.sh
+gitrepo srv/team-ctx
+exec ctxtra setup --agent claude
+
+# add fetches, writes the source and the binding file to the config, and
+# shows what the binding does.
+exec ctxtra add $GITSRV/team-ctx bindings/billing.yaml
+stdout '^fetched team-ctx: main at [0-9a-f]{7} \(https://127.0.0.1:\d+/team-ctx\)$'
+stdout '^added source team-ctx \(pinned: changes apply after `ctxtra sync`\)$'
+stdout '^added ctxtra://team-ctx/bindings/billing.yaml$'
+stdout '^  binding billing: for every session$'
+stdout '^    files: services-overview.md$'
+stdout '^    skills: skills/deploy$'
+stdout '^executable files: skills/deploy/run.sh$'
+grep '^    commit: ''[0-9a-f]{40}''$' .config/ctxtra/config.yaml
+runhook claude SessionStart notes
+stdout 'CTXMARK-OVERVIEW'
+stdout 'Contents of .*/.ctxtra/store/[0-9a-f]{16}/[0-9a-f]{40}/services-overview.md'
+stdout '<location>.*/.ctxtra/store/[0-9a-f]{16}/[0-9a-f]{40}/skills/deploy/SKILL.md</location>'
+
+# A binding file in the source can't reach your files.
+exec ctxtra add ctxtra://team-ctx/bindings/evil.yaml
+stdout '^added ctxtra://team-ctx/bindings/evil.yaml$'
+stdout '^  ERROR: .*~/.ssh/id is not a path in the source team-ctx'
+! stdout 'binding evil'
+
+# Text from the source can't reach the terminal with control characters.
+exec ctxtra add ctxtra://team-ctx/bindings/escape.yaml
+stdout '^  binding escape: for github.com/\\u001b\]8;;x\\u0007/billing$'
+! stdout '\x1b'
+
+# A new commit changes nothing until sync.
+cp new-overview.md srv/team-ctx/services-overview.md
+gitcommit srv/team-ctx
+runhook claude SessionStart notes
+stdout 'CTXMARK-OVERVIEW'
+! stdout 'CTXMARK-NEW'
+
+# sync shows the diff; N keeps the old commit, y accepts the new one.
+stdin no.txt
+exec ctxtra sync
+stdout '^team-ctx: [0-9a-f]{7} -> [0-9a-f]{7} \(main, https://'
+stdout '^-CTXMARK-OVERVIEW$'
+stdout '^\+CTXMARK-NEW$'
+stdout 'not accepted; you keep [0-9a-f]{7}$'
+! stdout WARNING
+stdin yes.txt
+exec ctxtra sync team-ctx
+stdout 'accepted team-ctx [0-9a-f]{7} \(commit: updated in config.yaml\)$'
+runhook claude SessionStart notes
+stdout 'CTXMARK-NEW'
+exec ctxtra sync
+stdout '^team-ctx: up to date \(main at [0-9a-f]{7}\)$'
+
+# The edits keep the comments in the config.
+grep '^# my comment$' .config/ctxtra/config.yaml
+grep '^  - bindings.yaml  # mine$' .config/ctxtra/config.yaml
+
+# A new laptop: the config is there, the store isn't. Restore fetches the
+# accepted commit, not the branch.
+rm .ctxtra
+runhook claude SessionStart notes
+! stdout 'CTXMARK'
+! exec ctxtra doctor notes
+stdout 'source team-ctx: git https://.*, branch main, pinned to [0-9a-f]{7}, NOT IN THE STORE \(run: ctxtra sync --restore\)'
+exec ctxtra sync --restore
+stdout '^team-ctx: fetched [0-9a-f]{7} \(the commit in config.yaml\)$'
+runhook claude SessionStart notes
+stdout 'CTXMARK-NEW'
+exec ctxtra sync --restore
+stdout '^team-ctx: [0-9a-f]{7} is in the store$'
+
+# A force-push: the new commit doesn't continue the accepted one.
+exec git -C srv/team-ctx reset -q --hard HEAD~1
+cp other.md srv/team-ctx/other.md
+gitcommit srv/team-ctx
+stdin no.txt
+exec ctxtra sync
+stdout '^WARNING: [0-9a-f]{7} doesn''t continue [0-9a-f]{7}: the branch was force-pushed'
+
+-- .config/ctxtra/config.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Config
+# my comment
+bindings:
+  - bindings.yaml  # mine
+-- .config/ctxtra/bindings.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: me
+spec:
+  selector:
+    global: true
+  files: [~/notes/me.md]
+-- notes/me.md --
+mine
+-- no.txt --
+n
+-- yes.txt --
+y
+-- new-overview.md --
+CTXMARK-NEW
+-- other.md --
+other
+-- srv/team-ctx/services-overview.md --
+CTXMARK-OVERVIEW
+-- srv/team-ctx/bindings/billing.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: billing
+spec:
+  selector:
+    global: true
+  files: [../services-overview.md]
+  skills: [../skills/deploy]
+-- srv/team-ctx/bindings/evil.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: evil
+spec:
+  selector:
+    global: true
+  files: [../services-overview.md, ~/.ssh/id]
+-- srv/team-ctx/bindings/escape.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: escape
+spec:
+  selector:
+    gitRepos:
+      - remote: "github.com/\e]8;;x\a/billing"
+  files: [../services-overview.md]
+-- srv/team-ctx/skills/deploy/SKILL.md --
+---
+description: Deploy.
+---
+-- srv/team-ctx/skills/deploy/run.sh --
+#!/bin/sh

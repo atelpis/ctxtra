@@ -121,12 +121,18 @@ func NormalizeRemote(url string) string {
 	return strings.ToLower(strings.TrimRight(u, "/"))
 }
 
-func git(ctx context.Context, dir string, args ...string) (string, bool) {
-	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	cmd.Env = slices.DeleteFunc(os.Environ(), func(kv string) bool {
+// CleanEnv is the environment without the variables that point git at
+// another repository or config.
+func CleanEnv() []string {
+	return slices.DeleteFunc(os.Environ(), func(kv string) bool {
 		k, _, _ := strings.Cut(kv, "=")
 		return slices.Contains(locationVars, k)
 	})
+}
+
+func git(ctx context.Context, dir string, args ...string) (string, bool) {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = CleanEnv()
 	// Don't wait for a child process that keeps stdout open after git is
 	// killed.
 	cmd.WaitDelay = 500 * time.Millisecond

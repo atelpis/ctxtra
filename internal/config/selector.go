@@ -174,3 +174,22 @@ func globMatch(pattern, name string) bool {
 	ok, err := doublestar.Match(pattern, name)
 	return err == nil && ok
 }
+
+// String describes s in one line, for add and sync.
+func (s Selector) String() string {
+	if s.Global {
+		return "every session"
+	}
+	var parts []string
+	for _, d := range s.Dirs {
+		parts = append(parts, paths.Tilde(filepath.FromSlash(d)))
+	}
+	for _, g := range s.GitRepos {
+		r := g.Remote
+		if g.Subpath != "" {
+			r += " (subpath " + g.Subpath + ")"
+		}
+		parts = append(parts, r)
+	}
+	return strings.Join(parts, ", ")
+}
