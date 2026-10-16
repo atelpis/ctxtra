@@ -100,9 +100,10 @@ func (r report) explain(dir string) int {
 				fmt.Fprintf(r.Out, "    dropped  %s (over budget.maxChars)\n", f)
 			case files[f].Origin == t.Origin:
 				fmt.Fprintf(r.Out, "    file     %s (%d chars)\n", f, resolve.Chars(files[f].Content))
-			case mentions(t.Missing, f) || mentions(t.Problems, f):
-			default:
+			case files[f].Origin != "" || dropped[f] != "":
 				fmt.Fprintf(r.Out, "    skip     %s (already added by an earlier binding)\n", f)
+			case !mentions(t.Missing, f):
+				fmt.Fprintf(r.Out, "    skip     %s (not added; see problems)\n", f)
 			}
 		}
 		for _, s := range t.Skills {
@@ -147,7 +148,14 @@ func (r report) doctor(dir string) int {
 	if _, err := os.Stat(cfg.File); err != nil {
 		fmt.Fprintln(r.Out, "  not found: nothing is added (see docs/spec.md)")
 	}
-	fmt.Fprintf(r.Out, "  binding files: %d, bindings: %d\n", len(cfg.Includes), len(cfg.Bindings))
+	fmt.Fprintf(r.Out, "  binding files: %d, bindings: %d\n", len(cfg.BindingFiles), len(cfg.Bindings))
+	for _, src := range cfg.Sources {
+		state := ""
+		if _, err := os.Stat(src.Path); err != nil {
+			state = " (not found)"
+		}
+		fmt.Fprintf(r.Out, "  source %s: trusted-path %s%s\n", src.Name, paths.Tilde(src.Path), state)
+	}
 	for _, p := range res.Problems {
 		ok = false
 		fmt.Fprintf(r.Out, "  PROBLEM: %s\n", p)

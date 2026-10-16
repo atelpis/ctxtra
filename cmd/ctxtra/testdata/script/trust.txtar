@@ -1,0 +1,100 @@
+# A file in a git repository with a remote is read only when the repository
+# is a trusted source. Files outside git and in repositories without a remote
+# are always read.
+
+gitrepo dev/team https://github.com/acme/team
+gitrepo dev/dotfiles git@github.com:me/dotfiles.git
+gitrepo own
+
+exec ctxtra setup --agent claude
+runhook claude SessionStart notes
+stdout 'CTXMARK-NOTES'
+stdout 'CTXMARK-OWN'
+! stdout 'CTXMARK-TEAM'
+! stdout 'CTXMARK-DOT'
+stdout '"systemMessage":"ctxtra: added 2 files \(me.md, own.md\); 2 problems \(run ctxtra doctor\)"'
+
+! exec ctxtra files notes
+stderr 'problem: .*~/dev/team/team.md is in ~/dev/team, which has the remote github.com/acme/team and is not a trusted source; skipped. If the repository is yours, add it to sources: in config.yaml with trusted-path: ~/dev/team'
+stderr 'problem: .*~/dev/dotfiles/ctxtra/work.yaml is in ~/dev/dotfiles'
+
+exec ctxtra explain notes
+stdout 'skip .*/dev/team/team.md \(not added; see problems\)'
+
+# Trusting the dotfiles makes their binding file and everything in it live,
+# also through ctxtra://. The team repository stays untrusted.
+cp trusted.yaml .config/ctxtra/config.yaml
+! exec ctxtra files notes
+stdout '/ctx/me.md'
+stdout '/dev/dotfiles/work.md'
+stdout '/dev/dotfiles/skills/deploy/SKILL.md'
+! stdout 'team.md'
+stderr 'dev/team/team.md is in ~/dev/team'
+! stderr 'dotfiles'
+
+! exec ctxtra doctor notes
+stdout 'source dotfiles: trusted-path ~/dev/dotfiles'
+
+# A symlink in a trusted source can lead outside it, but only to a file that
+# is trusted on its own.
+symlink dev/dotfiles/own-link.md -> ../../ctx/outside.md
+symlink dev/dotfiles/team-link.md -> ../team/team.md
+cp links.yaml dev/dotfiles/ctxtra/work.yaml
+! exec ctxtra files notes
+stdout '/ctx/outside.md'
+stderr 'dev/dotfiles/team-link.md leads through a symlink to ~/dev/team/team.md, which is in ~/dev/team'
+
+-- .config/ctxtra/config.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Config
+bindings: [b.yaml, ~/dev/dotfiles/ctxtra/work.yaml]
+-- trusted.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Config
+sources:
+  dotfiles:
+    trusted-path: ~/dev/dotfiles
+bindings: [b.yaml, ctxtra://dotfiles/ctxtra/work.yaml]
+-- .config/ctxtra/b.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: me
+spec:
+  selector:
+    global: true
+  files: [~/ctx/me.md, ~/own/own.md, ~/dev/team/team.md]
+-- dev/dotfiles/ctxtra/work.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: work
+spec:
+  selector:
+    global: true
+  files: [ctxtra://dotfiles/work.md]
+  skills: [../skills/deploy]
+-- links.yaml --
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: work
+spec:
+  selector:
+    global: true
+  files: [ctxtra://dotfiles/own-link.md, ctxtra://dotfiles/team-link.md]
+-- ctx/outside.md --
+CTXMARK-OUTSIDE
+-- ctx/me.md --
+CTXMARK-NOTES
+-- own/own.md --
+CTXMARK-OWN
+-- dev/team/team.md --
+CTXMARK-TEAM
+-- dev/dotfiles/work.md --
+CTXMARK-DOT
+-- dev/dotfiles/skills/deploy/SKILL.md --
+---
+description: Deploy.
+---
+-- notes/.keep --

@@ -36,7 +36,7 @@ stdout 'claude: .*MISSING'
 -- .config/ctxtra/config.yaml --
 apiVersion: ctxtra/v1alpha1
 kind: Config
-include: [b.yaml]
+bindings: [b.yaml]
 -- .config/ctxtra/b.yaml --
 apiVersion: ctxtra/v1alpha1
 kind: Binding
@@ -68,7 +68,7 @@ spec:
 -- broken.yaml --
 apiVersion: ctxtra/v9
 kind: Config
-include: [b.yaml]
+bindings: [b.yaml]
 -- ctx/me.md --
 CTXMARK-PERSONAL
 -- ctx/notes.md --

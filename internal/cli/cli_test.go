@@ -27,7 +27,7 @@ spec:
   selector: {gitRepos: [{remote: github.com/acme/svc}]}
   files: [~/a.md, ~/gone.md]
 `)
-	testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: [b.yaml]\n")
+	testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n")
 
 	if code, out, errOut := run("files", r); code != 1 || out != filepath.Join(h, "a.md")+"\n" || !strings.Contains(errOut, "missing: "+filepath.Join(h, "gone.md")) {
 		t.Errorf("files: %d %q %q", code, out, errOut)

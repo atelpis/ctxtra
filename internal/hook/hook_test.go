@@ -16,7 +16,7 @@ func TestOutputPerAgent(t *testing.T) {
 	r := testenv.Repo(t, filepath.Join(h, "svc"), "")
 	testenv.Write(t, filepath.Join(h, "a.md"), "Rule A <&>")
 	testenv.Skill(t, filepath.Join(h, "s", "deploy"), "description: Deploy it.")
-	good := "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: [b.yaml]\n"
+	good := "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n"
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
 		"apiVersion: ctxtra/v1alpha1\nkind: Binding\nmetadata: {name: a}\nspec: {selector: {global: true}, files: [~/a.md], skills: [~/s/deploy]}\n")
 	testenv.Config(t, h, good)

@@ -116,10 +116,10 @@ func (f *Fixture) Clean(rels ...string) {
 	}
 }
 
-// Config writes the ctxtra config, which includes one binding file with
+// Config writes the ctxtra config, which lists one binding file with
 // the given YAML documents.
 func (f *Fixture) Config(bindings string) {
-	f.Write(".config/ctxtra/config.yaml", "apiVersion: ctxtra/v1alpha1\nkind: Config\ninclude: [bindings.yaml]\n")
+	f.Write(".config/ctxtra/config.yaml", "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [bindings.yaml]\n")
 	f.Write(".config/ctxtra/bindings.yaml", bindings)
 }
 
