@@ -95,7 +95,8 @@ ctxtra sync                 # review and accept new commits
 ctxtra sync --restore       # a new laptop: fetch exactly the accepted commits
 ```
 
-Full spec: [docs/spec.md](docs/spec.md).
+Full spec: [docs/spec.md](docs/spec.md). Use cases, from your own notes to a team repository you
+contribute to: [docs/scenarios.md](docs/scenarios.md).
 
 ## Check
 

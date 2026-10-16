@@ -4,6 +4,8 @@
 > content of the files you bind: an instruction file or skill is acted on like anything you type to the
 > agent. Bind only files you wrote or reviewed.
 
+For how this is meant to be used, step by step, see [scenarios.md](scenarios.md).
+
 ## Terms
 
 - **Session folder:** the folder an agent session starts in.
