@@ -36,7 +36,9 @@ Usage:
   ctxtra add --trust <folder>  add a folder of your own files as a trusted source
   ctxtra add ctxtra://<source>/<binding file>
                           add a binding file from a source you have
-  ctxtra sync [SOURCE]...  fetch pinned sources, show what changed, and accept it
+  ctxtra sync [--full] [SOURCE]...
+                          fetch pinned sources, show what changed, and accept it;
+                          --full shows changed files you don't use in full too
   ctxtra sync --restore [SOURCE]...
                           fetch exactly the commits in the config (a new laptop, a lost
                           store); changes nothing in the config

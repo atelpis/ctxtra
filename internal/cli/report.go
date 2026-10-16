@@ -11,6 +11,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 	"github.com/atelpis/ctxtra/internal/source"
+	"github.com/atelpis/ctxtra/internal/state"
 )
 
 // report implements the commands that show what a session gets.
@@ -36,6 +37,9 @@ func (r report) files(dir string) int {
 	}
 	for _, h := range res.Dropped {
 		fmt.Fprintf(r.Err, "dropped (over budget.maxChars): %s\n", h.Path)
+	}
+	for _, n := range res.Notices {
+		fmt.Fprintf(r.Err, "notice: %s\n", n)
 	}
 	if len(res.Problems) > 0 || len(res.Missing) > 0 {
 		return 1
@@ -172,6 +176,9 @@ func (r report) doctor(dir string) int {
 	for _, h := range res.Dropped {
 		fmt.Fprintf(r.Out, "  DROPPED (over budget.maxChars): %s\n", h.Path)
 	}
+	for _, n := range res.Notices {
+		fmt.Fprintf(r.Out, "  NOTICE: %s\n", n)
+	}
 	r.sizeWarnings(resolve.Chars(res.Render()), "  ")
 
 	fmt.Fprintln(r.Out, "\nhooks:")
@@ -232,5 +239,15 @@ func describeSource(s config.Source) string {
 	case !source.Has(s.Git, s.Commit):
 		return d + "pinned to " + source.Short(s.Commit) + ", NOT IN THE STORE (run: ctxtra sync --restore)"
 	}
-	return d + "pinned to " + source.Short(s.Commit)
+	d += "pinned to " + source.Short(s.Commit)
+	e := state.Load().Get(source.ID(s.Git), s.Git, s.Branch)
+	if e.LastCheck.IsZero() {
+		d += ", not checked for new commits on this machine yet"
+	} else {
+		d += ", last checked " + e.LastCheck.Format("2006-01-02 15:04")
+	}
+	if e.Dismissed != "" && e.Dismissed != s.Commit {
+		d += ", " + source.Short(e.Dismissed) + " not accepted (dismissed)"
+	}
+	return d
 }

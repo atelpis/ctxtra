@@ -82,3 +82,14 @@ func LogPath() string {
 	}
 	return filepath.Join(StateDir(), "log.jsonl")
 }
+
+// Rel returns p relative to root, slash-separated, when p is root (".") or
+// below it. The paths are compared by components as cleaned text, without
+// resolving symlinks: ..x is a name below root, .. is not.
+func Rel(root, p string) (string, bool) {
+	rel, err := filepath.Rel(root, filepath.Clean(p))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
+		return "", false
+	}
+	return filepath.ToSlash(rel), true
+}

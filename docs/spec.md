@@ -97,7 +97,8 @@ added ctxtra://team-ctx/bindings/billing.yaml
   `commit` is inactive until `ctxtra sync <name>`, which accepts the branch as it is, like `add`.
 - **The first version is accepted without review**, the same decision as cloning the repository: read a
   team repository before you add it. `add` shows its bindings and its executable files.
-- Accepting a commit accepts every file in it. `sync` shows the diff of every changed file.
+- Accepting a commit accepts **every file in it**, also files the review lists only by name: a file you
+  reference later is used at once, without another review.
 - Anyone who can edit your config can choose the version, for example through a dotfiles repository that
   others push to. A `commit` copied from another laptop was reviewed there.
 - A binding file in a pinned source may only reference files in the same source: relative paths, or
@@ -106,7 +107,7 @@ added ctxtra://team-ctx/bindings/billing.yaml
   declare sources: only your config does.
 - Files are read from ctxtra's store (below), never from a clone. Symlinks and submodules in the
   repository are left out.
-- ctxtra doesn't check for new commits by itself. Run `ctxtra sync` regularly.
+- ctxtra doesn't check for new commits by itself: sessions never fetch. Run `ctxtra sync` regularly.
 
 ### Commands
 
@@ -116,8 +117,45 @@ added ctxtra://team-ctx/bindings/billing.yaml
 | `ctxtra add ctxtra://<source>/<binding file>` | Adds a binding file of a source you have, at its accepted commit. |
 | `ctxtra add <binding file> [--trust] [--as NAME]` | Adds a binding file on your disk. A file in a repository with a remote needs `--trust`, which adds the repository as a `trusted-path` source. |
 | `ctxtra add --trust <folder> [--as NAME]` | Adds a folder as a `trusted-path` source. |
-| `ctxtra sync [SOURCE]...` | For each pinned source: makes sure the accepted commit is in the store, fetches the branch, shows the diff, and on `y` writes the new commit to the config. |
+| `ctxtra sync [--full] [SOURCE]...` | For each pinned source: makes sure the accepted commit is in the store, fetches the branch, shows what changed (below), and on `y` writes the new commit to the config. |
 | `ctxtra sync --restore [SOURCE]...` | Fetches exactly the commits in the config, and changes nothing in it. Use it on a new laptop, or when the store is gone. It fails when a commit can't be fetched (removed by a force-push, or never pushed). |
+
+### Review
+
+```text
+$ ctxtra sync
+team-ctx: abc1234 -> def5678 (main, git@github.com:acme/team-ctx.git)
+WARNING: binding billing in bindings/billing.yaml now applies to every session (was: github.com/acme/billing)
+diff --git a/bindings/billing.yaml b/bindings/billing.yaml
+...
+also changed, not used by you:
+  changed  README.md
+  added    tools/setup.sh  executable
+Accepting accepts these files too: a file you reference later is used without review. ctxtra sync --full shows them.
+Accept? [y/N]
+```
+
+- Shown in full: the files your config uses from the source with the accepted commit or with the new one,
+  under any selector. That is the binding files in `bindings`, every file and skill they reference, the
+  source's files and skills in your own bindings, and every file of a used skill. A reference that the new
+  commit removes shows too.
+- Every other changed file is listed by name with the kind of change: added, removed, changed, or mode.
+  `--full` shows them in full too.
+- A warning for every binding in the source's binding files whose selector changes, and for every new one:
+  the selector decides which sessions get the files.
+- Errors in the source's binding files that the new commit brings, for example a path outside the source.
+- The new commit is written to the store before the review. A commit over the limits fails there.
+
+When you answer `N`, ctxtra remembers the commit as dismissed. Sessions that use the source, `files` and
+`doctor` say `def5678 not accepted (dismissed)`. The next `sync` shows the review again.
+
+### Notices
+
+Sessions never fetch, so they can't know about new commits. When a session uses a pinned source that
+wasn't checked for 7 days, it says `team-ctx last checked 12 days ago; run ctxtra sync to check for
+changes` (Claude Code, Codex and Pi show it at session start, and `files` and `doctor` show it too). A
+check is a fetch of the branch that worked, by `add` or `sync`. A source that was never checked on this
+machine, for example after `sync --restore` on a new laptop, says so.
 
 When a new commit doesn't continue the accepted one, `sync` warns: the branch was force-pushed. Accepting
 it is still your choice.
@@ -131,13 +169,16 @@ config while `sync` waited for your answer, nothing is accepted.
 ### Store
 
 - `~/.ctxtra/git/<id>.git`: a bare repository per source.
-- `~/.ctxtra/store/<id>/<commit>/`: the files of each accepted commit, private and read-only. Sessions
+- `~/.ctxtra/store/<id>/<commit>/`: the files of each accepted commit, and of each commit `sync` showed you,
+  private and read-only. Sessions
   read only these, and only through `ctxtra://`: a plain path into the store is an error, because a
   pinned source's binding file read that way could reference any file. A missing commit is reported
   (`run: ctxtra sync --restore`), and the references to it are skipped; the rest of the binding still
   applies.
 - `<id>` comes from the URL: a source whose URL changes doesn't use the old data.
 - Old commits are not deleted yet.
+- `~/.ctxtra/state.json`: per source, the last check and the dismissed commit. It only feeds the notices:
+  losing it changes nothing a session gets.
 
 ### How ctxtra runs git
 

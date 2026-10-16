@@ -12,11 +12,13 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/atelpis/ctxtra/internal/config"
 	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/source"
+	"github.com/atelpis/ctxtra/internal/state"
 	"github.com/atelpis/ctxtra/internal/trust"
 )
 
@@ -26,6 +28,7 @@ type sources struct {
 	ctx  context.Context
 	file string // the config
 	in   *bufio.Reader
+	full bool // sync --full: show every changed file in full
 }
 
 func newSources(stdio IO) *sources {
@@ -240,6 +243,7 @@ func (s *sources) addGit(url, file, name, branch string) error {
 	if err != nil {
 		return err
 	}
+	s.checked(config.Source{Name: name, Git: url, Branch: branch})
 	fmt.Fprintf(s.Out, "added source %s (pinned: changes apply after `ctxtra sync`)\n", name)
 	if file != "" {
 		fmt.Fprintf(s.Out, "added %s\n", ref)
@@ -476,15 +480,19 @@ func (s *sources) showExecutables(r *source.Repo, commit string) {
 	}
 }
 
-const syncUsage = "usage: ctxtra sync [--restore] [SOURCE]...\n"
+const syncUsage = "usage: ctxtra sync [--full] [SOURCE]...\n       ctxtra sync --restore [SOURCE]...\n"
 
 func runSync(args []string, stdio IO) int {
-	f, names, err := parseArgs(args, nil, []string{"restore"})
-	if err != nil {
-		fmt.Fprintf(stdio.Err, "ctxtra sync: %v\n%s", err, syncUsage)
+	f, names, err := parseArgs(args, nil, []string{"restore", "full"})
+	if err != nil || f["restore"] != "" && f["full"] != "" {
+		if err != nil {
+			fmt.Fprintf(stdio.Err, "ctxtra sync: %v\n", err)
+		}
+		fmt.Fprint(stdio.Err, syncUsage)
 		return 2
 	}
 	s := newSources(stdio)
+	s.full = f["full"] != ""
 	cur, err := s.current()
 	if err != nil {
 		return s.fail("sync", err)
@@ -549,12 +557,16 @@ func (s *sources) sync(src config.Source, restore bool) error {
 	if err != nil {
 		return err
 	}
+	s.checked(src)
 	if commit == src.Commit {
+		// The branch is back at the accepted commit: nothing is dismissed.
+		s.record(src, func(e *state.Source) { e.Dismissed = "" })
 		fmt.Fprintf(s.Out, "%s: up to date (%s at %s)\n", src.Name, src.Branch, source.Short(commit))
 		return nil
 	}
-	diff, err := r.Diff(s.ctx, src.Commit, commit)
-	if err != nil {
+	// The new commit goes to the store before review: a commit over the
+	// limits fails here, and the review reads its binding files.
+	if _, err := r.Materialize(s.ctx, commit); err != nil {
 		return err
 	}
 	fmt.Fprintf(s.Out, "%s: %s -> %s (%s, %s)\n", src.Name, source.Short(src.Commit), source.Short(commit), src.Branch, src.Git)
@@ -562,24 +574,35 @@ func (s *sources) sync(src config.Source, restore bool) error {
 		fmt.Fprintf(s.Out, "WARNING: %s doesn't continue %s: the branch was force-pushed, or %s was never pushed\n",
 			source.Short(commit), source.Short(src.Commit), source.Short(src.Commit))
 	}
-	fmt.Fprint(s.Out, diff)
-	if !strings.HasSuffix(diff, "\n") && diff != "" {
-		fmt.Fprintln(s.Out)
+	if err := s.review(r, src, commit, s.full); err != nil {
+		return err
 	}
 	fmt.Fprint(s.Out, "Accept? [y/N] ")
 	answer, _ := s.in.ReadString('\n')
 	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
 		fmt.Fprintf(s.Out, "not accepted; you keep %s\n", source.Short(src.Commit))
+		s.record(src, func(e *state.Source) { e.Dismissed = commit })
 		return nil
-	}
-	if _, err := r.Materialize(s.ctx, commit); err != nil {
-		return err
 	}
 	if err := s.setCommit(src, commit); err != nil {
 		return err
 	}
+	s.record(src, func(e *state.Source) { e.Dismissed = "" })
 	fmt.Fprintf(s.Out, "accepted %s %s (commit: updated in %s)\n", src.Name, source.Short(commit), filepath.Base(s.file))
 	return nil
+}
+
+// record changes the local state of src. The state only feeds notices, so
+// an error is a warning.
+func (s *sources) record(src config.Source, change func(*state.Source)) {
+	if err := state.Update(source.ID(src.Git), src.Git, src.Branch, change); err != nil {
+		fmt.Fprintf(s.Err, "warning: can't write %s: %v\n", paths.Tilde(state.Path()), err)
+	}
+}
+
+// checked records a fetch of the branch that worked.
+func (s *sources) checked(src config.Source) {
+	s.record(src, func(e *state.Source) { e.LastCheck = time.Now() })
 }
 
 // first accepts the first commit of a source written by hand without one,
@@ -589,6 +612,7 @@ func (s *sources) first(src config.Source, r *source.Repo) error {
 	if err != nil {
 		return err
 	}
+	s.checked(src)
 	if _, err := r.Materialize(s.ctx, commit); err != nil {
 		return err
 	}

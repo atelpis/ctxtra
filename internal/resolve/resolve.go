@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 	"unicode/utf8"
 
 	"github.com/atelpis/ctxtra/internal/config"
 	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/gitrepo"
 	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/atelpis/ctxtra/internal/source"
+	"github.com/atelpis/ctxtra/internal/state"
 )
 
 // Hit is a file or a skill added to the session.
@@ -45,6 +48,7 @@ type Result struct {
 	Dropped  []Hit // over budget.maxChars
 	Missing  []string
 	Problems []string
+	Notices  []string // about the pinned sources the session uses
 	Trace    []Trace
 	MaxChars int
 }
@@ -75,7 +79,54 @@ func Resolve(dir string, cfg *config.Config, rd config.Reader) *Result {
 	}
 	res.dedupeSkillNames()
 	res.applyBudget()
+	res.addNotices(cfg)
 	return res
+}
+
+// checkAge is how old the last check for new commits may be before the
+// session says so. now is a variable for tests.
+var (
+	checkAge = 7 * 24 * time.Hour
+	now      = time.Now
+)
+
+// addNotices tells about the pinned sources the session uses: not checked
+// for new commits for a while (the hook never fetches, so this is all it
+// can know), or a newer commit the user didn't accept.
+func (r *Result) addNotices(cfg *config.Config) {
+	var st *state.State
+	for _, src := range cfg.Sources {
+		if !src.Pinned() || src.Commit == "" || !r.uses(src.Gen()) {
+			continue
+		}
+		if st == nil {
+			s := state.Load()
+			st = &s
+		}
+		e := st.Get(source.ID(src.Git), src.Git, src.Branch)
+		switch age := now().Sub(e.LastCheck); {
+		case e.LastCheck.IsZero():
+			r.Notices = append(r.Notices, src.Name+" not checked for new commits on this machine yet; run ctxtra sync")
+		case age > checkAge:
+			r.Notices = append(r.Notices, fmt.Sprintf("%s last checked %d days ago; run ctxtra sync to check for changes", src.Name, int(age.Hours()/24)))
+		}
+		if e.Dismissed != "" && e.Dismissed != src.Commit {
+			r.Notices = append(r.Notices, fmt.Sprintf("%s %s not accepted (dismissed); you have %s", src.Name, source.Short(e.Dismissed), source.Short(src.Commit)))
+		}
+	}
+}
+
+// uses reports whether the session gets a file or skill from under dir.
+func (r *Result) uses(dir string) bool {
+	dir = paths.Real(dir)
+	for _, list := range [][]Hit{r.Files, r.Skills, r.Dropped} {
+		for _, h := range list {
+			if _, ok := paths.Rel(dir, h.Path); ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (r *Result) apply(t *Trace, b config.Binding, l *loader) {

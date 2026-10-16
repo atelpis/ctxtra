@@ -83,3 +83,8 @@ func replace(path string, data []byte, mode os.FileMode) error {
 	}
 	return os.Rename(tmp.Name(), path)
 }
+
+// WriteFile writes data to path atomically, with mode, without a backup.
+func WriteFile(path string, data []byte, mode os.FileMode) error {
+	return replace(path, data, mode)
+}

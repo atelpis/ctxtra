@@ -23,6 +23,8 @@ func TestSummary(t *testing.T) {
 		"ctxtra: added 1 file (a.md); 1 not found, 2 over budget, 1 problem (run ctxtra doctor)": {
 			Files: files("a.md"), Missing: []string{"x"}, Dropped: files("b.md", "c.md"), Problems: []string{"p"}},
 		"ctxtra: added nothing; 2 problems (run ctxtra doctor)": {Problems: []string{"p", "q"}},
+		"ctxtra: added 1 file (a.md)\nctxtra: team last checked 9 days ago\nctxtra: n2": {
+			Files: files("a.md"), Notices: []string{"team last checked 9 days ago", "n2"}},
 	} {
 		if got := agent.Summary(res); got != want {
 			t.Errorf("got  %q\nwant %q", got, want)

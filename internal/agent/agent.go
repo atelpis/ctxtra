@@ -52,8 +52,8 @@ func AdditionalContext(event string, res *resolve.Result) any {
 const summaryNames = 3
 
 // Summary is a one-line message for the user about what the session got:
-// files by base name and skills by name. It is "" when ctxtra added
-// nothing and found no problem.
+// files by base name and skills by name, then one line per notice. It is ""
+// when ctxtra added nothing and has nothing to say.
 func Summary(res *resolve.Result) string {
 	if res == nil {
 		return ""
@@ -82,7 +82,7 @@ func Summary(res *resolve.Result) string {
 	if n := len(res.Problems); n > 0 {
 		issues = append(issues, plural(n, "problem"))
 	}
-	if len(added) == 0 && len(issues) == 0 {
+	if len(added) == 0 && len(issues) == 0 && len(res.Notices) == 0 {
 		return ""
 	}
 	s := "ctxtra: added nothing"
@@ -91,6 +91,9 @@ func Summary(res *resolve.Result) string {
 	}
 	if len(issues) > 0 {
 		s += "; " + strings.Join(issues, ", ") + " (run ctxtra doctor)"
+	}
+	for _, n := range res.Notices {
+		s += "\nctxtra: " + n
 	}
 	return s
 }

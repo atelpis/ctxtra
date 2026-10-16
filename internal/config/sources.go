@@ -218,6 +218,6 @@ func (c *Config) pin(p string) {
 
 // within reports whether p is root or below it, compared as cleaned paths.
 func within(root, p string) bool {
-	rel, err := filepath.Rel(root, filepath.Clean(p))
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
+	_, ok := paths.Rel(root, p)
+	return ok
 }

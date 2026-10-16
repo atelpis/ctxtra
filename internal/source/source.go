@@ -193,6 +193,7 @@ func (r *Repo) gitMax(ctx context.Context, repo bool, stdin io.Reader, max int, 
 		"GIT_CEILING_DIRECTORIES="+filepath.Dir(GitDir()),
 		"GIT_EXTERNAL_DIFF=",
 		"GIT_PAGER=cat",
+		"GIT_LITERAL_PATHSPECS=1",
 	)
 	cmd.Stdin = stdin
 	stdout := &capped{max: max}
@@ -418,16 +419,55 @@ func (r *Repo) IsAncestor(ctx context.Context, old, commit string) bool {
 }
 
 // Diff is the diff between two commits, for review: no external diff
-// drivers, no textconv, no color, control characters escaped.
-func (r *Repo) Diff(ctx context.Context, old, commit string) (string, error) {
+// drivers, no textconv, no color, control characters escaped. Every file
+// is shown as text: a NUL byte would otherwise make git show "Binary files
+// differ" for an instruction file whose text the session still gets. With
+// paths, only for those files; paths are literal, not patterns.
+func (r *Repo) Diff(ctx context.Context, old, commit string, paths ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, readTimeout)
 	defer cancel()
-	out, err := r.gitMax(ctx, true, nil, maxDiffOutput, "diff", "--no-ext-diff", "--no-textconv", "--no-color", "--find-renames",
-		"--end-of-options", old, commit)
+	args := []string{"diff", "--text", "--no-ext-diff", "--no-textconv", "--no-color"}
+	if len(paths) == 0 {
+		args = append(args, "--find-renames")
+	}
+	args = append(args, "--end-of-options", old, commit)
+	if len(paths) > 0 {
+		args = append(append(args, "--"), paths...)
+	}
+	out, err := r.gitMax(ctx, true, nil, maxDiffOutput, args...)
 	if err != nil {
 		return "", err
 	}
 	return Sanitize(string(out)), nil
+}
+
+// Change is a file that differs between two commits.
+type Change struct {
+	Path             string
+	Status           byte   // 'A' added, 'D' removed, 'M' changed, 'T' type changed (for example to a symlink)
+	OldMode, NewMode string // git modes, "000000" when absent
+	SameContent      bool   // only the mode changed
+}
+
+// Changes lists the files that differ between two commits, renames as a
+// removal and an addition.
+func (r *Repo) Changes(ctx context.Context, old, commit string) ([]Change, error) {
+	ctx, cancel := context.WithTimeout(ctx, readTimeout)
+	defer cancel()
+	out, err := r.git(ctx, true, nil, "diff", "--raw", "-z", "--no-renames", "--no-ext-diff", "--end-of-options", old, commit)
+	if err != nil {
+		return nil, err
+	}
+	var changes []Change
+	recs := strings.Split(strings.TrimSuffix(string(out), "\x00"), "\x00")
+	for i := 0; i+1 < len(recs); i += 2 {
+		f := strings.Fields(strings.TrimPrefix(recs[i], ":"))
+		if len(f) != 5 || len(f[4]) == 0 {
+			return nil, fmt.Errorf("unexpected diff output %q", Sanitize(recs[i]))
+		}
+		changes = append(changes, Change{Path: recs[i+1], Status: f[4][0], OldMode: f[0], NewMode: f[1], SameContent: f[2] == f[3]})
+	}
+	return changes, nil
 }
 
 // Entry is a regular file in a commit.
