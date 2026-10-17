@@ -79,19 +79,21 @@ def hero_body(c, w, h, top=0, animate=True, paths=True):
     b = [gradient(c)]
     t = top
     # The wordmark is drawn in layers that all hold the full "ctxtra_", so the glyphs line up in any
-    # monospace font. In step with the "_" cursor, the x switches between "ctx" (context) and "xtra" (extra).
-    def wordmark(ct, x, tra, caret, blink=None):
+    # monospace font. The x slowly changes between the color of "ctx" (context) and of "xtra" (extra).
+    def wordmark(ct, x, tra, caret, anim=""):
         paint = lambda fill: f'fill="{fill}"' if fill else 'fill="none"'
-        s = (f'<text x="62" y="{t+140}" font-family="{MONO}" font-size="104" font-weight="700" letter-spacing="-3">'
-             f'<tspan {paint(ct)}>ct</tspan><tspan {paint(x)}>x</tspan><tspan {paint(tra)}>tra</tspan>'
-             f'<tspan {paint(caret)}{f" stroke={chr(34)}{caret}{chr(34)} stroke-width={chr(34)}5{chr(34)}" if caret else ""}>_</tspan>')
-        if blink:
-            s += f'<animate attributeName="opacity" values="{blink}" calcMode="discrete" dur="1.2s" repeatCount="indefinite"/>'
-        return s + "</text>"
-    b.append(wordmark("url(#g)", None, c["TEXT"], None))
-    b.append(wordmark(None, "url(#g)", None, c["CYAN"], "1;0" if animate else None))
+        return (f'<text x="62" y="{t+140}" font-family="{MONO}" font-size="104" font-weight="700" letter-spacing="-3">'
+                f'<tspan {paint(ct)}>ct</tspan><tspan {paint(x)}>x</tspan><tspan {paint(tra)}>tra</tspan>'
+                f'<tspan {paint(caret)}{f" stroke={chr(34)}{caret}{chr(34)} stroke-width={chr(34)}5{chr(34)}" if caret else ""}>_</tspan>'
+                f'{anim}</text>')
+    b.append(wordmark("url(#g)", c["TEXT"], c["TEXT"], None))
     if animate:
-        b.append(wordmark(None, c["TEXT"], None, None, "0;1"))
+        b.append(wordmark(None, "url(#g)", None, None,
+                          '<animate attributeName="opacity" values="1;1;0;0;1" keyTimes="0;0.4;0.5;0.9;1" dur="6s" repeatCount="indefinite"/>'))
+        b.append(wordmark(None, None, None, c["CYAN"],
+                          '<animate attributeName="opacity" values="1;0" calcMode="discrete" dur="1.1s" repeatCount="indefinite"/>'))
+    else:
+        b.append(wordmark(None, "url(#g)", None, c["CYAN"]))
     b.append(f'<text x="64" y="{t+212}" font-size="38" font-weight="700" fill="{c["TEXT"]}">Context for coding agents,</text>')
     b.append(f'<text x="64" y="{t+258}" font-size="38" font-weight="700" fill="{c["TEXT"]}">keyed by git repo.</text>')
     b.append(f'<text x="64" y="{t+304}" font-size="19" fill="{c["MUTED"]}">Nothing written into your repos.</text>')
