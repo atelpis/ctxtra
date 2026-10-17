@@ -276,85 +276,250 @@ def team_sync(theme):
           "A team repository is pinned to a commit; new commits reach your sessions only after you accept them in ctxtra sync")
 
 
-# ---------------------------------------------------------------- what each approach gives you
+# ---------------------------------------------------------------- the story: out of the box, generators, ctxtra
 
-def compare(theme):
-    """Three columns: an agent out of the box, generator tools, ctxtra."""
+class Path:
+    """Straight and cubic segments, so dots can move at the same speed on every path."""
+
+    def __init__(self, x, y):
+        self.pts = [("M", (x, y))]
+
+    def L(self, x, y):
+        self.pts.append(("L", (x, y)))
+        return self
+
+    def C(self, a, b, e):
+        self.pts.append(("C", a, b, e))
+        return self
+
+    def d(self):
+        return " ".join(s[0] + " ".join(f"{x:g} {y:g}" for x, y in s[1:]) for s in self.pts)
+
+    def length(self):
+        n, cur = 0.0, self.pts[0][1]
+        for s in self.pts[1:]:
+            if s[0] == "L":
+                n += ((s[1][0] - cur[0]) ** 2 + (s[1][1] - cur[1]) ** 2) ** 0.5
+            else:
+                p0, (a, b, e) = cur, s[1:]
+                prev = p0
+                for k in range(1, 21):
+                    t = k / 20
+                    q = [(1 - t) ** 3 * p0[i] + 3 * (1 - t) ** 2 * t * a[i] + 3 * (1 - t) * t ** 2 * b[i] + t ** 3 * e[i] for i in (0, 1)]
+                    n += ((q[0] - prev[0]) ** 2 + (q[1] - prev[1]) ** 2) ** 0.5
+                    prev = q
+            cur = s[-1]
+        return n
+
+
+def story(theme):
+    """One loop, three slides: an agent out of the box, generator tools, ctxtra."""
     c = THEMES[theme]
-    w, h = 1280, 640
-    b = [frame(c, w, h), gradient(c)]
-    b.append(f'<text x="40" y="58" font-size="15" font-weight="700" letter-spacing="2" fill="{c["CYAN"]}">WHERE YOUR AGENT INSTRUCTIONS LIVE</text>')
-    b.append(f'<text x="40" y="92" font-size="25" font-weight="600" fill="{c["TEXT"]}">Out of the box, with a generator, and with ctxtra</text>')
-    cols = [
-        ("Agent out of the box", "each agent reads its own files", [
-            ("~/.claude/CLAUDE.md", "every repo", "DIM"),
-            ("~/.codex/AGENTS.md", "every repo", "DIM"),
-            ("~/dev/AGENTS.md", "parent folder", "DIM"),
-            ("~/dev/shop-api/", "", None),
-            ("  AGENTS.md", "in the repo", "AMBER"),
-            ("  api/AGENTS.md", "in the repo", "AMBER"),
-        ], [
-            (False, "Different files and places per agent"),
-            (False, "Personal notes: global, or in the project"),
-            (False, "Scoped by folder, not by repo identity"),
-        ]),
-        ("Generator tools", "one source, generated into each agent's files", [
-            ("~/dev/shop-api/", "", None),
-            ("  .ruler/  .rulesync/", "source", "DIM"),
-            ("  AGENTS.md", "generated", "AMBER"),
-            ("  CLAUDE.md", "generated", "AMBER"),
-            ("  .cursor/rules/", "generated", "AMBER"),
-            ("  .gitignore", "+ generated files", "AMBER"),
-            ("~/.claude/  ~/.codex/", "global mode", "DIM"),
-        ], [
-            (True, "One source for many agents"),
-            (False, "Writes generated files into projects"),
-            (False, "Regenerate after each change, or watch"),
-        ]),
-        ("ctxtra", "injected into the session at runtime", [
-            ("~/dev/shop-api/", "nothing added", "GREEN"),
-            ("  AGENTS.md", "the team's, untouched", "DIM"),
-            ("~/dotfiles/", "your package, live", "GREEN"),
-            ("  go-style.md  review/", "", None),
-            ("your-org/team-ctx", "shared, pinned", "CYAN"),
-            ("  services.md  deploy/", "", None),
-        ], [
-            (True, "All supported agents, one config"),
-            (True, "Nothing written into your projects"),
-            (True, "Local files, or shared repos you review"),
-            (True, "Target by folder, git remote or subpath"),
-            (True, "Every worktree, automatically"),
-        ]),
-    ]
-    cw, gap, x0, y0, ch = 384, 24, 40, 122, 486
-    for k, (title, sub, tree, verdicts) in enumerate(cols):
-        x = x0 + k * (cw + gap)
-        ours = k == 2
-        b.append(f'<rect x="{x}" y="{y0}" width="{cw}" height="{ch}" rx="14" fill="{c["PANEL"]}" '
-                 f'stroke="{"url(#g)" if ours else c["EDGE"]}" stroke-width="{2.5 if ours else 1}"/>')
-        b.append(f'<text x="{x+22}" y="{y0+40}" font-size="21" font-weight="700" fill="{c["TEXT"]}"'
-                 f'{f" font-family={chr(34)}{MONO}{chr(34)}" if ours else ""}>{escape(title)}</text>')
-        b.append(f'<text x="{x+22}" y="{y0+64}" font-size="15" fill="{c["MUTED"]}">{escape(sub)}</text>')
-        for n, (path, tag, col) in enumerate(tree):
-            y = y0 + 104 + n * 28
-            b.append(f'<text x="{x+22}" y="{y}" font-family="{MONO}" font-size="15" fill="{c["TEXT"]}" xml:space="preserve">{escape(path)}</text>')
-            if tag:
-                b.append(f'<text x="{x+cw-22}" y="{y}" font-size="14" fill="{c[col]}" text-anchor="end">{escape(tag)}</text>')
-        ly = y0 + 104 + 7 * 28 - 6
-        b.append(f'<line x1="{x+22}" y1="{ly}" x2="{x+cw-22}" y2="{ly}" stroke="{c["EDGE"]}"/>')
-        for n, (good, text) in enumerate(verdicts):
-            y = ly + 34 + n * 30
-            mark, mc = ("✓", c["GREEN"]) if good else ("✕", c["RED"])
-            b.append(f'<text x="{x+22}" y="{y}" font-size="17" font-weight="700" fill="{mc}">{mark}</text>')
-            b.append(f'<text x="{x+46}" y="{y}" font-size="16" fill="{c["TEXT"]}">{escape(text)}</text>')
-    write(f"compare-{theme}.svg", "\n".join(b), w, h,
-          "Where agent instructions live: out of the box each agent reads its own files, global or committed; "
-          "generator tools write generated files into every project; ctxtra injects them at runtime and writes nothing into your projects")
+    W, H, T = 880, 610, 46.0
+    S2, S3 = 7.0, 20.0  # slide starts
+    A, B, C, D = 172, 330, 440, 548  # rows: sources, projects, ctxtra or generate, agents
+    b = [frame(c, W, H, grid=True), gradient(c)]
+
+    def keys(pts):
+        if pts[0][0] > 0:
+            pts = [(0, pts[0][1])] + pts
+        if pts[-1][0] < T:
+            pts = pts + [(T, pts[-1][1])]
+        return ";".join(str(v) for _, v in pts), ";".join(f"{t/T:.4f}" for t, _ in pts), len(pts) - 1
+
+    def anim(attr, pts):
+        v, k, _ = keys(pts)
+        return f'<animate attributeName="{attr}" values="{v}" keyTimes="{k}" dur="{T}s" repeatCount="indefinite"/>'
+
+    def move(pts):
+        v, k, n = keys(pts)
+        return (f'<animateTransform attributeName="transform" type="translate" values="{v}" keyTimes="{k}" '
+                f'calcMode="spline" keySplines="{";".join(["0.3 0 0.2 1"] * n)}" dur="{T}s" repeatCount="indefinite"/>')
+
+    def win(a, z, f=0.4):
+        return anim("opacity", [(a, 0), (a + f, 1), (z - f, 1), (z, 0)])
+
+    def show(a, z, body, f=0.4):
+        return f'<g opacity="0">{win(a, z, f)}{body}</g>'
+
+    def mono(x, y, text, size=17, col="TEXT", anchor="start", weight="400"):
+        return (f'<text x="{x:g}" y="{y:g}" font-family="{MONO}" font-size="{size}" fill="{c[col]}" '
+                f'text-anchor="{anchor}" font-weight="{weight}">{escape(text)}</text>')
+
+    def box(cx, cy, w, text, col=None, h=44, stroke=None):
+        x, y = cx - w / 2, cy - h / 2
+        s = f'<rect x="{x:g}" y="{y:g}" width="{w}" height="{h}" rx="10" fill="{c["PANEL"]}" stroke="{c[stroke] if stroke else c["EDGE"]}"/>'
+        if col:
+            s += f'<circle cx="{x+20:g}" cy="{cy}" r="6" fill="{c[col]}"/>' + mono(x + 36, cy + 6, text)
+        else:
+            s += mono(x + 18, cy + 6, text, weight="700")
+        return s
+
+    def pill_w(name):
+        return 30 + len(name) * 9.2
+
+    def pill(cx, cy, name):
+        w = pill_w(name)
+        return (f'<rect x="{cx-w/2:g}" y="{cy-20}" width="{w:g}" height="40" rx="20" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>'
+                f'<text x="{cx:g}" y="{cy+6}" font-size="17" fill="{c["TEXT"]}" text-anchor="middle">{name}</text>')
+
+    def line(p, a, z, draw=None, col="LINE", op=None):
+        s = f'<path d="{p.d()}" fill="none" stroke="{c[col]}" stroke-width="2"'
+        if col != "LINE":
+            s += f' stroke-opacity="{c["EDGE_OP"]}"'
+        if draw:
+            s += ' pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"'
+        s += ">" + (anim("opacity", op) if op else win(a, z))
+        if draw:
+            s += anim("stroke-dashoffset", [(draw[0], 1), (draw[1], 0)])
+        return s + "</path>"
+
+    def flow(p, col, a, z, speed=150, gap=64, phase=0.0):
+        n_len = p.length()
+        dur, n = n_len / speed, max(1, round(n_len / gap))
+        s = f'<g opacity="0">{win(a, z, 0.3)}'
+        for i in range(n):
+            beg = f'begin="{-(i + phase) * dur / n:.2f}s" dur="{dur:.2f}s" repeatCount="indefinite"'
+            s += (f'<circle r="5" fill="{c[col]}" opacity="0"><animateMotion path="{p.d()}" {beg}/>'
+                  f'<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.06;0.9;1" {beg}/></circle>')
+        return s + "</g>"
+
+    def caption(text, a, z):
+        return show(a, z, f'<text x="{W/2}" y="110" font-size="19" fill="{c["TEXT"]}" text-anchor="middle">{escape(text)}</text>', 0.3)
+
+    # header: three tabs, the bar moves to the current one
+    tabs = [(150, "1  Out of the box", 0, S2), (440, "2  Generators", S2, S3), (730, "3  ctxtra", S3, T)]
+    for x, name, a, z in tabs:
+        b.append(f'<text x="{x}" y="54" font-size="19" font-weight="700" fill="{c["DIM"]}" text-anchor="middle" xml:space="preserve">{name}</text>')
+        b.append(show(a, z, f'<text x="{x}" y="54" font-size="19" font-weight="700" fill="{c["TEXT"]}" text-anchor="middle" xml:space="preserve">{name}</text>', 0.3))
+    b.append(f'<g><rect x="-100" y="66" width="200" height="3" rx="1.5" fill="url(#g)"/>'
+             + move([(0, "150 0"), (S2 - 0.3, "150 0"), (S2 + 0.3, "440 0"), (S3 - 0.3, "440 0"), (S3 + 0.3, "730 0"), (T - 0.3, "730 0"), (T, "150 0")])
+             + "</g>")
+
+    # ---- slide 1: one agent reads its own files
+    z = S2 - 0.1
+    b.append(line(Path(440, A + 22).L(440, B - 22), 0, z))
+    b.append(line(Path(440, B + 22).L(440, D - 20), 0, z))
+    b.append(flow(Path(440, A + 22).L(440, D - 20), "VIOLET", 0.6, z - 0.4))
+    b.append(flow(Path(440, B + 22).L(440, D - 20), "AMBER", 1.0, z - 0.4))
+    b.append(show(0, z, box(440, A, 300, "~/.claude/CLAUDE.md", "VIOLET") + box(440, B, 300, "my-proj/CLAUDE.md", "AMBER") + pill(440, D, "Claude Code")))
+    b.append(caption("Out of the box: one agent reads its own files, in your home and in the repo.", 0, z))
+
+    # ---- slide 2: a generator writes each agent's files into the project
+    s, z = S2, S3 - 0.1
+    gx, fx = 330, [132, 330, 528]
+    files, agents = ["CLAUDE.md", "AGENTS.md", ".cursor/rules/"], ["Claude Code", "Codex", "Cursor"]
+    b.append(line(Path(gx, A + 22).L(gx, 234), s, z))
+    for i, x in enumerate(fx):
+        b.append(line(Path(gx, 270).C((gx, 296), (x, 294), (x, 320)), s, z, draw=(s + 1.0, s + 1.4)))
+        b.append(line(Path(x, 360).L(x, D - 20), s, z, draw=(s + 1.2 + 0.2 * i, s + 1.6 + 0.2 * i)))
+        p = Path(gx, A + 22).L(gx, 270).C((gx, 296), (x, 294), (x, 320)).L(x, D - 20)
+        b.append(flow(p, "VIOLET", s + 1.8, s + 5.4))
+        b.append(flow(p, "VIOLET", s + 8.8, z - 0.4))
+    b.append(show(s, z,
+                  f'<rect x="28" y="298" width="604" height="84" rx="12" fill="none" stroke="{c["EDGE"]}"/>'
+                  + mono(28, 290, "my-proj/", 15, "MUTED") + mono(632, 290, "written by the generator", 14, "AMBER", "end")
+                  + box(gx, A, 220, "rules.md", "VIOLET") + mono(gx + 96, A + 5, "source", 13, "DIM", "end")
+                  + f'<rect x="{gx-80}" y="234" width="160" height="36" rx="18" fill="{c["BG"]}" stroke="{c["LINE"]}"/>'
+                  + mono(gx, 258, "$ generate", 16, "MUTED", "middle")
+                  + "".join(pill(x, D, n) for x, n in zip(fx, agents))))
+    # the generate button lights up on each run
+    b.append(f'<rect x="{gx-80}" y="234" width="160" height="36" rx="18" fill="none" stroke="{c["CYAN"]}" stroke-width="2.5" opacity="0">'
+             + anim("opacity", [(s + 0.6, 0), (s + 0.8, 1), (s + 1.4, 0), (s + 8.0, 0), (s + 8.2, 1), (s + 8.8, 0)]) + "</rect>")
+    for i, (x, name) in enumerate(zip(fx, files)):
+        b.append(show(s + 1.0 + 0.2 * i, z, box(x, 340, 188, name, "AMBER", 40), 0.3))
+        b.append(show(s + 5.8, s + 8.6, f'<rect x="{x-94}" y="320" width="188" height="40" rx="10" fill="{c["BG"]}" fill-opacity="0.55" '
+                      f'stroke="{c["RED"]}" stroke-width="2" stroke-dasharray="6 4"/>' + mono(x - 10, 376, "stale", 13, "RED", "end"), 0.3))
+    b.append(show(s + 5.2, s + 8.6, f'<rect x="{gx-110}" y="{A-22}" width="220" height="44" rx="10" fill="none" stroke="{c["AMBER"]}" stroke-width="2"/>'
+                  + mono(gx + 122, A + 6, "✎ edited", 15, "AMBER"), 0.3))
+    b.append(show(s + 9.2, z, f'<rect x="652" y="298" width="200" height="84" rx="12" fill="none" stroke="{c["RED"]}" stroke-opacity="0.7" stroke-dasharray="6 4"/>'
+                  + mono(652, 290, "new worktree/", 15, "MUTED")
+                  + f'<text x="752" y="346" font-size="17" fill="{c["RED"]}" text-anchor="middle">✕ no files yet</text>'))
+    b.append(caption("Generators: one source, written out as each agent's files in your project.", s, s + 5.2))
+    b.append(caption("Change the source, and those files are stale until you run it again.", s + 5.2, s + 9.0))
+    b.append(caption("A new clone or worktree gets nothing until you generate there too.", s + 9.0, z))
+
+    # ---- slide 3: ctxtra
+    s, z = S3, T - 0.1
+    l = lambda t: s + t
+    names = ["Claude Code", "Codex", "Pi", "OpenCode", "Cursor"]
+    gap_ = 14
+    total = sum(pill_w(n) for n in names) + gap_ * len(names) + 64
+    x, slots = W / 2 - total / 2, []
+    for n in names:
+        slots.append(x + pill_w(n) / 2)
+        x += pill_w(n) + gap_
+    more_x = x + 4
+
+    # the same start as slide 1
+    dim = [(s, 0), (l(0.5), 1), (l(3.4), 1), (l(4.0), 0.3), (z - 0.4, 0.3), (z, 0)]
+    b.append(line(Path(440, A + 22).L(440, B - 22), 0, 0, op=dim))
+    b.append(line(Path(440, B + 22).L(440, C - 23), s, z))
+    b.append(line(Path(440, C - 23).L(440, D - 20), s, l(4.4)))
+    b.append(flow(Path(440, A + 22).L(440, D - 20), "VIOLET", l(0.6), l(3.4)))
+    b.append(flow(Path(440, B + 22).L(440, D - 20), "AMBER", l(1.0), l(3.4)))
+    b.append(f'<g opacity="0">{anim("opacity", dim)}{box(440, A, 300, "~/.claude/CLAUDE.md", "VIOLET")}</g>')
+
+    # bindings: your folder into my-proj, a shared git repo into work-proj
+    cyan = Path(150, A + 22).L(150, B).L(440, B).L(440, C - 23)
+    lime = Path(730, A + 22).L(730, C).L(520, C)
+    b.append(line(cyan, s, z, draw=(l(8.4), l(9.0)), col="CYAN"))
+    b.append(line(Path(730, B + 22).L(730, C).L(520, C), l(13.0), z, draw=(l(13.4), l(13.9))))
+    b.append(line(Path(730, A + 22).L(730, B - 22), s, z, draw=(l(15.6), l(16.0)), col="LIME"))
+    fans = [Path(440, C + 23).C((440, 500), (x, 490), (x, D - 20)) for x in slots]
+    for p in fans:
+        b.append(line(p, l(5.0), z, draw=(l(5.0), l(5.6))))
+    b.append(flow(cyan, "CYAN", l(9.0), z - 0.4))
+    b.append(flow(lime, "LIME", l(16.2), z - 0.4))
+    for p in fans:
+        b.append(flow(p, "CYAN", l(9.6), z - 0.4, gap=90))
+        b.append(flow(p, "LIME", l(16.8), z - 0.4, gap=90, phase=0.5))
+
+    b.append(show(s, z, box(440, B, 300, "my-proj/CLAUDE.md", "AMBER")))
+    b.append(show(l(10.2), z, mono(580, B + 5, "+0 files", 13, "GREEN", "end")))
+    b.append(show(l(13.0), z, box(730, B, 240, "work-proj/")))
+    b.append(show(l(17.4), z, mono(840, B + 5, "+0 files", 13, "GREEN", "end")))
+
+    # ctxtra comes in, and the one agent becomes many
+    b.append(show(l(3.2), z, f'<g>{move([(l(3.2), "0 -70"), (l(4.0), "0 0")])}'
+                  f'<rect x="360" y="{C-23}" width="160" height="46" rx="12" fill="{c["BG"]}" stroke="url(#g)" stroke-width="2.5"/>'
+                  f'<text x="440" y="{C+8}" font-family="{MONO}" font-size="22" font-weight="700" text-anchor="middle">'
+                  f'<tspan fill="url(#g)">ctx</tspan><tspan fill="{c["TEXT"]}">tra</tspan></text></g>'))
+    for k, (n, x) in enumerate(zip(names, slots)):
+        if k == 0:
+            b.append(show(s, z, f'<g>{move([(l(4.2), "0 0"), (l(5.2), f"{x-440:g} 0")])}{pill(440, D, n)}</g>'))
+        else:
+            b.append(show(l(4.5), z, f'<g>{move([(l(4.2), f"{440-x:g} 0"), (l(5.2), "0 0")])}{pill(x, D, n)}</g>', 0.6))
+    b.append(show(l(5.0), z, f'<text x="{more_x:g}" y="{D+6}" font-size="17" fill="{c["MUTED"]}">+ more</text>'))
+
+    b.append(show(l(6.6), z, mono(45, A - 32, "~/notes/", 15, "MUTED") + box(150, A, 210, "go-style.md", "CYAN")))
+    b.append(show(l(13.8), z, mono(610, A - 32, "team repo (git), pinned", 15, "MUTED") + box(730, A, 240, "team.md", "LIME")))
+
+    def binding(cx, target, col, a, dx):
+        return show(a, z, f'<g>{move([(a, f"{dx} 0"), (a + 1.0, "0 0")])}'
+                    f'<rect x="{cx-105}" y="226" width="210" height="52" rx="10" fill="{c["BG"]}" stroke="{c[col]}" stroke-width="2"/>'
+                    + mono(cx - 90, 246, "binding", 13, "DIM")
+                    + mono(cx - 90, 268, f"→ {target}", 16) + "</g>", 0.5)
+    b.append(binding(150, "my-proj", "CYAN", l(7.4), -260))
+    b.append(binding(730, "work-proj", "LIME", l(14.6), 260))
+
+    b.append(caption("ctxtra: start from the same setup.", s, l(3.4)))
+    b.append(caption("Add ctxtra once. It hooks into every supported agent.", l(3.4), l(6.6)))
+    b.append(caption("Keep your own Markdown files in your own folder.", l(6.6), l(9.6)))
+    b.append(caption("A binding sends them to my-proj, for every agent and every worktree.", l(9.6), l(13.0)))
+    b.append(caption("Another project? Bind files from a shared git repo.", l(13.0), l(16.4)))
+    b.append(caption("It stays at the commit you accepted. Updates wait for your review.", l(16.4), l(20.6)))
+    b.append(caption("Two projects, two sources, every agent. Nothing written into either project.", l(20.6), z))
+
+    write(f"story-{theme}.svg", "\n".join(b), W, H,
+          "Out of the box, one agent reads its own files. Generators write each agent's files into your project and "
+          "need a rerun after every change and in every new worktree. ctxtra hooks into every agent and adds files "
+          "from your own folder or a pinned team repo, bound to each project, with nothing written into the projects")
 
 
 for theme in THEMES:
     hero(theme)
     team_sync(theme)
-    compare(theme)
+    story(theme)
 demo()
 social()

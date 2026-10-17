@@ -23,14 +23,14 @@ the agent runs it, and ctxtra adds the files that match that session's folder an
 `claude`, `codex` or `opencode`.
 
 <p align="center">
-  <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get four different sets of files from one config" width="100%">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/story-dark.svg">
+    <img src="docs/assets/story-light.svg" alt="Out of the box, one agent reads its own files. Generators write each agent's files into your project and need a rerun after every change and in every new worktree. ctxtra hooks into every agent and adds files from your own folder or a pinned team repo, bound to each project, with nothing written into the projects" width="100%">
+  </picture>
 </p>
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/compare-dark.svg">
-    <img src="docs/assets/compare-light.svg" alt="Where agent instructions live. Out of the box: each agent reads its own files, global or in the project. Generator tools: one source, but generated files written into projects. ctxtra: injected at runtime from your own folders or shared repos, nothing written into your projects, targeted by folder, git remote or subpath, every worktree automatically" width="100%">
-  </picture>
+  <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get four different sets of files from one config" width="100%">
 </p>
 
 ## Yes, it's prompt injection
