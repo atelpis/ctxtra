@@ -1,14 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="432" viewBox="0 0 1280 432" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
-<title>ctxtra: a package manager for agent context. Markdown instructions and skills, bound to your repos and worktrees, never installed into them</title>
+<title>ctxtra: context for coding agents, keyed by git repo. Nothing written into your repos, nothing to set up per worktree</title>
 <rect x="0.5" y="0.5" width="1279" height="431" rx="18" fill="#0B0F17" stroke="#243045"/>
 <defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#1A2230"/></pattern></defs><rect x="1" y="1" width="1278" height="430" rx="18" fill="url(#grid)"/>
 <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#A78BFA"/><stop offset="0.5" stop-color="#22D3EE"/><stop offset="1" stop-color="#A3E635"/></linearGradient></defs>
 <text x="62" y="140" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="104" font-weight="700" letter-spacing="-3"><tspan fill="url(#g)">ctx</tspan><tspan fill="#E6EDF3">tra</tspan></text>
 <rect x="438" y="66" width="14" height="80" fill="#22D3EE"><animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.5;1" dur="1.1s" repeatCount="indefinite"/></rect>
-<text x="64" y="212" font-size="38" font-weight="700" fill="#E6EDF3">A package manager</text>
-<text x="64" y="258" font-size="38" font-weight="700" fill="#E6EDF3">for agent context.</text>
-<text x="64" y="304" font-size="19" fill="#9AA6B8">Markdown instructions and skills, bound to your</text>
-<text x="64" y="331" font-size="19" fill="#9AA6B8">repos and worktrees, never installed into them.</text>
+<text x="64" y="212" font-size="38" font-weight="700" fill="#E6EDF3">Context for coding agents,</text>
+<text x="64" y="258" font-size="38" font-weight="700" fill="#E6EDF3">keyed by git repo.</text>
+<text x="64" y="304" font-size="19" fill="#9AA6B8">Nothing written into your repos.</text>
+<text x="64" y="331" font-size="19" fill="#9AA6B8">Nothing to set up per worktree.</text>
 <rect x="64" y="362" width="120" height="34" rx="17" fill="#121926" stroke="#243045"/>
 <text x="124" y="385" font-size="15" fill="#E6EDF3" text-anchor="middle">Claude Code</text>
 <rect x="191.9" y="362" width="66" height="34" rx="17" fill="#121926" stroke="#243045"/>

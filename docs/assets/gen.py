@@ -84,10 +84,10 @@ def hero_body(c, w, h, top=0, animate=True, paths=True):
     if animate:
         caret += '<animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.5;1" dur="1.1s" repeatCount="indefinite"/>'
     b.append(caret + "</rect>")
-    b.append(f'<text x="64" y="{t+212}" font-size="38" font-weight="700" fill="{c["TEXT"]}">A package manager</text>')
-    b.append(f'<text x="64" y="{t+258}" font-size="38" font-weight="700" fill="{c["TEXT"]}">for agent context.</text>')
-    b.append(f'<text x="64" y="{t+304}" font-size="19" fill="{c["MUTED"]}">Markdown instructions and skills, bound to your</text>')
-    b.append(f'<text x="64" y="{t+331}" font-size="19" fill="{c["MUTED"]}">repos and worktrees, never installed into them.</text>')
+    b.append(f'<text x="64" y="{t+212}" font-size="38" font-weight="700" fill="{c["TEXT"]}">Context for coding agents,</text>')
+    b.append(f'<text x="64" y="{t+258}" font-size="38" font-weight="700" fill="{c["TEXT"]}">keyed by git repo.</text>')
+    b.append(f'<text x="64" y="{t+304}" font-size="19" fill="{c["MUTED"]}">Nothing written into your repos.</text>')
+    b.append(f'<text x="64" y="{t+331}" font-size="19" fill="{c["MUTED"]}">Nothing to set up per worktree.</text>')
     x = 64
     for name in ["Claude Code", "Codex", "Pi", "OpenCode", "Cursor CLI"]:
         cw = 22 + len(name) * 8.9
@@ -151,7 +151,7 @@ def hero(theme):
     c = THEMES[theme]
     w, h = 1280, 432
     write(f"hero-{theme}.svg", frame(c, w, h, grid=True) + hero_body(c, w, h), w, h,
-          "ctxtra: a package manager for agent context. Markdown instructions and skills, bound to your repos and worktrees, never installed into them")
+          "ctxtra: context for coding agents, keyed by git repo. Nothing written into your repos, nothing to set up per worktree")
 
 
 def social():

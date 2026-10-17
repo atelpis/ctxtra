@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.svg">
-    <img src="docs/assets/hero-light.svg" alt="ctxtra: a package manager for agent context. Markdown instructions and skills, bound to your repos and worktrees, never installed into them" width="100%">
+    <img src="docs/assets/hero-light.svg" alt="ctxtra: context for coding agents, keyed by git repo. Nothing written into your repos, nothing to set up per worktree" width="100%">
   </picture>
 </p>
 
@@ -12,14 +12,22 @@
   <img src="https://img.shields.io/badge/status-preview-F59E0B" alt="Status: preview">
 </p>
 
-Bind Markdown instructions and skills to repos and worktrees across coding agents. ctxtra loads them into
-matching sessions without writing files into your projects. Keep personal packages in your dotfiles and shared
-packages in their own git repos: your edits reach the next session, and shared packages stay at the commit you
-accepted. ctxtra is not a generator, so there is nothing to generate, link or `.gitignore`.
+**Not another CLAUDE.md generator.** Bind instructions and skills to `github.com/acme/billing` once. Every
+clone and every worktree gets them at runtime, in every supported agent, including the worktree your agent
+created ten seconds ago.
+
+`0 files written to your repo` · `0 setup steps per worktree` · `0 symlinks`
 
 <p align="center">
   <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get four different sets of files from one config" width="100%">
 </p>
+
+## Yes, it's prompt injection
+
+ctxtra adds text to your agent's context. That is the whole point. You choose the instructions and skills,
+and which sessions get them. Team packages stay at the commit you accepted, and `ctxtra sync` shows changes
+and warns when a binding widens its scope. `ctxtra show DIR` prints the rendered instructions. You control
+what ctxtra adds and where; ctxtra doesn't make that content safe.
 
 ## Why ctxtra
 
@@ -41,10 +49,6 @@ accepted. ctxtra is not a generator, so there is nothing to generate, link or `.
 - **Remote packages, pinned and reviewed.** A team's package is served from the commit you accepted. `ctxtra sync`
   shows the diff and warns when a binding widens its scope, and sessions never fetch. Bindings in a pinned
   package can reference only that package's own files, never `~/.ssh` or anything else on your disk.
-- **Prompt injection you control.** Choose the instructions and skills, select the sessions that receive
-  them, and review shared updates before you accept a new commit. `ctxtra show DIR` prints the rendered
-  instructions, and `ctxtra explain DIR` explains the selection. The repo's own `AGENTS.md` and your
-  user-level files keep loading as before.
 
 ## Quick start
 
