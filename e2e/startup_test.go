@@ -54,6 +54,6 @@ spec:
 			Lacks("OTHER").
 			Order("TEAM", "WORK", "SVC", "PERSONAL")
 		s.Clean("dev/svc", "elsewhere/svc-feature")
-		s.hookRan("SessionStart", "session_start", "before_agent_start", "context", "sessionStart", "pre_llm_call")
+		s.hookRan("SessionStart", "session_start", "before_agent_start", "context", "sessionStart", "pre_llm_call", "startup")
 	})
 }

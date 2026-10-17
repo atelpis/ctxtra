@@ -58,8 +58,9 @@ func decide(api API, body map[string]any, script []Step) *call {
 	}
 	step := steps[len(results)]
 	if step.kind == "skill" {
-		// OpenCode's skill tool takes an id. Copilot's takes a name, but
-		// loads only its own skills: there the agent reads SKILL.md.
+		// OpenCode's skill tool takes an id. Copilot's and DSH's take a
+		// name, but load only their own skills: there the agent reads
+		// SKILL.md.
 		if _, schema, ok := findTool(api, body, "skill"); ok && hasParam(schema, "id") {
 			return &call{name: "skill", args: map[string]any{"id": step.name}}
 		}
@@ -69,14 +70,17 @@ func decide(api API, body map[string]any, script []Step) *call {
 	case "read":
 		for _, c := range []call{
 			{name: "Read", args: map[string]any{"file_path": step.path}},                            // Claude
-			{name: "read", args: map[string]any{"path": step.path}},                                 // Pi, OpenCode
+			{name: "read", args: map[string]any{"path": step.path}},                                 // Pi, OpenCode, DSH
 			{name: "view", args: map[string]any{"path": step.path}},                                 // Copilot
 			{name: "exec_command", args: map[string]any{"cmd": fmt.Sprintf("cat '%s'", step.path)}}, // Codex
 			{name: "read_file", args: map[string]any{"path": step.path}},                            // Muse, Hermes
 			{name: "view_file", args: map[string]any{"AbsolutePath": step.path, // Antigravity
 				"toolAction": "Reading file", "toolSummary": "File read"}},
 		} {
-			if ns, _, ok := findTool(api, body, c.name); ok {
+			if ns, schema, ok := findTool(api, body, c.name); ok {
+				if c.name == "read" && hasParam(schema, "file_path") { // DSH
+					c.args = map[string]any{"file_path": step.path}
+				}
 				c.namespace = ns
 				return &c
 			}

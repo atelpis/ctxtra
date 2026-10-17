@@ -1,8 +1,8 @@
 # Agent contract tests
 
 These tests run real agents (Claude Code, Codex CLI, Pi, OpenCode, GitHub Copilot CLI, Muse Code, Antigravity CLI,
-Hermes Agent) with ctxtra set up, and check what reaches the model. The model is a mock on `127.0.0.1` ([mock/](mock))
-that records every request and answers with
+Hermes Agent, DeepSeek Harness) with ctxtra set up, and check what reaches the model. The model is a mock on
+`127.0.0.1` ([mock/](mock)) that records every request and answers with
 text or a scripted tool call, so the tests are free and deterministic.
 
 Every run gets its own home folder, with the agents' config folders inside it, a minimal environment and
@@ -19,8 +19,10 @@ cd e2e
 go test -count=1 ./...                      # every agent found
 go test -count=1 . -agent claude            # one agent
 go test -count=1 ./... -run TestSkills -v   # one scenario, with each agent's version and timing
-go test -count=1 ./... -keep -v             # keep each run's home folder, and print where it is
+go test -count=1 . -keep -v                 # keep each run's home folder, and print where it is
 ```
+
+`-agent` and `-keep` exist only in the tests of this folder (`.`), not in `./...`.
 
 Always pass `-count=1`. The test cache doesn't know about ctxtra's sources (another module, built by
 the tests) or the agent binaries, so a cached pass can hide a change in either.
@@ -31,7 +33,7 @@ body, ctxtra's log and Claude's debug log in `DIR/<test>/run<N>`. CI uploads tha
 Agent binaries are found in this order:
 
 1. `$CTXTRA_E2E_CLAUDE`, `$CTXTRA_E2E_CODEX`, `$CTXTRA_E2E_PI`, `$CTXTRA_E2E_OPENCODE`, `$CTXTRA_E2E_COPILOT`,
-   `$CTXTRA_E2E_MUSE`, `$CTXTRA_E2E_ANTIGRAVITY`, `$CTXTRA_E2E_HERMES`
+   `$CTXTRA_E2E_MUSE`, `$CTXTRA_E2E_ANTIGRAVITY`, `$CTXTRA_E2E_HERMES`, `$CTXTRA_E2E_DSH`
 2. The pinned versions in `agents/`, installed with `agents/install.sh`. Muse Code isn't on npm:
    `agents/install-muse.mjs` downloads the version in `agents/muse.json` from Meta's release manifest and
    checks its sha256. Antigravity uses `agents/antigravity.lock` and a SHA-512 checked download to `agents/bin/agy`.
@@ -74,6 +76,8 @@ Not covered here, and checked by hand before a release:
 - Cursor Agent CLI: its model protocol can't be mocked.
 - The Antigravity App and IDE. They read the same hook file as the CLI.
 - Hermes with `plugins.isolation: host`.
+- DSH's web UI and TUI: the tests run its headless profile. DSH 0.2.0-rc.2's headless profile exits before a
+  subagent's first request, so `TestSubagent` needs 0.2.1 or later.
 - Whether a real model follows the files and skills.
 
 ## Add an agent
@@ -96,7 +100,7 @@ know Muse Code. By hand:
 ```bash
 cd e2e/agents
 npm install --ignore-scripts @anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest \
-  @opencode/cli@latest @github/copilot@latest
+  @opencode/cli@latest @github/copilot@latest @deepseek-ai/dsh@next
 node install-muse.mjs update   # pins the current Muse Code release in muse.json
 ./pin-antigravity.sh          # pins the Antigravity CLI release
 ./install.sh && cd .. && go test -count=1 ./...

@@ -1,7 +1,8 @@
 package e2e
 
 // Agent contract tests: each scenario runs real agents (Claude Code, Codex,
-// Pi, OpenCode, Copilot, Muse Code, Antigravity, Hermes) non-interactively against the mock model, with ctxtra set up in an
+// Pi, OpenCode, Copilot, Muse Code, Antigravity, Hermes, DeepSeek Harness)
+// non-interactively against the mock model, with ctxtra set up in an
 // isolated home folder, and checks what reaches the model.
 //
 //	go test -count=1 ./...                 every agent found
@@ -32,7 +33,7 @@ import (
 )
 
 var (
-	agentFlag  = flag.String("agent", "", "run only this agent (claude, codex, pi, opencode, copilot, muse, antigravity, hermes)")
+	agentFlag  = flag.String("agent", "", "run only this agent (claude, codex, pi, opencode, copilot, muse, antigravity, hermes, dsh)")
 	keepFlag   = flag.Bool("keep", false, "keep each run's home folder and log its path")
 	timeoutRun = flag.Duration("run-timeout", 3*time.Minute, "timeout of one agent run")
 )
@@ -84,7 +85,7 @@ func realHomeState() string {
 		".pi/agent/extensions/ctxtra.ts", ".config/opencode/plugins/ctxtra.ts", ".cursor/hooks.json",
 		".copilot/hooks/ctxtra.json", ".config/muse/settings.json",
 		".gemini/config/hooks.json", ".gemini/antigravity-cli/settings.json",
-		".hermes/plugins/ctxtra/__init__.py", ".hermes/config.yaml"} {
+		".hermes/plugins/ctxtra/__init__.py", ".hermes/config.yaml", ".dsh/ctxtra.mjs", ".dsh/cordis.patch.yml"} {
 		st, err := os.Stat(filepath.Join(home, p))
 		if err != nil {
 			fmt.Fprintf(&b, "%s:none ", p)
