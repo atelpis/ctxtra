@@ -215,6 +215,9 @@ func (r report) doctor(dir string) int {
 		if e.Error != "" {
 			status = "error: " + e.Error
 		}
+		if e.Skipped != "" {
+			status = "skipped: " + e.Skipped
+		}
 		fmt.Fprintf(r.Out, "  %s %s: %s %s\n", e.Harness, e.Event, e.Ts, status)
 	}
 	if ok {
