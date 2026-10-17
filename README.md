@@ -1,52 +1,120 @@
-# ctxtra
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.svg">
+    <img src="docs/assets/hero-light.svg" alt="ctxtra: a package manager for agent context. Markdown instructions and skills, bound to your repos and worktrees, never installed into them" width="100%">
+  </picture>
+</p>
 
-Add your own instruction files and skills to Claude Code, Codex CLI, Pi, OpenCode and Cursor Agent CLI sessions, for
-the folders and repositories you choose, in every worktree. Nothing is written into repositories, and the
-repo's own `AGENTS.md` and your user-level agent files keep working as before.
+<p align="center">
+  <a href="https://github.com/atelpis/ctxtra/actions/workflows/ci.yml"><img src="https://github.com/atelpis/ctxtra/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/atelpis/ctxtra/actions/workflows/e2e.yml"><img src="https://github.com/atelpis/ctxtra/actions/workflows/e2e.yml/badge.svg" alt="e2e against real agents"></a>
+  <img src="https://img.shields.io/github/go-mod/go-version/atelpis/ctxtra" alt="Go version">
+  <img src="https://img.shields.io/badge/status-preview-F59E0B" alt="Status: preview">
+</p>
 
-**Status: preview (`v0`, config `ctxtra/v1alpha1`).** The config format may still change. ctxtra does
-not check what the bound files say: bind only files you wrote or reviewed.
+Bind Markdown instructions and skills to repos and worktrees across coding agents. ctxtra loads them into
+matching sessions without writing files into your projects. Keep personal packages in your dotfiles and shared
+packages in their own git repos: your edits reach the next session, and shared packages stay at the commit you
+accepted. ctxtra is not a generator, so there is nothing to generate, link or `.gitignore`.
 
-## How it works
+<p align="center">
+  <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get four different sets of files from one config" width="100%">
+</p>
 
-`ctxtra setup` adds a session-start hook to each agent's user-level config. When a session starts, the
-hook reads your config, finds the bindings that match the session folder, and gives the agent the bound
-files and a list of the bound skills. Pi and OpenCode have no command hooks: for them, setup writes a small
-extension (`~/.pi/agent/extensions/ctxtra.ts`, `~/.config/opencode/plugins/ctxtra.ts`) that runs ctxtra.
+## Why ctxtra
 
-At session start, Claude Code, Codex and Pi also show you a one-line summary, for example
-`ctxtra: added 2 files (english.md, go-style.md) and 1 skill (deploy)`, and the number of problems
-found, if any. Cursor's session-start hook and OpenCode plugins can't
-show a message.
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/separate-dark.svg">
+    <img src="docs/assets/separate-light.svg" alt="Not a generator: the code repo, your package and your team's package stay apart; a session in a worktree gets files from both packages, and nothing is written into the code repo" width="100%">
+  </picture>
+</p>
 
-## Install
+- **Markdown packages, bound instead of installed.** A package is a folder or git repo of instruction files,
+  skills and binding files (a `source` in the config). Use your own, your team's, or both. Bindings decide
+  which sessions get which files: one file can go to many repos, and one repo can get files from many
+  packages.
+- **Worktrees just work.** Bindings by git remote or by the repository's main checkout match every linked
+  worktree, wherever it is on disk: `~/wt/`, `.orca/`, or a folder an agent created a minute ago. There is no
+  per-worktree step. Folder and `subpath` selectors can narrow a binding further, for example to one part of
+  a monorepo.
+- **Remote packages, pinned and reviewed.** A team's package is served from the commit you accepted. `ctxtra sync`
+  shows the diff and warns when a binding widens its scope, and sessions never fetch. Bindings in a pinned
+  package can reference only that package's own files, never `~/.ssh` or anything else on your disk.
+- **Prompt injection you control.** Choose the instructions and skills, select the sessions that receive
+  them, and review shared updates before you accept a new commit. `ctxtra show DIR` prints the rendered
+  instructions, and `ctxtra explain DIR` explains the selection. The repo's own `AGENTS.md` and your
+  user-level files keep loading as before.
+
+## Quick start
 
 ```bash
-go install ./cmd/ctxtra      # from a clone; puts the binary in $(go env GOPATH)/bin
-ctxtra setup --dry-run       # show what would change
-ctxtra setup                 # every agent found on this machine, or --agent claude --agent codex
+go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
+ctxtra setup --dry-run        # show which agent configs would change
+ctxtra setup                  # add the hook to every agent found on this machine
 ```
 
-`setup` adds hooks that run the binary you started it from, by its full path: agents started from the Dock
-often don't have `~/go/bin` in their `PATH`. It changes only its own hook entries and backs up each file it
-changes to `~/.ctxtra/backups`. Codex runs the hooks only after you trust them once (`/hooks` in Codex).
-`ctxtra setup --remove` removes them.
+Your package can be any folder or git repo of your own, for example your dotfiles. Put a binding file in it,
+`~/dev/dotfiles/ctxtra/bindings.yaml`:
 
-An upgrade in the same place needs no new setup. If the binary moves, run `ctxtra setup` again, and trust
-the hooks again in Codex; `doctor` shows which binary the hooks run and whether it exists.
+```yaml
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: go
+spec:
+  selector:
+    dirs:
+      - ~/dev/**                           # every repo under ~/dev, and all their worktrees
+    gitRepos:
+      - remote: github.com/acme/**         # and every acme repo, wherever it is cloned
+  files:
+    - ../go-style.md                       # relative to this file
+  skills:
+    - ../skills/review                     # a folder with a SKILL.md
+```
 
-## Configure
+```text
+$ ctxtra add --trust ~/dev/dotfiles/ctxtra/bindings.yaml
+created ~/.config/ctxtra/config.yaml
+added source dotfiles (trusted-path: ~/dev/dotfiles); changes apply right away
+added ctxtra://dotfiles/ctxtra/bindings.yaml
+  binding go: for ~/dev/**, github.com/acme/**
+    files: ~/dev/dotfiles/go-style.md
+    skills: ~/dev/dotfiles/skills/review
 
-`~/.config/ctxtra/config.yaml`:
+$ cd ~/dev/acme/billing && claude
+ctxtra: added 1 file (go-style.md) and 1 skill (review)
+```
+
+`--trust` tells ctxtra the repo is yours, so it reads it from disk and an edit reaches the next session. Commit
+and push the package like any other repo. `config.yaml` lists your packages and binding files; `ctxtra add`
+writes it.
+
+Already have notes in `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`? Move them into one file, bind it with
+`global: true` (see the setup below), and empty the old files so the text isn't added twice.
+
+<details>
+<summary>The setup behind the pictures: a personal package and a team package</summary>
+
+`~/.config/ctxtra/config.yaml` declares the two packages and which of their binding files you use:
 
 ```yaml
 apiVersion: ctxtra/v1alpha1
 kind: Config
+sources:
+  dotfiles:
+    trusted-path: ~/dev/dotfiles           # yours: read from disk, edits apply right away
+  team-ctx:
+    git: git@github.com:acme/team-ctx.git  # the team's: ctxtra keeps its own copy
+    branch: main
+    commit: '...'                          # the full commit ID you accepted; add and sync write it
 bindings:
-  - bindings.yaml
+  - ctxtra://dotfiles/ctxtra/bindings.yaml
+  - ctxtra://team-ctx/bindings/billing.yaml
 ```
 
-`~/.config/ctxtra/bindings.yaml`:
+`ctxtra/bindings.yaml` in your dotfiles:
 
 ```yaml
 apiVersion: ctxtra/v1alpha1
@@ -55,99 +123,236 @@ metadata:
   name: me
 spec:
   selector:
-    global: true
+    global: true                           # every session
   files:
-    - ~/notes/agents/me.md
+    - ../me.md                             # relative to this file
 ---
 apiVersion: ctxtra/v1alpha1
 kind: Binding
 metadata:
-  name: work
+  name: go
+spec:
+  selector:
+    dirs:
+      - ~/dev/**                           # also worktrees of repos under ~/dev, wherever they are
+  files:
+    - ../go-style.md
+```
+
+`bindings/billing.yaml` in the team's package:
+
+```yaml
+apiVersion: ctxtra/v1alpha1
+kind: Binding
+metadata:
+  name: billing
 spec:
   selector:
     gitRepos:
-      - remote: github.com/acme/**
+      - remote: github.com/acme/billing
   files:
-    - ~/notes/agents/work.md
+    - ../billing.md
   skills:
-    - ~/notes/skills/deploy
+    - ../skills/deploy
 ```
 
-Files in a git repository that has a remote are read only if you declare the repository as a source of
-your own files. Its content may come from other people, so ctxtra skips it otherwise and says how to trust
-it. Files outside git and in repositories without a remote are always read.
+</details>
 
-```yaml
-sources:
-  dotfiles:
-    trusted-path: ~/dev/dotfiles
-bindings:
-  - bindings.yaml
-  - ctxtra://dotfiles/ctxtra/work.yaml   # the same as ~/dev/dotfiles/ctxtra/work.yaml
+<details>
+<summary>All selectors</summary>
+
+A binding applies when any entry of its selector matches the folder the session starts in.
+
+| Selector | Matches |
+|---|---|
+| `global: true` | Every session. |
+| `dirs: [~/dev/work/**]` | The session folder, or the main checkout of its repository, so worktrees match wherever they are. |
+| `gitRepos: [{remote: github.com/acme/**}]` | Any clone with a matching remote, and its worktrees. `git@` and `https://` forms are the same. |
+| `gitRepos: [{remote: github.com/acme/mono, subpath: services/billing/**}]` | One part of a monorepo. |
+
+Files are plain Markdown, and skills are folders with a `SKILL.md`, the format the agents already use.
+Nothing in them is specific to ctxtra.
+
+</details>
+
+## How it compares
+
+| Approach | How context reaches the agent | Files in your project | A new linked worktree | Shared updates |
+|---|---|---|---|---|
+| Generators<br>(Ruler, Rulesync) | Generated native files | Project mode writes generated files | Gets the committed files, or generate again | Git workflow; locks in Rulesync |
+| Skill and package managers<br>(Vercel Skills, Skillshare, APM) | Copied or linked into agent folders | Project installs write into the project; global installs don't | Project installs: install again | Locks and audits in APM and Skillshare |
+| Runtime injectors<br>(CARL, Coder Config) | Hook at runtime | Global injection can avoid project files | Depends on directory scope or active workstream | No accepted-commit workflow found |
+| Personal overlays<br>(Skul) | Files written into each worktree | Local files; index flags for tracked shadows | `skul apply` in each worktree | Branch, tag or commit refs |
+| **ctxtra** | **User-level hooks, plugins or extensions** | **None** | **Matched by remote or main checkout** | **Pinned commit, diff review, scope-change warnings** |
+
+Representative workflows, from each tool's docs and source as of October 2026; most of them also have other
+modes. Each feature exists somewhere; ctxtra's point is the combination. It also does less: it manages
+Markdown context and skills only, with no MCP servers, permissions, commands, registries or dependency
+resolution.
+
+<details>
+<summary>Why not a symlink, an <code>@import</code> or <code>CLAUDE.local.md</code>?</summary>
+
+- A symlink from `~/.codex/AGENTS.md` to `~/.claude/CLAUDE.md` keeps two agents in sync, but it is still
+  global: every repository gets everything.
+- `@import` is Claude Code syntax; the other agents don't read it. A `CLAUDE.md` in a parent folder like
+  `~/dev` doesn't cover a worktree in `~/wt/` or `.orca/`.
+- `CLAUDE.local.md` must exist in each checkout, so a new worktree starts without it. `.git/info/exclude` can
+  hide local files in every worktree, but doesn't create or share them.
+
+</details>
+
+## Supported agents
+
+More are coming: an agent is one small package behind the `agent.Agent` interface. Supported today:
+
+| Agent | Runs as | Files go to | Skills | Summary at start | Subagents | e2e tested |
+|---|---|---|---|---|---|---|
+| Claude Code | hook | session context | listed, read when needed | yes | yes | yes |
+| Codex CLI | hook (trust once with `/hooks`) | session context | listed, read when needed | yes | yes | yes |
+| Pi | extension | context files | native skills | yes | (none in Pi) | yes |
+| OpenCode 2 | plugin | system prompt | native skills | no | yes | yes |
+| Cursor Agent CLI | hook | session context | listed, read when needed | no | no | no |
+
+The e2e suite runs the real agent binaries against a mock model that records every request, and checks
+what reaches the model. A nightly job runs it against the latest agent releases.
+
+`setup` changes only its own entries in the agents' user-level configs and backs up each file to
+`~/.ctxtra/backups`. `ctxtra setup --remove` removes them.
+
+## See exactly what the agent gets
+
+```text
+$ ctxtra explain ~/dev/side-project
+...
++ me (~/dev/dotfiles/ctxtra/bindings.yaml): global
+    file     ~/dev/dotfiles/me.md (83 chars)
++ go (~/dev/dotfiles/ctxtra/bindings.yaml): dirs ~/dev/** matches ~/dev/side-project
+    file     ~/dev/dotfiles/go-style.md (95 chars)
+- billing (~/.ctxtra/store/.../bindings/billing.yaml): gitRepos: not in a git repository
+
+total: 2 files, 0 skills, 737 chars (about 184 tokens)
 ```
 
-A team repository can be added by URL. ctxtra keeps its own copy and serves the commit you accepted; a
-new commit reaches your sessions after `ctxtra sync` shows you the diff and you accept it:
+The total counts the whole text the agent gets, with the header ctxtra puts before each file.
 
-```bash
-ctxtra add git@github.com:acme/team-ctx.git bindings/billing.yaml
-ctxtra sync                 # review and accept new commits
-ctxtra sync --restore       # a new laptop: fetch exactly the accepted commits
+Claude Code, and Codex by default, show the model only a preview of hook output above about 10,000
+characters. `explain` and `doctor` warn above that, and `budget.maxChars` in the config drops whole files
+from the end until the text fits.
+
+<details>
+<summary>All inspect commands</summary>
+
+| Command | Shows |
+|---|---|
+| `ctxtra files [DIR]` | The files and skills a session in DIR gets. |
+| `ctxtra show [DIR]` | The exact text the agent gets. |
+| `ctxtra explain [DIR]` | Every binding: matched or not, and why. |
+| `ctxtra doctor [DIR]` | Config problems, setup state, Codex trust, recent hook runs. |
+
+Every hook run is logged to `~/.ctxtra/log.jsonl`. The hook never breaks a session: a broken binding or a
+missing file is skipped and reported, and on any other error the hook adds nothing and logs the error.
+
+</details>
+
+## Share a package with your team
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/team-sync-dark.svg">
+    <img src="docs/assets/team-sync-light.svg" alt="A team repository is pinned to a commit; new commits reach your sessions only after you accept them in ctxtra sync" width="100%">
+  </picture>
+</p>
+
+A team keeps its service notes, conventions, skills and default bindings in one repository. You add it by
+URL, and ctxtra keeps its own copy and serves the commit you accepted, like a lockfile for prompts. A new
+commit reaches your sessions after `ctxtra sync` shows you the diff and you accept it.
+
+```text
+$ ctxtra add git@github.com:acme/team-ctx.git bindings/billing.yaml
+fetched team-ctx: main at abc1234 (git@github.com:acme/team-ctx.git)
+added source team-ctx (pinned: changes apply after `ctxtra sync`)
+added ctxtra://team-ctx/bindings/billing.yaml
+...
+
+$ ctxtra sync                 # later: you already accepted def5678, and the team pushed 1a2b3c4
+team-ctx: def5678 -> 1a2b3c4 (main, git@github.com:acme/team-ctx.git)
+WARNING: binding billing in bindings/billing.yaml now applies to every session (was: github.com/acme/billing)
+diff --git a/bindings/billing.yaml b/bindings/billing.yaml
+...
+Accept? [y/N] N
+not accepted; you keep def5678
 ```
 
-Full spec: [docs/spec.md](docs/spec.md). Use cases, from your own notes to a team repository you
-contribute to: [docs/scenarios.md](docs/scenarios.md).
+- Use the bindings the package ships, or leave them out and bind its files your own way:
+  `ctxtra://team-ctx/billing.md` works in your own binding files.
+- A team repository can reference only its own files: never `~/.ssh`, never a path outside it. It can't
+  declare sources, and its git hooks, submodules and symlinks are never used. A skill can still contain
+  scripts that the agent may run, so review skills like code.
+- The review shows in full every file you use. Other changed files are listed by name (`--full` shows them),
+  and accepting a commit accepts all of them.
+- The first version is accepted when you add it, the same decision as cloning. Read the repository first.
+- A new laptop gets exactly the accepted commits with `ctxtra sync --restore`.
 
-## Check
+## Trust
 
-```bash
-ctxtra files [DIR]      # files and skills a session in DIR gets; problems on stderr
-ctxtra show [DIR]       # the exact text the agent gets
-ctxtra explain [DIR]    # every binding: matched or not, and why
-ctxtra doctor [DIR]     # config problems, setup state, Codex trust, recent hook runs
-```
+ctxtra adds text to your agent's context, so it reads a file from disk only when the file is yours:
 
-Every hook run is logged to `~/.ctxtra/log.jsonl`. The hook never blocks a session: on any error it adds
-nothing and logs the error.
+- Outside git, or in a repository without a remote: read.
+- In a repository with a remote: read only if you add the repository as a trusted source
+  (`ctxtra add --trust ~/dev/dotfiles`). Otherwise the file is skipped, and `doctor` says how to trust it or
+  pin it.
+- A team repository: read from ctxtra's copy of the commit you accepted.
 
-## Limits
+ctxtra doesn't check what the files say. An instruction file is acted on like anything you type to the
+agent: bind only files you wrote or reviewed.
 
-- Claude, and Codex by default, show the model only a preview of large hook output (about 10,000
-  characters). `explain` and `doctor` warn above that.
-- Resumed sessions don't get the text again, because the transcript already has it. `/compact` and
-  `/clear` add it again in Claude and Codex.
+## How it's built
+
+- **One binary, many agent formats.** `setup` adds session-start and subagent-start hooks (Claude Code,
+  Codex), a session-start hook (Cursor), or a small extension that runs the binary (Pi, OpenCode). Each
+  agent is one package behind the `agent.Agent` interface; adding an agent means implementing it.
+- **Trust per repository.** A binding file in someone else's repository could add any file on your disk to
+  a session. Folders are compared as folders, not as text, so symlinks, case-insensitive disks and nested
+  repositories can't get around the check, which reads `.git` and the git config directly, without running
+  git.
+- **Git with the sharp edges removed.** Pinned sources are fetched into a bare repository: no checkout, no
+  hooks, no submodules, no LFS filters, no textconv. Paths are checked for case and Unicode collisions,
+  sizes are limited, and control characters in diffs are escaped.
+- **Config edits that keep your file.** `add` and `sync` edit your YAML as text and keep comments, validate
+  the result, write it atomically with a backup, and accept nothing if that source changed in the config
+  during the review.
+- **Contract tests against real agents**, as above, with pinned agent versions and a nightly run on the
+  latest ones.
+
+Details: [docs/spec.md](docs/spec.md).
+
+<details>
+<summary><b>Limits</b></summary>
+
+- In Claude Code, Codex and Cursor, resumed sessions don't get the text again, because the transcript
+  already has it. In Claude Code and Codex, `/compact` and `/clear` add it again. Pi and OpenCode add the
+  text to the system prompt of every request, so resumed sessions get it too.
 - A subagent gets the files when it starts, so it can see a newer version than its parent.
 - Codex asks you to trust a hook again after every change to it, for example after the binary moved.
-  `doctor` shows whether a trust record exists, but can't tell whether it is for the current hook.
-- OpenCode: only OpenCode 2 (tested with 2.0.29); version 1 plugins have another format. OpenCode adds the
-  text to every model request, not to the transcript, so resumed sessions get it too. Its background
-  service keeps the plugin loaded: when the bound skills change, they apply from the second model request
-  of the next session, or right away after `opencode service restart`.
+  `doctor` shows whether a trust record exists.
+- OpenCode: only OpenCode 2 (tested with 2.0.29).
+- `setup` follows `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `XDG_CONFIG_HOME` when they are set.
+- macOS and Linux. Windows isn't supported yet.
+
+</details>
+
+## Docs
+
+- [docs/scenarios.md](docs/scenarios.md): use cases step by step, from your own notes to a team repository you
+  contribute to, with the commands and what they print.
+- [docs/spec.md](docs/spec.md): the full config spec.
+
+**Status: preview.** The config format (`ctxtra/v1alpha1`) may still change.
 
 ## Development
 
 ```bash
-go test ./...             # unit tests and CLI tests; each uses its own temporary HOME; the Pi and OpenCode tests also need node
-cd e2e && go test -count=1 ./...   # real agents against a mock model; see e2e/README.md
+go test ./...                       # unit and CLI tests; the Pi and OpenCode tests also need node
+cd e2e && go test -count=1 ./...    # real agents against a mock model; see e2e/README.md
 ```
-
-The CLI tests in `cmd/ctxtra/testdata/script` run the built binary: `setup`, the inspection commands,
-and the hook commands that `setup` writes, the way an agent runs them. Run one with
-`go test ./cmd/ctxtra -run TestScript/<name>`.
-
-Layout:
-
-- `cmd/ctxtra`: the binary.
-- `internal/config`: loads and validates the config and binding files, and matches selectors.
-- `internal/resolve`: decides what a session gets and renders the text.
-- `internal/agent`: the `Agent` interface. One package per agent (`claude`, `codex`, `cursor`, `opencode`,
-  `pi`) with its hook setup and answer format; `hookjson` edits the JSON hook files they share; `extfile`
-  writes the extension files of Pi and OpenCode; `registry` lists them.
-  To add an agent, implement `agent.Agent` and add it to the registry.
-- `internal/hook`: the entry point the agents run, and the log.
-- `internal/setup`: finds the binary and runs each agent's setup.
-- `internal/cli`: the commands.
-- `internal/source`: fetches pinned sources with git and keeps their accepted commits in the store.
-- `internal/trust`: decides whether a file on disk may be read (outside git, no remote, or a trusted source).
-- Helpers: `gitrepo`, `fsutil` (bounded, non-blocking reads and atomic writes), `jsonorder`, `paths`,
-  `testenv` (tests only).
