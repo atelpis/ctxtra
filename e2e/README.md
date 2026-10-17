@@ -78,6 +78,9 @@ Not covered here, and checked by hand before a release:
 - Hermes with `plugins.isolation: host`.
 - DSH's web UI and TUI: the tests run its headless profile. DSH 0.2.0-rc.2's headless profile exits before a
   subagent's first request, so `TestSubagent` needs 0.2.1 or later.
+- Devin CLI and Devin Local: they need a Devin login before a session starts (also with `-p`), and get
+  models from Cognition's API server over an undocumented protocol, with no own API key or base URL. The
+  CLI test `setup_devin` covers the hook, and that Claude's hook adds nothing when Devin runs it.
 - Whether a real model follows the files and skills.
 
 ## Add an agent

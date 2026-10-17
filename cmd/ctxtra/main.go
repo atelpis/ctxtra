@@ -1,6 +1,7 @@
 // Command ctxtra adds personal and team instruction files and skills to
 // coding-agent sessions (Claude Code, Codex CLI, Pi, OpenCode, Hermes Agent,
-// Cursor Agent CLI, GitHub Copilot CLI, Muse Code, Antigravity).
+// Cursor Agent CLI, GitHub Copilot CLI, Muse Code, Antigravity, Devin CLI and
+// Devin Desktop).
 package main
 
 import (

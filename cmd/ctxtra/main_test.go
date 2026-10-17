@@ -127,7 +127,8 @@ func environ(ts *testscript.TestScript) []string {
 	for _, k := range []string{"PATH", "HOME", "TMPDIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
 		"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
 		"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR",
-		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "HERMES_HOME", "DSH_HOME", "GIT_SSL_NO_VERIFY"} {
+		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "HERMES_HOME", "DSH_HOME", "GIT_SSL_NO_VERIFY",
+		"DEVIN_PROJECT_DIR"} {
 		if v := ts.Getenv(k); v != "" {
 			env = append(env, k+"="+v)
 		}
@@ -161,9 +162,10 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	input, _ := json.Marshal(map[string]string{"cwd": dir, "hook_event_name": event, "source": "startup"})
 	var cmd *exec.Cmd
 	switch agent {
-	case "claude", "codex", "copilot", "muse":
+	case "claude", "codex", "copilot", "muse", "devin":
 		cfg := map[string]string{"claude": ".claude/settings.json", "codex": ".codex/hooks.json",
-			"copilot": ".copilot/hooks/ctxtra.json", "muse": ".config/muse/settings.json"}[agent]
+			"copilot": ".copilot/hooks/ctxtra.json", "muse": ".config/muse/settings.json",
+			"devin": ".config/devin/config.json"}[agent]
 		cmd = exec.Command("/bin/sh", "-c", hookCommand(ts, filepath.Join(home, cfg), event))
 	case "antigravity":
 		// No cwd in the input, and the hook runs in the hook file's folder.
@@ -212,8 +214,8 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 }
 
 // hookCommand is the one ctxtra command among the hooks for event in a
-// Claude, Codex or Muse hook file, or a flat one (Copilot) where each entry
-// is a handler.
+// Claude, Codex, Muse or Devin hook file, or a flat one (Copilot) where each
+// entry is a handler.
 func hookCommand(ts *testscript.TestScript, path, event string) string {
 	type handler struct{ Command string }
 	var cfg struct {

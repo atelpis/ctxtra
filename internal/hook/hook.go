@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/registry"
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/paths"
@@ -71,7 +72,16 @@ func Run(harness, event string, in io.Reader, out, errOut io.Writer) (code int) 
 		dir, _ = os.Getwd()
 	}
 	res, _ := resolve.Session(dir, paths.ConfigPath())
-	logEntry(newEntry(ts, harness, event, p, res, resolve.Chars(res.Render())))
+	e := newEntry(ts, harness, event, p, res, resolve.Chars(res.Render()))
+	if s, ok := a.(agent.Skipper); ok {
+		if e.Skipped = s.Skip(); e.Skipped != "" {
+			e.Chars = 0
+			logEntry(e)
+			fmt.Fprintln(out, empty)
+			return 0
+		}
+	}
+	logEntry(e)
 	for _, m := range res.Missing {
 		fmt.Fprintf(errOut, "ctxtra: bound file not found: %s\n", m)
 	}

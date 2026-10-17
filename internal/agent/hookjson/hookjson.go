@@ -1,5 +1,5 @@
 // Package hookjson edits the JSON hook configs of Claude Code, Codex CLI,
-// Muse Code, Cursor, Copilot CLI and Antigravity. It changes only ctxtra's own entries:
+// Muse Code, Cursor, Copilot CLI, Antigravity and Devin. It changes only ctxtra's own entries:
 // other tools' entries keep their content and order, and our entries are
 // updated in place, because Codex keys hook trust by position.
 package hookjson
@@ -27,8 +27,8 @@ type Config struct {
 	Path   string
 	Events []Event
 	// Flat is the layout of Cursor, Copilot and Antigravity: each entry is a handler.
-	// Otherwise (Claude, Codex, Muse) each entry is a group with a matcher and
-	// a list of handlers.
+	// Otherwise (Claude, Codex, Muse, Devin) each entry is a group with a matcher
+	// and a list of handlers.
 	Flat bool
 	// StatusMessage names the hook in Codex's /hooks review.
 	StatusMessage string

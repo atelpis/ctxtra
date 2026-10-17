@@ -3,11 +3,13 @@ package hook
 import (
 	"bytes"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
@@ -44,6 +46,10 @@ func TestOutputPerAgent(t *testing.T) {
 	}
 	if co := run("copilot", "sessionStart", input); !strings.Contains(co["additionalContext"].(string), "Rule A") {
 		t.Errorf("copilot: %v", co)
+	}
+	if d := run("devin", "SessionStart", input)["hookSpecificOutput"].(map[string]any); d["hookEventName"] != "SessionStart" ||
+		!strings.Contains(d["additionalContext"].(string), "Rule A") {
+		t.Errorf("devin: %v", d)
 	}
 	pi := run("pi", "before_agent_start", input)
 	if f, s := pi["files"].([]any), pi["skills"].([]any); len(f) != 1 || len(s) != 1 || s[0] != filepath.Join(h, "s", "deploy", "SKILL.md") {
@@ -83,12 +89,46 @@ func TestOutputPerAgent(t *testing.T) {
 		t.Errorf("unknown agent: %v", m)
 	}
 	b, err := os.ReadFile(filepath.Join(h, ".ctxtra", "log.jsonl"))
-	if err != nil || strings.Count(string(b), "\n") != 11 {
+	if err != nil || strings.Count(string(b), "\n") != 12 {
 		t.Errorf("log: %v %q", err, b)
 	}
-	// The malformed and unknown runs have no folder; the others are 8
+	// The malformed and unknown runs have no folder; the others are 9
 	// different agent and event pairs in this repository.
-	if runs := LastRuns(r, r); len(runs) != 8 || runs[0].Harness != "antigravity" {
+	if runs := LastRuns(r, r); len(runs) != 9 || runs[0].Harness != "antigravity" {
 		t.Errorf("last runs: %+v", runs)
+	}
+}
+
+// Devin also runs Claude's hooks. With ctxtra's Devin hook set up, Claude's
+// hook adds nothing there, and logs why; in Claude Code it works as usual.
+func TestClaudeHookUnderDevin(t *testing.T) {
+	h := testenv.Home(t)
+	r := testenv.Repo(t, filepath.Join(h, "svc"), "")
+	testenv.Write(t, filepath.Join(h, "a.md"), "Rule A")
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
+		"apiVersion: ctxtra/v1alpha1\nkind: Binding\nmetadata: {name: a}\nspec: {selector: {global: true}, files: [~/a.md]}\n")
+	testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n")
+	cmd, _ := json.Marshal(agent.Command("/bin/ctxtra", "devin", "SessionStart"))
+	testenv.Write(t, filepath.Join(h, ".config", "devin", "config.json"),
+		`{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": `+string(cmd)+`}]}]}}`)
+	run := func() string {
+		var out bytes.Buffer
+		Run("claude", "SessionStart", strings.NewReader(`{"cwd": "`+r+`"}`), &out, io.Discard)
+		return out.String()
+	}
+	if out := run(); !strings.Contains(out, "Rule A") {
+		t.Errorf("claude: %s", out)
+	}
+	t.Setenv("DEVIN_PROJECT_DIR", r)
+	if out := run(); strings.TrimSpace(out) != "{}" {
+		t.Errorf("claude under devin: %s", out)
+	}
+	if runs := LastRuns(r, r); len(runs) != 1 || !strings.HasPrefix(runs[0].Skipped, "run by Devin") || runs[0].Chars != 0 {
+		t.Errorf("last runs: %+v", runs)
+	}
+	// Without ctxtra's Devin hook, Claude's hook is the one that serves Devin.
+	testenv.Write(t, filepath.Join(h, ".config", "devin", "config.json"), `{}`)
+	if out := run(); !strings.Contains(out, "Rule A") {
+		t.Errorf("claude under devin, no devin hook: %s", out)
 	}
 }

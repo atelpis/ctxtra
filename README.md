@@ -1,9 +1,9 @@
 # ctxtra
 
 Add your own instruction files and skills to Claude Code, Codex CLI, Pi, OpenCode, Muse Code, Hermes Agent,
-DeepSeek Harness (dsh), Cursor Agent CLI, GitHub Copilot CLI and Antigravity sessions, for the folders and
-repositories you choose, in every worktree. Nothing is written into repositories, and the repo's own `AGENTS.md` and
-your user-level agent files keep working as before.
+DeepSeek Harness (dsh), Cursor Agent CLI, GitHub Copilot CLI, Antigravity and Devin (Devin CLI, and Devin Desktop,
+formerly Windsurf) sessions, for the folders and repositories you choose, in every worktree. Nothing is written into
+repositories, and the repo's own `AGENTS.md` and your user-level agent files keep working as before.
 
 **Status: preview (`v0`, config `ctxtra/v1alpha1`).** The config format may still change. ctxtra does
 not check what the bound files say: bind only files you wrote or reviewed.
@@ -17,6 +17,7 @@ extension (`~/.pi/agent/extensions/ctxtra.ts`, `~/.config/opencode/plugins/ctxtr
 For Copilot, setup writes a hook file of its own, `~/.copilot/hooks/ctxtra.json`.
 For Antigravity, setup adds a hook named `ctxtra` to `~/.gemini/config/hooks.json`, which the Antigravity
 CLI (`agy`), App and IDE share.
+For Devin, setup adds a hook to `~/.config/devin/config.json`, which Devin CLI and Devin Desktop share.
 Hermes's shell hooks don't get the session folder, so setup writes a Python plugin (`~/.hermes/plugins/ctxtra/`)
 that adds the text to the first message of each session.
 DSH's command hooks need an extra package, so setup writes a plugin, `~/.dsh/ctxtra.mjs`, and adds the row that
@@ -132,6 +133,11 @@ nothing and logs the error.
 - Muse Code (tested with 1.4.10) runs hooks with a cleared environment, so `CTXTRA_CONFIG` and `CTXTRA_LOG`
   don't reach the hook: Muse sessions use the default paths. A resumed Muse session runs the hook again, and
   Muse replaces the earlier text with the current version of the files.
+- Devin: the hook goes into `~/.config/devin/config.json`, which Devin CLI and Devin Desktop's agent both
+  read. Devin has no subagent hook. It allows comments in that file; `setup` leaves such a file alone. Devin
+  also runs the hooks in `~/.claude/settings.json`: with both set up, Claude's hook adds nothing in Devin
+  sessions (`doctor` shows it as skipped). Checked by the CLI tests only, not with the real agent, which
+  needs a Devin login. Windsurf's old Cascade agent isn't supported: its hooks can't add context.
 - OpenCode: only OpenCode 2 (tested with 2.0.29); version 1 plugins have another format. OpenCode adds the
   text to every model request, not to the transcript, so resumed sessions get it too. Its background
   service keeps the plugin loaded: when the bound skills change, they apply from the second model request
@@ -167,9 +173,9 @@ Layout:
 - `internal/config`: loads and validates the config and binding files, and matches selectors.
 - `internal/resolve`: decides what a session gets and renders the text.
 - `internal/agent`: the `Agent` interface. One package per agent (`antigravity`, `claude`, `codex`, `copilot`,
-  `cursor`, `dsh`, `hermes`, `muse`, `opencode`, `pi`) with its hook setup and answer format; `hookjson` edits the
-  JSON hook files they share; `extfile` writes the extension files of Pi, OpenCode, Hermes and DSH; `registry` lists
-  them.
+  `cursor`, `devin`, `dsh`, `hermes`, `muse`, `opencode`, `pi`) with its hook setup and answer format; `hookjson`
+  edits the JSON hook files they share; `extfile` writes the extension files of Pi, OpenCode, Hermes and DSH;
+  `registry` lists them.
   To add an agent, implement `agent.Agent` and add it to the registry.
 - `internal/hook`: the entry point the agents run, and the log.
 - `internal/setup`: finds the binary and runs each agent's setup.

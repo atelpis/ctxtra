@@ -85,7 +85,8 @@ func realHomeState() string {
 		".pi/agent/extensions/ctxtra.ts", ".config/opencode/plugins/ctxtra.ts", ".cursor/hooks.json",
 		".copilot/hooks/ctxtra.json", ".config/muse/settings.json",
 		".gemini/config/hooks.json", ".gemini/antigravity-cli/settings.json",
-		".hermes/plugins/ctxtra/__init__.py", ".hermes/config.yaml", ".dsh/ctxtra.mjs", ".dsh/cordis.patch.yml"} {
+		".hermes/plugins/ctxtra/__init__.py", ".hermes/config.yaml", ".dsh/ctxtra.mjs", ".dsh/cordis.patch.yml",
+		".config/devin/config.json"} {
 		st, err := os.Stat(filepath.Join(home, p))
 		if err != nil {
 			fmt.Fprintf(&b, "%s:none ", p)
