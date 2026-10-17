@@ -2,7 +2,7 @@
 // model, in a fixture's home folder. Each supported agent has one Driver.
 //
 // To add an agent: implement Driver in a new file, add it to All, and pin
-// its version in agents.lock. See ../README.md.
+// its version in agents/package.json. See ../README.md.
 package driver
 
 import (
@@ -64,7 +64,7 @@ type Options struct {
 }
 
 // All is every driver.
-var All = []Driver{Claude{}, Codex{}, Pi{}, OpenCode{}, Copilot{}, Muse{}}
+var All = []Driver{Claude{}, Codex{}, Pi{}, OpenCode{}, Copilot{}, Muse{}, Antigravity{}}
 
 // Has reports whether d declares c.
 func Has(d Driver, c Cap) bool {
@@ -77,7 +77,7 @@ func Has(d Driver, c Cap) bool {
 }
 
 // Binary finds the agent's executable: $CTXTRA_E2E_<NAME> if set, then the
-// pinned version installed by `go run ./install`, then PATH.
+// pinned version installed by agents/install.sh, then PATH.
 func Binary(d Driver) (string, error) {
 	exe := d.Executable()
 	env := "CTXTRA_E2E_" + strings.ToUpper(d.Name())
@@ -89,7 +89,7 @@ func Binary(d Driver) (string, error) {
 	}
 	p, err := exec.LookPath(exe)
 	if err != nil {
-		return "", fmt.Errorf("%s not found: install it, run `go run ./install`, or set %s", exe, env)
+		return "", fmt.Errorf("%s not found: install it, run agents/install.sh, or set %s", exe, env)
 	}
 	return p, nil
 }

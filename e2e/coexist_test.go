@@ -63,6 +63,12 @@ export default function (pi: any) {
 	});
 }
 `)
+	case "antigravity":
+		// Hooks are keyed by name, and the answer is JSON.
+		answer := s.Path("other-tool/answer.json")
+		s.Write("other-tool/answer.json", `{"injectSteps": [{"systemMessage": {"systemMessage": "CTXMARK-OTHERTOOL"}}]}`)
+		cmd := `/bin/sh -c 'cat >/dev/null; /bin/cat ` + answer + `'`
+		s.Write(".gemini/config/hooks.json", `{"other-tool": {"SessionStart": [{"type": "command", "command": "`+cmd+`"}]}}`)
 	case "opencode":
 		s.Write(".config/opencode/plugins/other-tool.ts", `import { readFileSync } from "node:fs";
 export default {

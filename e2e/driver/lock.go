@@ -7,7 +7,7 @@ import (
 )
 
 // pinned returns exe as installed by agents/install.sh, at the version in
-// agents/package-lock.json, or for Muse in agents/muse.json.
+// agents/package-lock.json, agents/muse.json (Muse), or agents/antigravity.lock (Antigravity).
 func pinned(exe string) (string, bool) {
 	_, file, _, ok := runtime.Caller(0)
 	if !ok {

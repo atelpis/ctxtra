@@ -22,6 +22,7 @@ const maxInput = 10 << 20
 type payload struct {
 	Cwd            string   `json:"cwd"`
 	WorkspaceRoots []string `json:"workspace_roots"` // Cursor
+	WorkspacePaths []string `json:"workspacePaths"`  // Antigravity
 	Source         string   `json:"source"`
 	AgentType      string   `json:"agent_type"`
 }
@@ -61,6 +62,10 @@ func Run(harness, event string, in io.Reader, out, errOut io.Writer) (code int) 
 	dir := p.Cwd
 	if dir == "" && len(p.WorkspaceRoots) > 0 {
 		dir = p.WorkspaceRoots[0]
+	}
+	// Antigravity runs hooks in the hook file's folder, not the session's.
+	if dir == "" && len(p.WorkspacePaths) > 0 {
+		dir = p.WorkspacePaths[0]
 	}
 	if dir == "" {
 		dir, _ = os.Getwd()

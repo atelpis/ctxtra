@@ -65,3 +65,26 @@ spec:
 		t.Errorf("setup dry run: %d %q", code, out)
 	}
 }
+
+// Antigravity's limit is in bytes: the same number of characters warns for
+// it when they take three bytes each, not when they take one.
+func TestSizeWarnings(t *testing.T) {
+	h := testenv.Home(t)
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
+		"apiVersion: ctxtra/v1alpha1\nkind: Binding\nmetadata: {name: me}\nspec: {selector: {global: true}, files: [~/a.md]}\n")
+	testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n")
+	for _, tc := range []struct {
+		content     string
+		antigravity bool
+	}{
+		{strings.Repeat("a", 17000), false},
+		{strings.Repeat("界", 17000), true}, // 51,000 bytes
+	} {
+		testenv.Write(t, filepath.Join(h, "a.md"), tc.content)
+		_, out, _ := run("explain", h)
+		if !strings.Contains(out, "claude shows the model only a preview") ||
+			strings.Contains(out, "antigravity drops the rest") != tc.antigravity {
+			t.Errorf("%d bytes: warnings:\n%s", len(tc.content), out)
+		}
+	}
+}

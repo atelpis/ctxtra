@@ -8,11 +8,15 @@ import (
 
 // BodyText flattens a request body to the text the model sees, each part
 // prefixed with its role: the system prompt or instructions first, then the
-// messages (or Responses input items) in order.
+// messages (or Responses input items, or Gemini contents) in order.
 func BodyText(body map[string]any) string {
 	var parts []string
-	for _, key := range []string{"system", "instructions"} {
-		switch v := body[key].(type) {
+	for _, key := range []string{"system", "instructions", "systemInstruction"} {
+		v := body[key]
+		if m, ok := v.(map[string]any); ok { // Gemini: {"parts": [...]}
+			v = m["parts"]
+		}
+		switch v := v.(type) {
 		case string:
 			parts = append(parts, "["+key+"] "+v)
 		case []any:
@@ -27,6 +31,9 @@ func BodyText(body map[string]any) string {
 	if items == nil {
 		items, _ = body["input"].([]any)
 	}
+	if items == nil {
+		items, _ = body["contents"].([]any)
+	}
 	for _, it := range items {
 		m, ok := it.(map[string]any)
 		if !ok {
@@ -40,6 +47,9 @@ func BodyText(body map[string]any) string {
 		if !ok {
 			c = m["output"]
 		}
+		if c == nil {
+			c = m["parts"] // Gemini
+		}
 		switch c := c.(type) {
 		case string:
 			parts = append(parts, "["+role+"] "+c)
@@ -52,6 +62,9 @@ func BodyText(body map[string]any) string {
 				t := str(bm["text"])
 				if t == "" {
 					t = jsonText(bm["content"])
+				}
+				if fr, ok := bm["functionResponse"].(map[string]any); ok { // Gemini
+					t = jsonText(fr["response"])
 				}
 				parts = append(parts, "["+role+"] "+t)
 			}
@@ -85,9 +98,9 @@ func Count(text, name string) int {
 // userTexts is the user-written text in a request, without tool results.
 func userTexts(api API, body map[string]any) []string {
 	var out []string
-	key := "messages"
-	if api == Responses {
-		key = "input"
+	key := map[API]string{Responses: "input", Gemini: "contents"}[api]
+	if key == "" {
+		key = "messages"
 	}
 	items, _ := body[key].([]any)
 	for _, it := range items {
@@ -98,7 +111,11 @@ func userTexts(api API, body map[string]any) []string {
 		if api == Responses && m["type"] != nil && m["type"] != "message" {
 			continue
 		}
-		switch c := m["content"].(type) {
+		content := m["content"]
+		if api == Gemini {
+			content = m["parts"]
+		}
+		switch c := content.(type) {
 		case string:
 			out = append(out, c)
 		case []any:
@@ -107,7 +124,7 @@ func userTexts(api API, body map[string]any) []string {
 				if !ok {
 					continue
 				}
-				if api != Responses && str(bm["type"]) != "text" {
+				if api != Responses && api != Gemini && str(bm["type"]) != "text" {
 					continue
 				}
 				out = append(out, str(bm["text"]))
@@ -144,6 +161,18 @@ func toolResults(api API, body map[string]any) []string {
 		for _, it := range items {
 			if m, ok := it.(map[string]any); ok && (m["type"] == "function_call_output" || m["type"] == "custom_tool_call_output") {
 				out = append(out, jsonText(m["output"]))
+			}
+		}
+	case Gemini:
+		contents, _ := body["contents"].([]any)
+		for _, c := range contents {
+			cm, _ := c.(map[string]any)
+			parts, _ := cm["parts"].([]any)
+			for _, p := range parts {
+				if pm, ok := p.(map[string]any); ok && pm["functionResponse"] != nil {
+					fr, _ := pm["functionResponse"].(map[string]any)
+					out = append(out, jsonText(fr["response"]))
+				}
 			}
 		}
 	}

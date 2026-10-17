@@ -1,7 +1,7 @@
 package e2e
 
 // Agent contract tests: each scenario runs real agents (Claude Code, Codex,
-// Pi, OpenCode, Copilot, Muse Code) non-interactively against the mock model, with ctxtra set up in an
+// Pi, OpenCode, Copilot, Muse Code, Antigravity) non-interactively against the mock model, with ctxtra set up in an
 // isolated home folder, and checks what reaches the model.
 //
 //	go test -count=1 ./...                 every agent found
@@ -32,7 +32,7 @@ import (
 )
 
 var (
-	agentFlag  = flag.String("agent", "", "run only this agent (claude, codex, pi, opencode, copilot, muse)")
+	agentFlag  = flag.String("agent", "", "run only this agent (claude, codex, pi, opencode, copilot, muse, antigravity)")
 	keepFlag   = flag.Bool("keep", false, "keep each run's home folder and log its path")
 	timeoutRun = flag.Duration("run-timeout", 3*time.Minute, "timeout of one agent run")
 )
@@ -82,7 +82,8 @@ func realHomeState() string {
 	var b strings.Builder
 	for _, p := range []string{".claude/settings.json", ".codex/hooks.json", ".codex/config.toml",
 		".pi/agent/extensions/ctxtra.ts", ".config/opencode/plugins/ctxtra.ts", ".cursor/hooks.json",
-		".copilot/hooks/ctxtra.json", ".config/muse/settings.json"} {
+		".copilot/hooks/ctxtra.json", ".config/muse/settings.json",
+		".gemini/config/hooks.json", ".gemini/antigravity-cli/settings.json"} {
 		st, err := os.Stat(filepath.Join(home, p))
 		if err != nil {
 			fmt.Fprintf(&b, "%s:none ", p)
@@ -346,10 +347,20 @@ func (x Text) Contains(s string) Text {
 // events (each agent names its events differently).
 func (s *Session) hookRan(events ...string) {
 	s.t.Helper()
+	s.hookRanTimes(1, events...)
+}
+
+// hookRanTimes fails the test unless ctxtra's log has at least n runs of
+// the events.
+func (s *Session) hookRanTimes(n int, events ...string) {
+	s.t.Helper()
+	runs := 0
 	for _, e := range s.Log() {
 		if e.Harness == s.agent.Name() && slices.Contains(events, e.Event) && e.Error == "" {
-			return
+			runs++
 		}
 	}
-	s.t.Errorf("no %s hook run of %v in ctxtra's log: %+v", s.agent.Name(), events, s.Log())
+	if runs < n {
+		s.t.Errorf("%d %s hook runs of %v in ctxtra's log, want %d or more: %+v", runs, s.agent.Name(), events, n, s.Log())
+	}
 }

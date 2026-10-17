@@ -3,6 +3,7 @@ package registry
 
 import (
 	"github.com/atelpis/ctxtra/internal/agent"
+	"github.com/atelpis/ctxtra/internal/agent/antigravity"
 	"github.com/atelpis/ctxtra/internal/agent/claude"
 	"github.com/atelpis/ctxtra/internal/agent/codex"
 	"github.com/atelpis/ctxtra/internal/agent/copilot"
@@ -12,7 +13,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/agent/pi"
 )
 
-var all = []agent.Agent{claude.Agent{}, codex.Agent{}, pi.Agent{}, opencode.Agent{}, muse.Agent{}, cursor.Agent{}, copilot.Agent{}}
+var all = []agent.Agent{claude.Agent{}, codex.Agent{}, pi.Agent{}, opencode.Agent{}, muse.Agent{}, cursor.Agent{}, copilot.Agent{}, antigravity.Agent{}}
 
 // All returns every supported agent.
 func All() []agent.Agent { return all }

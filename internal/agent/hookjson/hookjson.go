@@ -1,5 +1,5 @@
 // Package hookjson edits the JSON hook configs of Claude Code, Codex CLI,
-// Muse Code, Cursor and Copilot CLI. It changes only ctxtra's own entries:
+// Muse Code, Cursor, Copilot CLI and Antigravity. It changes only ctxtra's own entries:
 // other tools' entries keep their content and order, and our entries are
 // updated in place, because Codex keys hook trust by position.
 package hookjson
@@ -26,7 +26,7 @@ type Config struct {
 	Agent  string
 	Path   string
 	Events []Event
-	// Flat is the layout of Cursor and Copilot: each entry is a handler.
+	// Flat is the layout of Cursor, Copilot and Antigravity: each entry is a handler.
 	// Otherwise (Claude, Codex, Muse) each entry is a group with a matcher and
 	// a list of handlers.
 	Flat bool
@@ -39,6 +39,15 @@ type Config struct {
 	// Own is a file that only ctxtra writes (Copilot): --remove deletes it
 	// when nothing but the version is left.
 	Own bool
+	// Key overrides the top-level event list key (Antigravity uses "ctxtra").
+	Key string
+}
+
+func (c Config) key() string {
+	if c.Key == "" {
+		return "hooks"
+	}
+	return c.Key
 }
 
 // Apply adds, updates or removes our entries and writes the file when it
@@ -49,10 +58,10 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		return err
 	}
 	hooks := jsonorder.NewMap()
-	if v, ok := data.Get("hooks"); ok {
+	if v, ok := data.Get(c.key()); ok {
 		h, ok := v.(*jsonorder.Map)
 		if !ok {
-			return fmt.Errorf("%s: \"hooks\" is not an object; left alone", c.Path)
+			return fmt.Errorf("%s: %q is not an object; left alone", c.Path, c.key())
 		}
 		hooks = h
 	}
@@ -65,7 +74,7 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		if v, ok := hooks.Get(ev.Name); ok {
 			arr, ok := v.([]any)
 			if !ok {
-				return fmt.Errorf("%s: hooks.%s is not a list; left alone", c.Path, ev.Name)
+				return fmt.Errorf("%s: %s.%s is not a list; left alone", c.Path, c.key(), ev.Name)
 			}
 			list = arr
 		}
@@ -110,9 +119,9 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		if _, ok := data.Get(c.versionKey()); c.Version != 0 && add && !ok {
 			data.Set(c.versionKey(), c.Version)
 		}
-		data.Set("hooks", hooks)
+		data.Set(c.key(), hooks)
 	} else {
-		data.Delete("hooks")
+		data.Delete(c.key())
 	}
 	// A symlink (for example into a dotfiles repo) is not deleted: its
 	// target is written below, like any other change.
@@ -157,7 +166,7 @@ func (c Config) Commands() (map[string][]Command, error) {
 	}
 	out := map[string][]Command{}
 	for _, ev := range c.Events {
-		for gi, e := range entries(data, ev.Name) {
+		for gi, e := range c.entries(data, ev.Name) {
 			if c.Flat {
 				if cmd, ok := ourCommand(commandOf(e)); ok {
 					out[ev.Name] = append(out[ev.Name], Command{cmd, gi, 0})
@@ -356,8 +365,8 @@ func commandOf(h any) any {
 }
 
 // entries returns the hook list for one event, or nil.
-func entries(data *jsonorder.Map, event string) []any {
-	hv, _ := data.Get("hooks")
+func (c Config) entries(data *jsonorder.Map, event string) []any {
+	hv, _ := data.Get(c.key())
 	hooks, ok := hv.(*jsonorder.Map)
 	if !ok {
 		return nil

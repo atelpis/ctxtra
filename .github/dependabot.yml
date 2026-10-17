@@ -1,6 +1,7 @@
 version: 2
 updates:
-  # Agent pins for the e2e tests: each bump is a PR that runs e2e.
+  # Agent pins for the e2e tests: each bump is a PR that runs e2e. The
+  # Antigravity CLI isn't on npm: e2e/agents/pin-antigravity.sh updates it.
   - package-ecosystem: npm
     directory: /e2e/agents
     schedule:

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/registry"
 	"github.com/atelpis/ctxtra/internal/config"
 	"github.com/atelpis/ctxtra/internal/hook"
@@ -128,20 +129,26 @@ func (r report) explain(dir string) int {
 			fmt.Fprintf(r.Out, "  %s\n", p)
 		}
 	}
-	total := resolve.Chars(res.Render())
+	text := res.Render()
+	total := resolve.Chars(text)
 	fmt.Fprintf(r.Out, "\ntotal: %d files, %d skills, %d chars (about %d tokens)", len(res.Files), len(res.Skills), total, total/4)
 	if res.MaxChars > 0 {
 		fmt.Fprintf(r.Out, ", budget.maxChars %d", res.MaxChars)
 	}
 	fmt.Fprintln(r.Out)
-	r.sizeWarnings(total, "")
+	r.sizeWarnings(text, "")
 	return 0
 }
 
-func (r report) sizeWarnings(total int, indent string) {
+// sizeWarnings warns about each agent whose limit text is over.
+func (r report) sizeWarnings(text, indent string) {
+	chars := resolve.Chars(text)
 	for _, a := range registry.All() {
-		if l := a.PreviewLimit(); l > 0 && total > l {
-			fmt.Fprintf(r.Out, "%sWARNING: %d chars; over about %d, %s shows the model only a preview\n", indent, total, l, a.Name())
+		if l := a.PreviewLimit(); l > 0 && chars > l {
+			fmt.Fprintf(r.Out, "%sWARNING: %d chars; over about %d, %s shows the model only a preview\n", indent, chars, l, a.Name())
+		}
+		if b, ok := a.(agent.ByteLimiter); ok && b.ByteLimit() > 0 && len(text) > b.ByteLimit() {
+			fmt.Fprintf(r.Out, "%sWARNING: %d bytes; over about %d, %s drops the rest\n", indent, len(text), b.ByteLimit(), a.Name())
 		}
 	}
 }
@@ -182,7 +189,7 @@ func (r report) doctor(dir string) int {
 	for _, n := range res.Notices {
 		fmt.Fprintf(r.Out, "  NOTICE: %s\n", n)
 	}
-	r.sizeWarnings(resolve.Chars(res.Render()), "  ")
+	r.sizeWarnings(res.Render(), "  ")
 
 	fmt.Fprintln(r.Out, "\nhooks:")
 	for _, a := range registry.All() {
