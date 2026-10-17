@@ -1,7 +1,7 @@
 // Package hookjson edits the JSON hook configs of Claude Code, Codex CLI,
-// Cursor and Copilot CLI. It changes only ctxtra's own entries: other tools' entries keep
-// their content and order, and our entries are updated in place, because
-// Codex keys hook trust by position.
+// Muse Code, Cursor and Copilot CLI. It changes only ctxtra's own entries:
+// other tools' entries keep their content and order, and our entries are
+// updated in place, because Codex keys hook trust by position.
 package hookjson
 
 import (
@@ -26,14 +26,16 @@ type Config struct {
 	Agent  string
 	Path   string
 	Events []Event
-	// Flat is the layout of Cursor and Copilot: each entry is a handler. Otherwise (Claude,
-	// Codex) each entry is a group with a matcher and a list of handlers.
+	// Flat is the layout of Cursor and Copilot: each entry is a handler.
+	// Otherwise (Claude, Codex, Muse) each entry is a group with a matcher and
+	// a list of handlers.
 	Flat bool
 	// StatusMessage names the hook in Codex's /hooks review.
 	StatusMessage string
-	// Version is written as the top-level "version" if missing (Cursor,
-	// Copilot).
-	Version int
+	// Version is written as the top-level VersionKey if missing: "version"
+	// (the default) for Cursor and Copilot, "schema_version" for Muse.
+	Version    int
+	VersionKey string
 	// Own is a file that only ctxtra writes (Copilot): --remove deletes it
 	// when nothing but the version is left.
 	Own bool
@@ -105,8 +107,8 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		}
 	}
 	if len(hooks.Keys) > 0 {
-		if _, ok := data.Get("version"); c.Version != 0 && add && !ok {
-			data.Set("version", c.Version)
+		if _, ok := data.Get(c.versionKey()); c.Version != 0 && add && !ok {
+			data.Set(c.versionKey(), c.Version)
 		}
 		data.Set("hooks", hooks)
 	} else {
@@ -114,7 +116,7 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 	}
 	// A symlink (for example into a dotfiles repo) is not deleted: its
 	// target is written below, like any other change.
-	_, version := data.Get("version")
+	_, version := data.Get(c.versionKey())
 	if st, err := os.Lstat(c.Path); err == nil && st.Mode().IsRegular() && c.Own && !add && len(data.Keys) == 1 && version {
 		r.Changes = append(r.Changes, c.Path)
 		if o.DryRun {
@@ -138,6 +140,13 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		r.Changes = append(r.Changes, path)
 	}
 	return err
+}
+
+func (c Config) versionKey() string {
+	if c.VersionKey == "" {
+		return "version"
+	}
+	return c.VersionKey
 }
 
 // Commands returns our hook commands by event, in file order.

@@ -20,8 +20,8 @@ func Read(path string) Step { return Step{kind: "read", path: path} }
 // agents without one, read its SKILL.md at path.
 func LoadSkill(name, path string) Step { return Step{kind: "skill", name: name, path: path} }
 
-// StartSubagent makes the agent start a subagent with SubagentTask. In Codex,
-// where subagents run in the background, it then also waits for it.
+// StartSubagent makes the agent start a subagent with SubagentTask. In Codex
+// and Muse, where subagents run in the background, it then also waits for it.
 func StartSubagent() Step { return Step{kind: "subagent"} }
 
 func (s Step) String() string {
@@ -72,6 +72,7 @@ func decide(api API, body map[string]any, script []Step) *call {
 			{name: "read", args: map[string]any{"path": step.path}},                                 // Pi, OpenCode
 			{name: "view", args: map[string]any{"path": step.path}},                                 // Copilot
 			{name: "exec_command", args: map[string]any{"cmd": fmt.Sprintf("cat '%s'", step.path)}}, // Codex
+			{name: "read_file", args: map[string]any{"path": step.path}},                            // Muse
 		} {
 			if ns, _, ok := findTool(api, body, c.name); ok {
 				c.namespace = ns
@@ -93,7 +94,18 @@ func decide(api API, body map[string]any, script []Step) *call {
 		if ns, _, ok := findTool(api, body, "spawn_agent"); ok {
 			return &call{namespace: ns, name: "spawn_agent", args: map[string]any{"message": SubagentTask}}
 		}
+		if ns, _, ok := findTool(api, body, "subagent_spawn"); ok { // Muse
+			return &call{namespace: ns, name: "subagent_spawn", args: map[string]any{"command_id": "e2e-spawn",
+				"role": "probe", "objective": SubagentTask}}
+		}
 	case "wait":
+		if ns, _, ok := findTool(api, body, "subagent_wait"); ok { // Muse
+			args := map[string]any{"command_id": "e2e-wait", "wait_for": "result_ready", "timeout_ms": 60000}
+			if ids := uuidRe.FindAllString(results[len(results)-1], -1); len(ids) > 0 {
+				args["subagent_id"] = ids[0]
+			}
+			return &call{namespace: ns, name: "subagent_wait", args: args}
+		}
 		ns, schema, ok := findTool(api, body, "wait_agent")
 		if !ok {
 			return nil

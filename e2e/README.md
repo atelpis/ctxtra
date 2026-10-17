@@ -1,7 +1,7 @@
 # Agent contract tests
 
-These tests run real agents (Claude Code, Codex CLI, Pi, OpenCode, GitHub Copilot CLI) with ctxtra set up, and
-check what reaches the model. The model is a mock on `127.0.0.1` ([mock/](mock)) that records every request and answers with
+These tests run real agents (Claude Code, Codex CLI, Pi, OpenCode, GitHub Copilot CLI, Muse Code) with ctxtra set
+up, and check what reaches the model. The model is a mock on `127.0.0.1` ([mock/](mock)) that records every request and answers with
 text or a scripted tool call, so the tests are free and deterministic.
 
 Every run gets its own home folder, with the agents' config folders inside it, a minimal environment and
@@ -16,7 +16,7 @@ This folder is a separate Go module: `go test ./...` at the repository root does
 ```bash
 cd e2e
 go test -count=1 ./...                      # every agent found
-go test -count=1 ./... -agent claude        # one agent
+go test -count=1 . -agent claude            # one agent
 go test -count=1 ./... -run TestSkills -v   # one scenario, with each agent's version and timing
 go test -count=1 ./... -keep -v             # keep each run's home folder, and print where it is
 ```
@@ -29,8 +29,11 @@ body, ctxtra's log and Claude's debug log in `DIR/<test>/run<N>`. CI uploads tha
 
 Agent binaries are found in this order:
 
-1. `$CTXTRA_E2E_CLAUDE`, `$CTXTRA_E2E_CODEX`, `$CTXTRA_E2E_PI`, `$CTXTRA_E2E_OPENCODE`, `$CTXTRA_E2E_COPILOT`
-2. The pinned versions in `agents/`, installed with `agents/install.sh`
+1. `$CTXTRA_E2E_CLAUDE`, `$CTXTRA_E2E_CODEX`, `$CTXTRA_E2E_PI`, `$CTXTRA_E2E_OPENCODE`, `$CTXTRA_E2E_COPILOT`,
+   `$CTXTRA_E2E_MUSE`
+2. The pinned versions in `agents/`, installed with `agents/install.sh`. Muse Code isn't on npm:
+   `agents/install-muse.mjs` downloads the version in `agents/muse.json` from Meta's release manifest and
+   checks its sha256
 3. `PATH`
 
 An agent that isn't found is skipped; with `CTXTRA_E2E_REQUIRE=1` (CI) it fails.
@@ -52,9 +55,9 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestSkills` | The skill's name and description are listed, its body isn't, until the agent reads `SKILL.md` (or loads it with OpenCode's `skill` tool); a skill bound to another repo isn't listed |
 | `TestCoexist` | Another tool's session-start hook keeps working next to ctxtra's and after `setup --remove` |
 | `TestUntrustedHookAddsNothing` | Codex without hook trust: the session works and gets nothing from ctxtra |
-| `TestUserMessage` | Claude gets the one-line message for the user from the hook |
+| `TestUserMessage` | Claude and Muse get the one-line message for the user from the hook |
 | `TestOutsideGit` | Outside git, only `global` and `dirs` bindings apply |
-| `TestResume` | A resumed Copilot session has the files once: Copilot doesn't keep the hook's text in the session |
+| `TestResume` | Copilot and Muse: a resumed session has the current version of the files, once |
 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped
 with the reason for the others. A declared capability that stops working fails the test.
@@ -75,17 +78,20 @@ Not covered here, and checked by hand before a release:
    config folder inside the fixture's home, and declares its capabilities. Add it to `driver.All`. If the
    agent speaks an API the mock doesn't, add it to `mock/`.
 3. Pin it in `agents/package.json`, run `npm install --ignore-scripts` in `agents/` to update
-   `package-lock.json`, and review its install scripts before allowing any in `agents/install.sh`.
-4. Run `go test -count=1 ./... -agent <name> -v`. Every scenario must pass or skip with a capability reason.
+   `package-lock.json`, and review its install scripts before allowing any in `agents/install.sh`. An
+   agent that isn't on npm needs its own pinned download with a checksum, like `agents/install-muse.mjs`.
+4. Run `go test -count=1 . -agent <name> -v`. Every scenario must pass or skip with a capability reason.
 
 ## Update the pinned agents
 
-Dependabot opens a PR for new agent versions every week; the e2e workflow runs on it. By hand:
+Dependabot opens a PR for new agent versions every week; the e2e workflow runs on it. Dependabot doesn't
+know Muse Code. By hand:
 
 ```bash
 cd e2e/agents
 npm install --ignore-scripts @anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest \
   @opencode/cli@latest @github/copilot@latest
+node install-muse.mjs update   # pins the current Muse Code release in muse.json
 ./install.sh && cd .. && go test -count=1 ./...
 ```
 

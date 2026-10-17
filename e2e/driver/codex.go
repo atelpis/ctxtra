@@ -37,4 +37,4 @@ func (Codex) Command(bin, home, dir, mockURL, prompt string, o Options, env []st
 	return cmd, nil
 }
 
-func (Codex) UserMessages(string) []string { return nil }
+func (Codex) UserMessages(_, _ string) []string { return nil }

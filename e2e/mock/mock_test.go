@@ -134,3 +134,28 @@ func TestStreamingRoundTrip(t *testing.T) {
 		})
 	}
 }
+
+// Muse Code's catalog gets the Muse metadata, other model lists don't.
+func TestModelLists(t *testing.T) {
+	s := New(t)
+	for path, muse := range map[string]bool{"/muse-code/models": true, "/v1/models": false} {
+		resp, err := http.Get(s.URL() + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var list struct {
+			Data []struct {
+				ID       string
+				Metadata map[string]any
+			}
+		}
+		err = json.NewDecoder(resp.Body).Decode(&list)
+		resp.Body.Close()
+		if err != nil || len(list.Data) != 1 || list.Data[0].ID != "mock-model" {
+			t.Fatalf("%s: %+v, %v", path, list, err)
+		}
+		if _, ok := list.Data[0].Metadata["muse-code"]; ok != muse {
+			t.Errorf("%s: muse-code metadata %v, want %v", path, ok, muse)
+		}
+	}
+}

@@ -21,7 +21,7 @@ func TestUserMessage(t *testing.T) {
 		r := s.Run(repo, driver.Options{})
 		r.First(mock.Main).Has("PERSONAL")
 		want := "ctxtra: added 1 file (me.md); 1 not found (run ctxtra doctor)"
-		if got := a.UserMessages(r.Stdout); !slices.Equal(got, []string{want}) {
+		if got := a.UserMessages(s.Home, r.Stdout); !slices.Equal(got, []string{want}) {
 			t.Errorf("user messages %q, want [%q]", got, want)
 		}
 	})

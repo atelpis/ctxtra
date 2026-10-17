@@ -32,4 +32,4 @@ func (Pi) Command(bin, home, dir, mockURL, prompt string, _ Options, env []strin
 	return cmd, nil
 }
 
-func (Pi) UserMessages(string) []string { return nil }
+func (Pi) UserMessages(_, _ string) []string { return nil }

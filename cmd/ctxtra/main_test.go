@@ -160,9 +160,9 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	input, _ := json.Marshal(map[string]string{"cwd": dir, "hook_event_name": event, "source": "startup"})
 	var cmd *exec.Cmd
 	switch agent {
-	case "claude", "codex", "copilot":
+	case "claude", "codex", "copilot", "muse":
 		cfg := map[string]string{"claude": ".claude/settings.json", "codex": ".codex/hooks.json",
-			"copilot": ".copilot/hooks/ctxtra.json"}[agent]
+			"copilot": ".copilot/hooks/ctxtra.json", "muse": ".config/muse/settings.json"}[agent]
 		cmd = exec.Command("/bin/sh", "-c", hookCommand(ts, filepath.Join(home, cfg), event))
 	case "pi", "opencode":
 		path := map[string]string{"pi": ".pi/agent/extensions/ctxtra.ts", "opencode": ".config/opencode/plugins/ctxtra.ts"}[agent]
@@ -178,6 +178,11 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	}
 	cmd.Dir = home
 	cmd.Env = environ(ts)
+	if agent == "muse" {
+		// Muse runs hooks with a cleared environment: HOME and PATH, but
+		// none of the CTXTRA_ or git variables.
+		cmd.Env = []string{"HOME=" + home, "PATH=" + ts.Getenv("PATH")}
+	}
 	cmd.Stdin = strings.NewReader(string(input))
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -190,8 +195,8 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 }
 
 // hookCommand is the one ctxtra command among the hooks for event in a
-// Claude or Codex hook file, or a flat one (Copilot) where each entry is a
-// handler.
+// Claude, Codex or Muse hook file, or a flat one (Copilot) where each entry
+// is a handler.
 func hookCommand(ts *testscript.TestScript, path, event string) string {
 	type handler struct{ Command string }
 	var cfg struct {

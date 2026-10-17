@@ -7,11 +7,12 @@ import (
 	"github.com/atelpis/ctxtra/internal/agent/codex"
 	"github.com/atelpis/ctxtra/internal/agent/copilot"
 	"github.com/atelpis/ctxtra/internal/agent/cursor"
+	"github.com/atelpis/ctxtra/internal/agent/muse"
 	"github.com/atelpis/ctxtra/internal/agent/opencode"
 	"github.com/atelpis/ctxtra/internal/agent/pi"
 )
 
-var all = []agent.Agent{claude.Agent{}, codex.Agent{}, pi.Agent{}, opencode.Agent{}, cursor.Agent{}, copilot.Agent{}}
+var all = []agent.Agent{claude.Agent{}, codex.Agent{}, pi.Agent{}, opencode.Agent{}, muse.Agent{}, cursor.Agent{}, copilot.Agent{}}
 
 // All returns every supported agent.
 func All() []agent.Agent { return all }
