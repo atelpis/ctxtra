@@ -319,7 +319,7 @@ any of them matches.
   the same `name`: the first is used, the other is reported.
 - `SKILL.md` must start with YAML frontmatter that has a `description`. `name` is optional (default: the
   folder name). Other keys are ignored.
-- Claude Code, Codex, Muse, Cursor, Copilot and Antigravity get the file contents and a list of the skills (name, description, path),
+- Claude Code, Codex, Muse, Cursor, Copilot, Antigravity and Hermes get the file contents and a list of the skills (name, description, path),
   and read a `SKILL.md` when a task needs it. Pi gets files as context files and skills as native skills.
   OpenCode gets files in the system prompt and skills as native skills, which its `skill` tool loads.
 

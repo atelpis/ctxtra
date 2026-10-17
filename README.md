@@ -1,8 +1,9 @@
 # ctxtra
 
-Add your own instruction files and skills to Claude Code, Codex CLI, Pi, OpenCode, Muse Code, Cursor Agent CLI,
-GitHub Copilot CLI and Antigravity sessions, for the folders and repositories you choose, in every worktree. Nothing is
-written into repositories, and the repo's own `AGENTS.md` and your user-level agent files keep working as before.
+Add your own instruction files and skills to Claude Code, Codex CLI, Pi, OpenCode, Muse Code, Hermes Agent,
+Cursor Agent CLI, GitHub Copilot CLI and Antigravity sessions, for the folders and repositories you choose, in every
+worktree. Nothing is written into repositories, and the repo's own `AGENTS.md` and your user-level agent files keep
+working as before.
 
 **Status: preview (`v0`, config `ctxtra/v1alpha1`).** The config format may still change. ctxtra does
 not check what the bound files say: bind only files you wrote or reviewed.
@@ -16,10 +17,12 @@ extension (`~/.pi/agent/extensions/ctxtra.ts`, `~/.config/opencode/plugins/ctxtr
 For Copilot, setup writes a hook file of its own, `~/.copilot/hooks/ctxtra.json`.
 For Antigravity, setup adds a hook named `ctxtra` to `~/.gemini/config/hooks.json`, which the Antigravity
 CLI (`agy`), App and IDE share.
+Hermes's shell hooks don't get the session folder, so setup writes a Python plugin (`~/.hermes/plugins/ctxtra/`)
+that adds the text to the first message of each session.
 
 At session start, Claude Code, Codex, Muse and Pi also show you a one-line summary, for example
 `ctxtra: added 2 files (english.md, go-style.md) and 1 skill (deploy)`, and the number of problems
-found, if any. The session-start hooks of Cursor, Copilot and Antigravity, and OpenCode plugins, can't
+found, if any. The session-start hooks of Cursor, Copilot and Antigravity, and OpenCode and Hermes plugins, can't
 show a message.
 
 ## Install
@@ -33,6 +36,7 @@ ctxtra setup                 # every agent found on this machine, or --agent cla
 `setup` adds hooks that run the binary you started it from, by its full path: agents started from the Dock
 often don't have `~/go/bin` in their `PATH`. It changes only its own hook entries and backs up each file it
 changes to `~/.ctxtra/backups`. Codex runs the hooks only after you trust them once (`/hooks` in Codex).
+Hermes loads the plugin only after you enable it once (`hermes plugins enable ctxtra`).
 `ctxtra setup --remove` removes them.
 
 An upgrade in the same place needs no new setup. If the binary moves, run `ctxtra setup` again, and trust
@@ -115,7 +119,7 @@ nothing and logs the error.
 
 ## Limits
 
-- Claude, and Codex by default, show the model only a preview of large hook output (about 10,000
+- Claude, Hermes, and Codex by default, show the model only a preview of large hook output (about 10,000
   characters); Antigravity drops all after about 48,000 bytes. `explain` and `doctor` warn above that.
 - Resumed sessions don't get the text again, because the transcript already has it. `/compact` and
   `/clear` add it again in Claude and Codex. Copilot is different: it doesn't keep the text in the session,
@@ -135,11 +139,16 @@ nothing and logs the error.
   it reads a file outside the workspace, such as a bound skill's `SKILL.md`, and headless runs (`agy -p`)
   refuse it. To skip the question, allow your skill folders, not everything, in
   `~/.gemini/antigravity-cli/settings.json`: `"permissions": {"allow": ["read_file(/Users/me/notes/skills)"]}`.
+- Hermes: the plugin reads the session folder with `agent.runtime_cwd.resolve_agent_cwd()`, the way Hermes
+  tells plugin authors to. With `plugins.isolation: host`, plugins run in another process, which may not
+  know the session folder: then the plugin uses that process's folder, and folder and repository bindings
+  can match the wrong place. The e2e tests pass with Hermes `v2026.9.24`, and with `main` at `bebe448`, which runs
+  every session in one gateway.
 
 ## Development
 
 ```bash
-go test ./...             # unit tests and CLI tests; each uses its own temporary HOME; the Pi and OpenCode tests also need node
+go test ./...             # unit tests and CLI tests; each uses its own temporary HOME; the Pi and OpenCode tests also need node, the Hermes test python3
 cd e2e && go test -count=1 ./...   # real agents against a mock model; see e2e/README.md
 ```
 
@@ -153,8 +162,8 @@ Layout:
 - `internal/config`: loads and validates the config and binding files, and matches selectors.
 - `internal/resolve`: decides what a session gets and renders the text.
 - `internal/agent`: the `Agent` interface. One package per agent (`antigravity`, `claude`, `codex`, `copilot`,
-  `cursor`, `muse`, `opencode`, `pi`) with its hook setup and answer format; `hookjson` edits the JSON hook
-  files they share; `extfile` writes the extension files of Pi and OpenCode; `registry` lists them.
+  `cursor`, `hermes`, `muse`, `opencode`, `pi`) with its hook setup and answer format; `hookjson` edits the JSON
+  hook files they share; `extfile` writes the extension files of Pi, OpenCode and Hermes; `registry` lists them.
   To add an agent, implement `agent.Agent` and add it to the registry.
 - `internal/hook`: the entry point the agents run, and the log.
 - `internal/setup`: finds the binary and runs each agent's setup.

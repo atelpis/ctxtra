@@ -147,7 +147,7 @@ func runSetup(args []string, stdio IO) int {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	fs.SetOutput(stdio.Err)
 	var agents listFlag
-	fs.Var(&agents, "agent", "agent to change (repeatable): claude, codex, pi, opencode, muse, cursor, copilot, antigravity")
+	fs.Var(&agents, "agent", "agent to change (repeatable): claude, codex, pi, opencode, muse, hermes, cursor, copilot, antigravity")
 	remove := fs.Bool("remove", false, "remove ctxtra's hooks")
 	dryRun := fs.Bool("dry-run", false, "show what would change")
 	if err := fs.Parse(args); err != nil {

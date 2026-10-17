@@ -1,7 +1,8 @@
 # Agent contract tests
 
-These tests run real agents (Claude Code, Codex CLI, Pi, OpenCode, GitHub Copilot CLI, Muse Code, Antigravity CLI) with ctxtra set
-up, and check what reaches the model. The model is a mock on `127.0.0.1` ([mock/](mock)) that records every request and answers with
+These tests run real agents (Claude Code, Codex CLI, Pi, OpenCode, GitHub Copilot CLI, Muse Code, Antigravity CLI,
+Hermes Agent) with ctxtra set up, and check what reaches the model. The model is a mock on `127.0.0.1` ([mock/](mock))
+that records every request and answers with
 text or a scripted tool call, so the tests are free and deterministic.
 
 Every run gets its own home folder, with the agents' config folders inside it, a minimal environment and
@@ -30,10 +31,12 @@ body, ctxtra's log and Claude's debug log in `DIR/<test>/run<N>`. CI uploads tha
 Agent binaries are found in this order:
 
 1. `$CTXTRA_E2E_CLAUDE`, `$CTXTRA_E2E_CODEX`, `$CTXTRA_E2E_PI`, `$CTXTRA_E2E_OPENCODE`, `$CTXTRA_E2E_COPILOT`,
-   `$CTXTRA_E2E_MUSE`, `$CTXTRA_E2E_ANTIGRAVITY`
+   `$CTXTRA_E2E_MUSE`, `$CTXTRA_E2E_ANTIGRAVITY`, `$CTXTRA_E2E_HERMES`
 2. The pinned versions in `agents/`, installed with `agents/install.sh`. Muse Code isn't on npm:
    `agents/install-muse.mjs` downloads the version in `agents/muse.json` from Meta's release manifest and
    checks its sha256. Antigravity uses `agents/antigravity.lock` and a SHA-512 checked download to `agents/bin/agy`.
+   Hermes is installed from the commit in `agents/hermes.ref` with the hashes of its `uv.lock`; it needs Python
+   3.11 to 3.13 (the first one in `PATH`, or `$E2E_PYTHON`).
 3. `PATH`
 
 An agent that isn't found is skipped; with `CTXTRA_E2E_REQUIRE=1` (CI) it fails.
@@ -70,6 +73,7 @@ Not covered here, and checked by hand before a release:
   checks delivery only.
 - Cursor Agent CLI: its model protocol can't be mocked.
 - The Antigravity App and IDE. They read the same hook file as the CLI.
+- Hermes with `plugins.isolation: host`.
 - Whether a real model follows the files and skills.
 
 ## Add an agent
@@ -80,7 +84,8 @@ Not covered here, and checked by hand before a release:
    agent speaks an API the mock doesn't, add it to `mock/`.
 3. Pin it in `agents/package.json`, run `npm install --ignore-scripts` in `agents/` to update
    `package-lock.json`, and review its install scripts before allowing any in `agents/install.sh`. An
-   agent that isn't on npm needs its own pinned download with a checksum, like `agents/install-muse.mjs`.
+   agent that isn't on npm needs its own pinned download with a checksum, like `agents/install-muse.mjs`, or a
+   pinned commit with a lock file, like Hermes in `agents/hermes.ref`.
 4. Run `go test -count=1 . -agent <name> -v`. Every scenario must pass or skip with a capability reason.
 
 ## Update the pinned agents
@@ -96,6 +101,10 @@ node install-muse.mjs update   # pins the current Muse Code release in muse.json
 ./pin-antigravity.sh          # pins the Antigravity CLI release
 ./install.sh && cd .. && go test -count=1 ./...
 ```
+
+Dependabot doesn't update Hermes. To move its pin, put a newer release tag's commit in `agents/hermes.ref`
+(the `^{}` line of `git ls-remote --tags https://github.com/NousResearch/hermes-agent.git`; the other line is
+the tag object, not the commit) and run `./install.sh`.
 
 The nightly `e2e-latest` workflow runs the tests against the latest versions and opens an issue when they
 fail.

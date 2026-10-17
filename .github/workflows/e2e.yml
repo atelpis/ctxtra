@@ -1,8 +1,8 @@
 name: e2e
 
 # Agent contract tests against the agent versions pinned in
-# e2e/agents/package-lock.json and e2e/agents/muse.json. No secrets: the
-# agents talk only to the mock.
+# e2e/agents/package-lock.json, e2e/agents/muse.json and e2e/agents/hermes.ref.
+# No secrets: the agents talk only to the mock.
 
 on:
   push:
@@ -40,6 +40,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # Hermes needs Python 3.11 to 3.13.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
       - run: e2e/agents/install.sh
       - working-directory: e2e
         env:

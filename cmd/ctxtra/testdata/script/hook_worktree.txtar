@@ -2,7 +2,7 @@
 # config order, in a worktree outside the project folder. Claude, Codex and
 # Muse show the user a summary at session start, not for subagents.
 
-exec ctxtra setup --agent claude --agent codex --agent pi --agent opencode --agent muse --agent antigravity
+exec ctxtra setup --agent claude --agent codex --agent pi --agent opencode --agent muse --agent antigravity --agent hermes
 gitrepo dev/svc git@github.com:Acme/Svc.git
 exec git -C dev/svc worktree add -q -b feature ../../elsewhere/svc-feature
 
@@ -50,6 +50,11 @@ runhook antigravity SessionStart elsewhere/svc-feature
 stdout '^\{"injectSteps":\[\{"systemMessage":\{"systemMessage":".*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL.*<name>deploy</name>'
 ! stdout 'ctxtra: added'
 
+# Hermes gets files and the skill list as text, like Claude.
+runhook hermes pre_llm_call elsewhere/svc-feature
+stdout '^\{"context":"Contents of [^"]*/ctx/work.md.*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL.*<name>deploy</name>'
+! stdout 'systemMessage|CTXMARK-SKILLBODY'
+
 # A repo the bindings don't select gets only the global file.
 gitrepo dev/other git@github.com:someone/other.git
 runhook claude SessionStart dev/other
@@ -64,6 +69,7 @@ stdout '"harness":"codex","event":"SessionStart"'
 stdout '"harness":"pi","event":"before_agent_start"'
 stdout '"harness":"opencode","event":"context"'
 stdout '"harness":"antigravity","event":"SessionStart","dir":"[^"]*/elsewhere/svc-feature"'
+stdout '"harness":"hermes","event":"pre_llm_call"'
 
 # The worktree and the main checkout stay clean.
 exec git -C dev/svc status --porcelain

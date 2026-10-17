@@ -79,7 +79,7 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 func (Agent) PreviewLimit() int { return 0 }
 
 // Plugin is the plugin that runs bin.
-func Plugin(bin string) string { return extfile.Content(bin, pluginBody) }
+func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, pluginBody) }
 
 // pluginBody runs the binary asynchronously, like Pi's extension, with a 10
 // second timeout and room for the largest output ctxtra can produce.
