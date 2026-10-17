@@ -1,6 +1,6 @@
 // Package mock is a model endpoint for agent tests. It speaks the Anthropic
-// Messages, OpenAI Chat Completions and OpenAI Responses APIs, streaming or
-// not, records every request, and answers without a model: a text reply, or
+// Messages, OpenAI Chat Completions, OpenAI Responses and Gemini
+// generateContent APIs, streaming or not, records every request, and answers without a model: a text reply, or
 // the next tool call of the test's script.
 //
 // It is a port of the lab's mockllm.py (github.com/atelpis/agentsmdcompose).
@@ -33,6 +33,7 @@ const (
 	Anthropic API = "anthropic"
 	Chat      API = "chat"
 	Responses API = "responses"
+	Gemini    API = "gemini"
 )
 
 // Role says whose request it is.
@@ -98,6 +99,8 @@ func apiOf(path string) (API, bool) {
 		return Chat, true
 	case strings.HasSuffix(path, "/responses"):
 		return Responses, true
+	case strings.HasSuffix(path, ":generateContent"), strings.HasSuffix(path, ":streamGenerateContent"):
+		return Gemini, true
 	}
 	return "", false
 }
@@ -143,10 +146,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	model, _ := body["model"].(string)
+	stream, _ := body["stream"].(bool)
+	if api == Gemini { // the model and streaming are in the path
+		model, _, _ = strings.Cut(path[strings.LastIndex(path, "/")+1:], ":")
+		stream = strings.HasSuffix(path, ":streamGenerateContent")
+	}
 	if model == "" {
 		model = "mock-model"
 	}
-	stream, _ := body["stream"].(bool)
 	text := replyText(body)
 	var events []sse
 	var whole any
@@ -157,6 +164,12 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		whole, events = s.chat(model, c, text)
 	case Responses:
 		whole, events = s.responses(model, c, text)
+	case Gemini:
+		whole, events = s.gemini(model, c, text)
+		if stream && r.URL.Query().Get("alt") != "sse" {
+			whole = []any{whole} // a JSON array of chunks
+			stream = false
+		}
 	}
 	if !stream {
 		writeJSON(w, whole)

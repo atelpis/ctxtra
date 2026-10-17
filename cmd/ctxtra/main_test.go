@@ -150,7 +150,8 @@ func expandFile(ts *testscript.TestScript, neg bool, args []string) {
 // agent's config for EVENT, with the hook input the agent sends for a
 // session in DIR, and makes its output available to stdout/stderr. For Pi
 // and OpenCode, whose extensions aren't shell commands, it runs the binary
-// named in the extension the way the extension does.
+// named in the extension the way the extension does. Antigravity gets its
+// own input and working folder.
 func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) != 3 {
 		ts.Fatalf("usage: runhook AGENT EVENT DIR")
@@ -164,6 +165,19 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 		cfg := map[string]string{"claude": ".claude/settings.json", "codex": ".codex/hooks.json",
 			"copilot": ".copilot/hooks/ctxtra.json", "muse": ".config/muse/settings.json"}[agent]
 		cmd = exec.Command("/bin/sh", "-c", hookCommand(ts, filepath.Join(home, cfg), event))
+	case "antigravity":
+		// No cwd in the input, and the hook runs in the hook file's folder.
+		cfg := filepath.Join(home, ".gemini/config/hooks.json")
+		var hooks struct {
+			Ctxtra struct{ SessionStart []struct{ Command string } }
+		}
+		ts.Check(json.Unmarshal([]byte(ts.ReadFile(cfg)), &hooks))
+		if n := len(hooks.Ctxtra.SessionStart); n != 1 {
+			ts.Fatalf("%s: want one ctxtra SessionStart hook, found %d", cfg, n)
+		}
+		input, _ = json.Marshal(map[string]any{"workspacePaths": []string{dir}, "conversationId": "e2e"})
+		cmd = exec.Command("/bin/sh", "-c", hooks.Ctxtra.SessionStart[0].Command)
+		cmd.Dir = filepath.Dir(cfg)
 	case "pi", "opencode":
 		path := map[string]string{"pi": ".pi/agent/extensions/ctxtra.ts", "opencode": ".config/opencode/plugins/ctxtra.ts"}[agent]
 		m := regexp.MustCompile(`(?m)^// binary: (.+)$`).FindStringSubmatch(ts.ReadFile(filepath.Join(home, path)))
@@ -176,7 +190,9 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	default:
 		ts.Fatalf("runhook: unknown agent %q", agent)
 	}
-	cmd.Dir = home
+	if cmd.Dir == "" {
+		cmd.Dir = home
+	}
 	cmd.Env = environ(ts)
 	if agent == "muse" {
 		// Muse runs hooks with a cleared environment: HOME and PATH, but

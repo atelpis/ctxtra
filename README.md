@@ -1,7 +1,7 @@
 # ctxtra
 
-Add your own instruction files and skills to Claude Code, Codex CLI, Pi, OpenCode, Muse Code, Cursor Agent CLI
-and GitHub Copilot CLI sessions, for the folders and repositories you choose, in every worktree. Nothing is
+Add your own instruction files and skills to Claude Code, Codex CLI, Pi, OpenCode, Muse Code, Cursor Agent CLI,
+GitHub Copilot CLI and Antigravity sessions, for the folders and repositories you choose, in every worktree. Nothing is
 written into repositories, and the repo's own `AGENTS.md` and your user-level agent files keep working as before.
 
 **Status: preview (`v0`, config `ctxtra/v1alpha1`).** The config format may still change. ctxtra does
@@ -14,10 +14,12 @@ hook reads your config, finds the bindings that match the session folder, and gi
 files and a list of the bound skills. Pi and OpenCode have no command hooks: for them, setup writes a small
 extension (`~/.pi/agent/extensions/ctxtra.ts`, `~/.config/opencode/plugins/ctxtra.ts`) that runs ctxtra.
 For Copilot, setup writes a hook file of its own, `~/.copilot/hooks/ctxtra.json`.
+For Antigravity, setup adds a hook named `ctxtra` to `~/.gemini/config/hooks.json`, which the Antigravity
+CLI (`agy`), App and IDE share.
 
 At session start, Claude Code, Codex, Muse and Pi also show you a one-line summary, for example
 `ctxtra: added 2 files (english.md, go-style.md) and 1 skill (deploy)`, and the number of problems
-found, if any. The session-start hooks of Cursor and Copilot, and OpenCode plugins, can't
+found, if any. The session-start hooks of Cursor, Copilot and Antigravity, and OpenCode plugins, can't
 show a message.
 
 ## Install
@@ -114,7 +116,7 @@ nothing and logs the error.
 ## Limits
 
 - Claude, and Codex by default, show the model only a preview of large hook output (about 10,000
-  characters). `explain` and `doctor` warn above that.
+  characters); Antigravity drops all after about 48,000 bytes. `explain` and `doctor` warn above that.
 - Resumed sessions don't get the text again, because the transcript already has it. `/compact` and
   `/clear` add it again in Claude and Codex. Copilot is different: it doesn't keep the text in the session,
   so its hook adds it again on resume. Muse and OpenCode differ too, see below.
@@ -128,6 +130,11 @@ nothing and logs the error.
   text to every model request, not to the transcript, so resumed sessions get it too. Its background
   service keeps the plugin loaded: when the bound skills change, they apply from the second model request
   of the next session, or right away after `opencode service restart`.
+- Antigravity: tested with the CLI (1.4.0); the App and IDE read the same hook file but aren't tested. A
+  subagent is a session of its own there, so it gets the files from the same hook. Antigravity asks before
+  it reads a file outside the workspace, such as a bound skill's `SKILL.md`, and headless runs (`agy -p`)
+  refuse it. To skip the question, allow your skill folders, not everything, in
+  `~/.gemini/antigravity-cli/settings.json`: `"permissions": {"allow": ["read_file(/Users/me/notes/skills)"]}`.
 
 ## Development
 
@@ -145,7 +152,7 @@ Layout:
 - `cmd/ctxtra`: the binary.
 - `internal/config`: loads and validates the config and binding files, and matches selectors.
 - `internal/resolve`: decides what a session gets and renders the text.
-- `internal/agent`: the `Agent` interface. One package per agent (`claude`, `codex`, `copilot`,
+- `internal/agent`: the `Agent` interface. One package per agent (`antigravity`, `claude`, `codex`, `copilot`,
   `cursor`, `muse`, `opencode`, `pi`) with its hook setup and answer format; `hookjson` edits the JSON hook
   files they share; `extfile` writes the extension files of Pi and OpenCode; `registry` lists them.
   To add an agent, implement `agent.Agent` and add it to the registry.

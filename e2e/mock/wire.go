@@ -167,3 +167,16 @@ func (s *Server) responses(model string, c *call, text string) (any, []sse) {
 		ev("response.completed", "response", resp("completed", []any{item})))
 	return resp("completed", []any{item}), events
 }
+
+// gemini returns the whole Gemini response and its one stream chunk.
+func (s *Server) gemini(model string, c *call, text string) (any, []sse) {
+	part := obj{"text": text}
+	if c != nil {
+		part = obj{"functionCall": obj{"name": c.name, "args": c.args}}
+	}
+	whole := obj{"candidates": []any{obj{"index": 0, "finishReason": "STOP",
+		"content": obj{"role": "model", "parts": []any{part}}}},
+		"usageMetadata": obj{"promptTokenCount": 1, "candidatesTokenCount": 1, "totalTokenCount": 2},
+		"modelVersion":  model}
+	return whole, []sse{{"", whole}}
+}

@@ -73,6 +73,8 @@ func decide(api API, body map[string]any, script []Step) *call {
 			{name: "view", args: map[string]any{"path": step.path}},                                 // Copilot
 			{name: "exec_command", args: map[string]any{"cmd": fmt.Sprintf("cat '%s'", step.path)}}, // Codex
 			{name: "read_file", args: map[string]any{"path": step.path}},                            // Muse
+			{name: "view_file", args: map[string]any{"AbsolutePath": step.path, // Antigravity
+				"toolAction": "Reading file", "toolSummary": "File read"}},
 		} {
 			if ns, _, ok := findTool(api, body, c.name); ok {
 				c.namespace = ns
@@ -90,6 +92,10 @@ func decide(api API, body map[string]any, script []Step) *call {
 		if _, _, ok := findTool(api, body, "task"); ok { // Copilot
 			return &call{name: "task", args: map[string]any{"name": "e2e-probe", "description": "e2e probe",
 				"prompt": SubagentTask, "agent_type": "explore", "mode": "sync"}}
+		}
+		if _, _, ok := findTool(api, body, "invoke_subagent"); ok { // Antigravity; runs in the background
+			return &call{name: "invoke_subagent", args: map[string]any{"toolAction": "Starting subagent", "toolSummary": "E2e probe",
+				"Subagents": []any{map[string]any{"TypeName": "self", "Role": "E2E Probe", "Prompt": SubagentTask}}}}
 		}
 		if ns, _, ok := findTool(api, body, "spawn_agent"); ok {
 			return &call{namespace: ns, name: "spawn_agent", args: map[string]any{"message": SubagentTask}}
@@ -146,6 +152,20 @@ func findTool(api API, body map[string]any, name string) (ns string, schema map[
 	tools, _ := body["tools"].([]any)
 	for _, t := range tools {
 		tm, _ := t.(map[string]any)
+		if api == Gemini {
+			decls, _ := tm["functionDeclarations"].([]any)
+			for _, d := range decls {
+				dm, _ := d.(map[string]any)
+				if str(dm["name"]) == name {
+					s, _ := dm["parametersJsonSchema"].(map[string]any)
+					if s == nil {
+						s, _ = dm["parameters"].(map[string]any)
+					}
+					return "", s, true
+				}
+			}
+			continue
+		}
 		if api == Chat {
 			fn, _ := tm["function"].(map[string]any)
 			if str(fn["name"]) == name {

@@ -33,6 +33,14 @@ type Agent interface {
 	PreviewLimit() int
 }
 
+// ByteLimiter is an agent that cuts hook output at a size in bytes, not
+// characters. Its PreviewLimit is 0.
+type ByteLimiter interface {
+	// ByteLimit is the size of hook output, in bytes of UTF-8, above which
+	// the agent drops the rest.
+	ByteLimit() int
+}
+
 // AdditionalContext is the hook answer format that Claude Code and Codex CLI
 // share: the text as additionalContext for the event. At session start,
 // systemMessage also shows the user a one-line Summary; subagents don't get

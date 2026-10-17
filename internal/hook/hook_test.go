@@ -54,6 +54,12 @@ func TestOutputPerAgent(t *testing.T) {
 		len(s) != 1 || s[0].(map[string]any)["name"] != "deploy" {
 		t.Errorf("opencode: %v", oc)
 	}
+	// Antigravity sends no cwd and runs the hook in another folder.
+	ag := run("antigravity", "SessionStart", `{"workspacePaths": ["`+r+`"], "conversationId": "c1"}`)
+	if steps := ag["injectSteps"].([]any); len(steps) != 1 ||
+		!strings.Contains(steps[0].(map[string]any)["systemMessage"].(map[string]any)["systemMessage"].(string), "Rule A <&>") {
+		t.Errorf("antigravity: %v", ag)
+	}
 	// The user sees a summary at session start, not for subagents.
 	if m := run("claude", "SessionStart", input); m["systemMessage"] != "ctxtra: added 1 file (a.md) and 1 skill (deploy)" {
 		t.Errorf("summary: %v", m["systemMessage"])
@@ -77,12 +83,12 @@ func TestOutputPerAgent(t *testing.T) {
 		t.Errorf("unknown agent: %v", m)
 	}
 	b, err := os.ReadFile(filepath.Join(h, ".ctxtra", "log.jsonl"))
-	if err != nil || strings.Count(string(b), "\n") != 10 {
+	if err != nil || strings.Count(string(b), "\n") != 11 {
 		t.Errorf("log: %v %q", err, b)
 	}
-	// The malformed and unknown runs have no folder; the others are 7
+	// The malformed and unknown runs have no folder; the others are 8
 	// different agent and event pairs in this repository.
-	if runs := LastRuns(r, r); len(runs) != 7 || runs[0].Harness != "claude" {
+	if runs := LastRuns(r, r); len(runs) != 8 || runs[0].Harness != "antigravity" {
 		t.Errorf("last runs: %+v", runs)
 	}
 }

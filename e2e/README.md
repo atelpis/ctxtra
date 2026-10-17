@@ -1,6 +1,6 @@
 # Agent contract tests
 
-These tests run real agents (Claude Code, Codex CLI, Pi, OpenCode, GitHub Copilot CLI, Muse Code) with ctxtra set
+These tests run real agents (Claude Code, Codex CLI, Pi, OpenCode, GitHub Copilot CLI, Muse Code, Antigravity CLI) with ctxtra set
 up, and check what reaches the model. The model is a mock on `127.0.0.1` ([mock/](mock)) that records every request and answers with
 text or a scripted tool call, so the tests are free and deterministic.
 
@@ -30,10 +30,10 @@ body, ctxtra's log and Claude's debug log in `DIR/<test>/run<N>`. CI uploads tha
 Agent binaries are found in this order:
 
 1. `$CTXTRA_E2E_CLAUDE`, `$CTXTRA_E2E_CODEX`, `$CTXTRA_E2E_PI`, `$CTXTRA_E2E_OPENCODE`, `$CTXTRA_E2E_COPILOT`,
-   `$CTXTRA_E2E_MUSE`
+   `$CTXTRA_E2E_MUSE`, `$CTXTRA_E2E_ANTIGRAVITY`
 2. The pinned versions in `agents/`, installed with `agents/install.sh`. Muse Code isn't on npm:
    `agents/install-muse.mjs` downloads the version in `agents/muse.json` from Meta's release manifest and
-   checks its sha256
+   checks its sha256. Antigravity uses `agents/antigravity.lock` and a SHA-512 checked download to `agents/bin/agy`.
 3. `PATH`
 
 An agent that isn't found is skipped; with `CTXTRA_E2E_REQUIRE=1` (CI) it fails.
@@ -51,7 +51,7 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | Test | Checks |
 |---|---|
 | `TestStartup` | Bound files reach the model at session start, once each, in config order after the repo's `AGENTS.md`, in a worktree outside the project folder; a binding for another repo adds nothing; the hook ran; no checkout changed |
-| `TestSubagent` | A subagent gets the files; the main agent still has them once after tool calls |
+| `TestSubagent` | A subagent gets the files; the main agent still has them once after tool calls. In Antigravity a subagent is a session of its own, so the hook runs twice |
 | `TestSkills` | The skill's name and description are listed, its body isn't, until the agent reads `SKILL.md` (or loads it with OpenCode's `skill` tool); a skill bound to another repo isn't listed |
 | `TestCoexist` | Another tool's session-start hook keeps working next to ctxtra's and after `setup --remove` |
 | `TestUntrustedHookAddsNothing` | Codex without hook trust: the session works and gets nothing from ctxtra |
@@ -69,6 +69,7 @@ Not covered here, and checked by hand before a release:
 - Codex hook trust through `/hooks`. These tests run Codex with `--dangerously-bypass-hook-trust`, which
   checks delivery only.
 - Cursor Agent CLI: its model protocol can't be mocked.
+- The Antigravity App and IDE. They read the same hook file as the CLI.
 - Whether a real model follows the files and skills.
 
 ## Add an agent
@@ -92,6 +93,7 @@ cd e2e/agents
 npm install --ignore-scripts @anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest \
   @opencode/cli@latest @github/copilot@latest
 node install-muse.mjs update   # pins the current Muse Code release in muse.json
+./pin-antigravity.sh          # pins the Antigravity CLI release
 ./install.sh && cd .. && go test -count=1 ./...
 ```
 
