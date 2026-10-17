@@ -78,12 +78,20 @@ def hero_body(c, w, h, top=0, animate=True, paths=True):
     col = lambda i: c[FILE_COLORS[i]]
     b = [gradient(c)]
     t = top
-    b.append(f'<text x="62" y="{t+140}" font-family="{MONO}" font-size="104" font-weight="700" letter-spacing="-3">'
-             f'<tspan fill="url(#g)">ctx</tspan><tspan fill="{c["TEXT"]}">tra</tspan></text>')
-    caret = f'<rect x="438" y="{t+66}" width="14" height="80" fill="{c["CYAN"]}">'
+    # The wordmark is drawn in layers that all hold the full "ctxtra_", so the glyphs line up in any
+    # monospace font. In step with the "_" cursor, the x switches between "ctx" (context) and "xtra" (extra).
+    def wordmark(ct, x, tra, caret, blink=None):
+        paint = lambda fill: f'fill="{fill}"' if fill else 'fill="none"'
+        s = (f'<text x="62" y="{t+140}" font-family="{MONO}" font-size="104" font-weight="700" letter-spacing="-3">'
+             f'<tspan {paint(ct)}>ct</tspan><tspan {paint(x)}>x</tspan><tspan {paint(tra)}>tra</tspan>'
+             f'<tspan {paint(caret)}{f" stroke={chr(34)}{caret}{chr(34)} stroke-width={chr(34)}5{chr(34)}" if caret else ""}>_</tspan>')
+        if blink:
+            s += f'<animate attributeName="opacity" values="{blink}" calcMode="discrete" dur="1.2s" repeatCount="indefinite"/>'
+        return s + "</text>"
+    b.append(wordmark("url(#g)", None, c["TEXT"], None))
+    b.append(wordmark(None, "url(#g)", None, c["CYAN"], "1;0" if animate else None))
     if animate:
-        caret += '<animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.5;1" dur="1.1s" repeatCount="indefinite"/>'
-    b.append(caret + "</rect>")
+        b.append(wordmark(None, c["TEXT"], None, None, "0;1"))
     b.append(f'<text x="64" y="{t+212}" font-size="38" font-weight="700" fill="{c["TEXT"]}">Context for coding agents,</text>')
     b.append(f'<text x="64" y="{t+258}" font-size="38" font-weight="700" fill="{c["TEXT"]}">keyed by git repo.</text>')
     b.append(f'<text x="64" y="{t+304}" font-size="19" fill="{c["MUTED"]}">Nothing written into your repos.</text>')

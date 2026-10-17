@@ -3,8 +3,9 @@
 <rect x="0.5" y="0.5" width="1279" height="431" rx="18" fill="#FFFFFF" stroke="#D0D7DE"/>
 <defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#E6EAEF"/></pattern></defs><rect x="1" y="1" width="1278" height="430" rx="18" fill="url(#grid)"/>
 <defs><linearGradient id="g" x1="0" x2="1"><stop offset="0" stop-color="#7C3AED"/><stop offset="0.5" stop-color="#0E7490"/><stop offset="1" stop-color="#4D7C0F"/></linearGradient></defs>
-<text x="62" y="140" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="104" font-weight="700" letter-spacing="-3"><tspan fill="url(#g)">ctx</tspan><tspan fill="#1F2328">tra</tspan></text>
-<rect x="438" y="66" width="14" height="80" fill="#0E7490"><animate attributeName="opacity" values="1;1;0;0" keyTimes="0;0.5;0.5;1" dur="1.1s" repeatCount="indefinite"/></rect>
+<text x="62" y="140" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="104" font-weight="700" letter-spacing="-3"><tspan fill="url(#g)">ct</tspan><tspan fill="none">x</tspan><tspan fill="#1F2328">tra</tspan><tspan fill="none">_</tspan></text>
+<text x="62" y="140" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="104" font-weight="700" letter-spacing="-3"><tspan fill="none">ct</tspan><tspan fill="url(#g)">x</tspan><tspan fill="none">tra</tspan><tspan fill="#0E7490" stroke="#0E7490" stroke-width="5">_</tspan><animate attributeName="opacity" values="1;0" calcMode="discrete" dur="1.2s" repeatCount="indefinite"/></text>
+<text x="62" y="140" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="104" font-weight="700" letter-spacing="-3"><tspan fill="none">ct</tspan><tspan fill="#1F2328">x</tspan><tspan fill="none">tra</tspan><tspan fill="none">_</tspan><animate attributeName="opacity" values="0;1" calcMode="discrete" dur="1.2s" repeatCount="indefinite"/></text>
 <text x="64" y="212" font-size="38" font-weight="700" fill="#1F2328">Context for coding agents,</text>
 <text x="64" y="258" font-size="38" font-weight="700" fill="#1F2328">keyed by git repo.</text>
 <text x="64" y="304" font-size="19" fill="#57606A">Nothing written into your repos.</text>
