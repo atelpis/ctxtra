@@ -64,7 +64,7 @@ type Options struct {
 }
 
 // All is every driver.
-var All = []Driver{Claude{}, Codex{}, Pi{}, OpenCode{}, Copilot{}, Muse{}, Antigravity{}, Hermes{}}
+var All = []Driver{Claude{}, Codex{}, Pi{}, OpenCode{}, Copilot{}, Muse{}, Antigravity{}, Hermes{}, DSH{}}
 
 // Has reports whether d declares c.
 func Has(d Driver, c Cap) bool {

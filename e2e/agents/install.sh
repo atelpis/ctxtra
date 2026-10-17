@@ -3,10 +3,12 @@
 # e2e drivers find them. Exact versions and hashes come from
 # package-lock.json. Muse Code isn't on npm: install-muse.mjs puts it in
 # e2e/agents/bin, at the version and sha256 in muse.json. With "latest" as
-# the argument, it installs the latest releases instead (the nightly check).
-# Package install scripts are skipped, except Claude Code's and OpenCode's,
-# which only copy their native binary into place. Copilot has none: its
-# loader runs the binary of the platform package.
+# the argument, it installs the latest releases instead (the nightly check):
+# for DSH that is its "next" tag, which its newest releases get, while
+# "latest" stays on an older one. Package install scripts are skipped,
+# except Claude Code's and OpenCode's, which only copy their native binary
+# into place. Copilot has none: its loader runs the binary of the platform
+# package.
 #
 # The Antigravity CLI isn't on npm: its build for this platform is
 # downloaded into bin/agy, checked against the SHA-512 in antigravity.lock
@@ -26,7 +28,7 @@ uv_version=0.13.1
 if [ "${1:-}" = latest ]; then
 	npm install --ignore-scripts --no-audit --no-fund --no-save \
 		@anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest @opencode/cli@latest \
-		@github/copilot@latest
+		@github/copilot@latest @deepseek-ai/dsh@next
 	node install-muse.mjs latest
 	hermes=$(git ls-remote --tags --refs "$hermes_repo" | sed 's#.*refs/tags/##' | sort -V | tail -n 1)
 else
@@ -94,7 +96,7 @@ hermes/.uv/bin/pip install --quiet --disable-pip-version-check "uv==$uv_version"
 (cd hermes && UV_PYTHON="$py" UV_PYTHON_DOWNLOADS=never .uv/bin/uv sync --quiet --frozen --no-dev)
 
 for b in node_modules/.bin/claude node_modules/.bin/codex node_modules/.bin/pi node_modules/.bin/opencode node_modules/.bin/copilot bin/agy \
-	hermes/.venv/bin/hermes; do
+	hermes/.venv/bin/hermes node_modules/.bin/dsh; do
 	printf '%s: %s\n' "${b##*/}" "$(./$b --version | head -n 1)"
 done
 printf 'muse: %s\n' "$(./bin/muse --version | head -n 1)"

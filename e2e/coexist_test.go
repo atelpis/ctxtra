@@ -88,6 +88,18 @@ export default {
             return {"context": open("`+path+`").read()}
     ctx.register_hook("pre_llm_call", add)
 `)
+	case "dsh":
+		s.Write(".dsh/other-tool.mjs", `import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+export const name = "other-tool";
+export function apply(ctx) {
+	ctx.on("agent/created", ({ agent }) => {
+		const text = readFileSync("`+path+`", "utf8");
+		agent.inject({ id: randomUUID(), role: "user", content: [{ type: "text", text }], source: { kind: "other-tool" } });
+	});
+}
+`)
+		s.Write(".dsh/cordis.patch.yml", "- insert:\n    - id: other-tool\n      name: \""+s.Path(".dsh/other-tool.mjs")+"\"\n")
 	default:
 		s.t.Fatalf("otherTool: no hook for %s", agent)
 	}

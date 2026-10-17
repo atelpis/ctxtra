@@ -141,6 +141,7 @@ func (f *Fixture) Env() []string {
 		"CODEX_HOME=" + f.Path(".codex"),
 		"PI_CODING_AGENT_DIR=" + f.Path(".pi/agent"),
 		"COPILOT_HOME=" + f.Path(".copilot"),
+		"DSH_HOME=" + f.Path(".dsh"),
 	}
 }
 

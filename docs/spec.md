@@ -319,7 +319,7 @@ any of them matches.
   the same `name`: the first is used, the other is reported.
 - `SKILL.md` must start with YAML frontmatter that has a `description`. `name` is optional (default: the
   folder name). Other keys are ignored.
-- Claude Code, Codex, Muse, Cursor, Copilot, Antigravity and Hermes get the file contents and a list of the skills (name, description, path),
+- Claude Code, Codex, Muse, Cursor, Copilot, Antigravity, Hermes and DSH get the file contents and a list of the skills (name, description, path),
   and read a `SKILL.md` when a task needs it. Pi gets files as context files and skills as native skills.
   OpenCode gets files in the system prompt and skills as native skills, which its `skill` tool loads.
 
@@ -392,4 +392,4 @@ Muse Code runs hooks with a cleared environment, so its sessions always use the 
 
 The session folder is the `cwd` the agent sends to the hook. If it is empty: the first `workspace_roots`
 entry (Cursor), else the first `workspacePaths` entry (Antigravity, which runs hooks in the hook file's
-folder), else the hook's working folder.
+folder), else the hook's working folder. DSH's home folder is `$DSH_HOME`, or `~/.dsh`.

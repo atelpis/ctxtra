@@ -1,9 +1,9 @@
 # ctxtra
 
 Add your own instruction files and skills to Claude Code, Codex CLI, Pi, OpenCode, Muse Code, Hermes Agent,
-Cursor Agent CLI, GitHub Copilot CLI and Antigravity sessions, for the folders and repositories you choose, in every
-worktree. Nothing is written into repositories, and the repo's own `AGENTS.md` and your user-level agent files keep
-working as before.
+DeepSeek Harness (dsh), Cursor Agent CLI, GitHub Copilot CLI and Antigravity sessions, for the folders and
+repositories you choose, in every worktree. Nothing is written into repositories, and the repo's own `AGENTS.md` and
+your user-level agent files keep working as before.
 
 **Status: preview (`v0`, config `ctxtra/v1alpha1`).** The config format may still change. ctxtra does
 not check what the bound files say: bind only files you wrote or reviewed.
@@ -19,10 +19,12 @@ For Antigravity, setup adds a hook named `ctxtra` to `~/.gemini/config/hooks.jso
 CLI (`agy`), App and IDE share.
 Hermes's shell hooks don't get the session folder, so setup writes a Python plugin (`~/.hermes/plugins/ctxtra/`)
 that adds the text to the first message of each session.
+DSH's command hooks need an extra package, so setup writes a plugin, `~/.dsh/ctxtra.mjs`, and adds the row that
+loads it to `~/.dsh/cordis.patch.yml`, which applies to every profile.
 
 At session start, Claude Code, Codex, Muse and Pi also show you a one-line summary, for example
 `ctxtra: added 2 files (english.md, go-style.md) and 1 skill (deploy)`, and the number of problems
-found, if any. The session-start hooks of Cursor, Copilot and Antigravity, and OpenCode and Hermes plugins, can't
+found, if any. The session-start hooks of Cursor, Copilot and Antigravity, and OpenCode, Hermes and DSH plugins, can't
 show a message.
 
 ## Install
@@ -144,11 +146,14 @@ nothing and logs the error.
   know the session folder: then the plugin uses that process's folder, and folder and repository bindings
   can match the wrong place. The e2e tests pass with Hermes `v2026.9.24`, and with `main` at `bebe448`, which runs
   every session in one gateway.
+- DSH: tested with 0.2.1-rc.2 (and 0.2.0-rc.2, the npm `latest`). The plugin uses DSH's plugin API, which may still
+  change before 1.0. DSH adds the text after the first prompt and the repo's `AGENTS.md`; `/clear` and
+  compaction add it again.
 
 ## Development
 
 ```bash
-go test ./...             # unit tests and CLI tests; each uses its own temporary HOME; the Pi and OpenCode tests also need node, the Hermes test python3
+go test ./...             # unit tests and CLI tests; each uses its own temporary HOME; the Pi, OpenCode and DSH tests also need node, the Hermes test python3
 cd e2e && go test -count=1 ./...   # real agents against a mock model; see e2e/README.md
 ```
 
@@ -162,8 +167,9 @@ Layout:
 - `internal/config`: loads and validates the config and binding files, and matches selectors.
 - `internal/resolve`: decides what a session gets and renders the text.
 - `internal/agent`: the `Agent` interface. One package per agent (`antigravity`, `claude`, `codex`, `copilot`,
-  `cursor`, `hermes`, `muse`, `opencode`, `pi`) with its hook setup and answer format; `hookjson` edits the JSON
-  hook files they share; `extfile` writes the extension files of Pi, OpenCode and Hermes; `registry` lists them.
+  `cursor`, `dsh`, `hermes`, `muse`, `opencode`, `pi`) with its hook setup and answer format; `hookjson` edits the
+  JSON hook files they share; `extfile` writes the extension files of Pi, OpenCode, Hermes and DSH; `registry` lists
+  them.
   To add an agent, implement `agent.Agent` and add it to the registry.
 - `internal/hook`: the entry point the agents run, and the log.
 - `internal/setup`: finds the binary and runs each agent's setup.

@@ -8,13 +8,14 @@ import (
 	"github.com/atelpis/ctxtra/internal/agent/codex"
 	"github.com/atelpis/ctxtra/internal/agent/copilot"
 	"github.com/atelpis/ctxtra/internal/agent/cursor"
+	"github.com/atelpis/ctxtra/internal/agent/dsh"
 	"github.com/atelpis/ctxtra/internal/agent/hermes"
 	"github.com/atelpis/ctxtra/internal/agent/muse"
 	"github.com/atelpis/ctxtra/internal/agent/opencode"
 	"github.com/atelpis/ctxtra/internal/agent/pi"
 )
 
-var all = []agent.Agent{claude.Agent{}, codex.Agent{}, pi.Agent{}, opencode.Agent{}, muse.Agent{}, hermes.Agent{}, cursor.Agent{},
+var all = []agent.Agent{claude.Agent{}, codex.Agent{}, pi.Agent{}, opencode.Agent{}, muse.Agent{}, hermes.Agent{}, dsh.Agent{}, cursor.Agent{},
 	copilot.Agent{}, antigravity.Agent{}}
 
 // All returns every supported agent.
