@@ -35,20 +35,12 @@ func TestOutsideGit(t *testing.T) {
 		s.Marked("ctx/notes.md", "NOTES")
 		s.Marked("ctx/repo.md", "REPO")
 		s.Write("notes/todo.md", "plain folder\n")
-		s.Config(global("me", "~/ctx/me.md") + `---
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata: {name: notes}
-spec:
-  selector: {dirs: [~/notes]}
-  files: [~/ctx/notes.md]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata: {name: repos}
-spec:
-  selector: {gitRepos: [{remote: "**"}]}
-  files: [~/ctx/repo.md]
+		s.Config(global("me", "~/ctx/me.md") + `  - name: notes
+    match: {dirs: [~/notes]}
+    instructions: [~/ctx/notes.md]
+  - name: repos
+    match: {repos: [{remote: "**"}]}
+    instructions: [~/ctx/repo.md]
 `)
 		s.Setup()
 		r := s.Run(s.Path("notes"), driver.Options{})

@@ -30,9 +30,9 @@ func TestSubagent(t *testing.T) {
 
 // global is a binding file with one binding that adds files to every session.
 func global(name string, files ...string) string {
-	y := "apiVersion: ctxtra/v1alpha1\nkind: Binding\nmetadata: {name: " + name + "}\nspec:\n  selector: {global: true}\n  files:\n"
+	y := "schema: ctxtra/v1\nbindings:\n  - name: " + name + "\n    match: {global: true}\n    instructions:\n"
 	for _, f := range files {
-		y += "    - " + f + "\n"
+		y += "      - " + f + "\n"
 	}
 	return y
 }

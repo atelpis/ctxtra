@@ -9,17 +9,17 @@ stdout 'CTXMARK-PERSONAL'
 stdout '"systemMessage":"ctxtra: added 2 files \(me.md, notes.md\); 1 not found \(run ctxtra doctor\)"'
 stderr 'ctxtra: bound file not found: .*/ctx/gone.md'
 
-# Outside git, gitRepos selectors don't match; global and dirs ones do.
+# Outside git, repos don't match; global and dirs do.
 stdout 'CTXMARK-NOTES'
 ! stdout 'CTXMARK-REPO'
 
-# A config with a wrong apiVersion adds nothing.
+# A config with a wrong schema adds nothing.
 cp broken.yaml .config/ctxtra/config.yaml
 runhook claude SessionStart notes
 ! stdout 'CTXMARK'
 stdout 'systemMessage'
 ! exec ctxtra doctor
-stdout 'apiVersion'
+stdout 'schema must be ctxtra/v1 \(found "ctxtra/v9"\)'
 
 # The hook command answers {} when the binary is gone. Set up from a copy
 # of the binary, then delete the copy.
@@ -34,41 +34,27 @@ stdout '^\{\}$'
 stdout 'claude: .*MISSING'
 
 -- .config/ctxtra/config.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Config
-bindings: [b.yaml]
+schema: ctxtra/v1
+include: [b.yaml]
 -- .config/ctxtra/b.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: me
-spec:
-  selector:
-    global: true
-  files: [~/ctx/me.md, ~/ctx/gone.md]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: notes
-spec:
-  selector:
-    dirs: [~/notes/**]
-  files: [~/ctx/notes.md]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: repo
-spec:
-  selector:
-    gitRepos:
-      - remote: "**"
-  files: [~/ctx/repo.md]
+schema: ctxtra/v1
+bindings:
+  - name: me
+    match:
+      global: true
+    instructions: [~/ctx/me.md, ~/ctx/gone.md]
+  - name: notes
+    match:
+      dirs: [~/notes/**]
+    instructions: [~/ctx/notes.md]
+  - name: repo
+    match:
+      repos:
+        - remote: "**"
+    instructions: [~/ctx/repo.md]
 -- broken.yaml --
-apiVersion: ctxtra/v9
-kind: Config
-bindings: [b.yaml]
+schema: ctxtra/v9
+include: [b.yaml]
 -- ctx/me.md --
 CTXMARK-PERSONAL
 -- ctx/notes.md --

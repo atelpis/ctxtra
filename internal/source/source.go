@@ -103,7 +103,7 @@ func CheckBranch(b string) error {
 }
 
 // ID names a source's data in the store. It comes from the source's remote:
-// the git URL, or the absolute path of a clone for a pinned-path source. A
+// the git URL, or the absolute path of a clone for a local-git source. A
 // source whose remote changes never uses data of the old one.
 func ID(remote string) string {
 	kind := "git"
@@ -130,7 +130,7 @@ func Has(url, commit string) bool {
 
 // Repo is the bare repository of one source.
 type Repo struct {
-	URL    string // a git URL, or the absolute path of a clone (pinned-path)
+	URL    string // a git URL, or the absolute path of a clone (local-git)
 	dir    string
 	fileOK bool // the file transport is allowed, for a fetch from a clone
 }

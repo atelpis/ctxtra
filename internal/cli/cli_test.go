@@ -20,14 +20,13 @@ func TestCommands(t *testing.T) {
 	h := testenv.Home(t)
 	r := testenv.Repo(t, filepath.Join(h, "svc"), "git@github.com:acme/svc.git")
 	testenv.Write(t, filepath.Join(h, "a.md"), "A")
-	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), `apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata: {name: svc}
-spec:
-  selector: {gitRepos: [{remote: github.com/acme/svc}]}
-  files: [~/a.md, ~/gone.md]
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"), `schema: ctxtra/v1
+bindings:
+  - name: svc
+    match: {repos: [{remote: github.com/acme/svc}]}
+    instructions: [~/a.md, ~/gone.md]
 `)
-	testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n")
+	testenv.Config(t, h, "schema: ctxtra/v1\ninclude: [b.yaml]\n")
 
 	if code, out, errOut := run("files", r); code != 1 || out != filepath.Join(h, "a.md")+"\n" || !strings.Contains(errOut, "missing: "+filepath.Join(h, "gone.md")) {
 		t.Errorf("files: %d %q %q", code, out, errOut)
@@ -35,10 +34,10 @@ spec:
 	if code, out, _ := run("show", r); code != 0 || !strings.Contains(out, "Contents of "+filepath.Join(h, "a.md")) {
 		t.Errorf("show: %d %q", code, out)
 	}
-	if _, out, _ := run("explain", h); !strings.Contains(out, "- svc (~/.config/ctxtra/b.yaml): gitRepos: not in a git repository") {
+	if _, out, _ := run("explain", h); !strings.Contains(out, "- svc (~/.config/ctxtra/b.yaml): repos: not in a git repository") {
 		t.Errorf("explain outside git:\n%s", out)
 	}
-	if _, out, _ := run("explain", r); !strings.Contains(out, "+ svc (~/.config/ctxtra/b.yaml): gitRepos remote github.com/acme/svc") ||
+	if _, out, _ := run("explain", r); !strings.Contains(out, "+ svc (~/.config/ctxtra/b.yaml): repos remote github.com/acme/svc") ||
 		!strings.Contains(out, "MISSING  "+filepath.Join(h, "gone.md")) {
 		t.Errorf("explain:\n%s", out)
 	}
@@ -71,8 +70,8 @@ spec:
 func TestSizeWarnings(t *testing.T) {
 	h := testenv.Home(t)
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
-		"apiVersion: ctxtra/v1alpha1\nkind: Binding\nmetadata: {name: me}\nspec: {selector: {global: true}, files: [~/a.md]}\n")
-	testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n")
+		"schema: ctxtra/v1\nbindings:\n  - {name: me, match: {global: true}, instructions: [~/a.md]}\n")
+	testenv.Config(t, h, "schema: ctxtra/v1\ninclude: [b.yaml]\n")
 	for _, tc := range []struct {
 		content     string
 		antigravity bool

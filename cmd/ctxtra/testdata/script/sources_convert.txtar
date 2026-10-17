@@ -12,7 +12,7 @@ exec ctxtra add dev/dotfiles/ctxtra/work.yaml
 stdout 'added as source dotfiles'
 exec ctxtra add --trust dev/dotfiles/ctxtra/work.yaml
 stdout '^converted source dotfiles to trusted-path ~/dev/dotfiles: its files are read from disk now, changes apply right away$'
-stdout 'ctxtra://dotfiles/ctxtra/work.yaml is in bindings already'
+stdout 'ctxtra://dotfiles/ctxtra/work.yaml is in include already'
 grep '^    trusted-path: ~/dev/dotfiles$' .config/ctxtra/config.yaml
 ! grep 'git: .*dotfiles' .config/ctxtra/config.yaml
 cp live.md dev/dotfiles/work.md
@@ -34,42 +34,35 @@ stdout 'Contents of .*/.ctxtra/store/.*/services-overview.md'
 stdout 'Contents of .*/dev/team-ctx/jira-ticket.md'
 
 -- .config/ctxtra/config.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Config
-bindings: [bindings.yaml]
+schema: ctxtra/v1
+include: [bindings.yaml]
 -- .config/ctxtra/bindings.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: me
-spec:
-  selector:
-    global: true
-  files: [~/dev/team-ctx/jira-ticket.md]
+schema: ctxtra/v1
+bindings:
+  - name: me
+    match:
+      global: true
+    instructions: [~/dev/team-ctx/jira-ticket.md]
 -- notes/.keep --
 -- live.md --
 LIVE-EDIT
 -- srv/dotfiles/work.md --
 work
 -- srv/dotfiles/ctxtra/work.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: work
-spec:
-  selector:
-    global: true
-  files: [../work.md]
+schema: ctxtra/v1
+bindings:
+  - name: work
+    match:
+      global: true
+    instructions: [../work.md]
 -- srv/team-ctx/jira-ticket.md --
 jira
 -- srv/team-ctx/services-overview.md --
 overview
 -- srv/team-ctx/bindings/billing.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: billing
-spec:
-  selector:
-    global: true
-  files: [../services-overview.md]
+schema: ctxtra/v1
+bindings:
+  - name: billing
+    match:
+      global: true
+    instructions: [../services-overview.md]

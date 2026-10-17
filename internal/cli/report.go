@@ -37,7 +37,7 @@ func (r report) files(dir string) int {
 		fmt.Fprintf(r.Err, "missing: %s\n", m)
 	}
 	for _, h := range res.Dropped {
-		fmt.Fprintf(r.Err, "dropped (over budget.maxChars): %s\n", h.Path)
+		fmt.Fprintf(r.Err, "dropped (over budget.max-chars): %s\n", h.Path)
 	}
 	for _, n := range res.Notices {
 		fmt.Fprintf(r.Err, "notice: %s\n", n)
@@ -64,7 +64,7 @@ func (r report) show(dir string) int {
 func (r report) session(res *resolve.Result) {
 	fmt.Fprintf(r.Out, "session folder: %s\n", res.Dir)
 	if res.Repo == nil {
-		fmt.Fprintln(r.Out, "  not in a git repository: gitRepos selectors don't match")
+		fmt.Fprintln(r.Out, "  not in a git repository: repos in match blocks don't match")
 		return
 	}
 	remotes := strings.Join(res.Repo.Remotes, ", ")
@@ -103,7 +103,7 @@ func (r report) explain(dir string) int {
 		for _, f := range t.Files {
 			switch {
 			case dropped[f] == t.Origin:
-				fmt.Fprintf(r.Out, "    dropped  %s (over budget.maxChars)\n", f)
+				fmt.Fprintf(r.Out, "    dropped  %s (over budget.max-chars)\n", f)
 			case files[f].Origin == t.Origin:
 				fmt.Fprintf(r.Out, "    file     %s (%d chars)\n", f, resolve.Chars(files[f].Content))
 			case files[f].Origin != "" || dropped[f] != "":
@@ -133,7 +133,7 @@ func (r report) explain(dir string) int {
 	total := resolve.Chars(text)
 	fmt.Fprintf(r.Out, "\ntotal: %d files, %d skills, %d chars (about %d tokens)", len(res.Files), len(res.Skills), total, total/4)
 	if res.MaxChars > 0 {
-		fmt.Fprintf(r.Out, ", budget.maxChars %d", res.MaxChars)
+		fmt.Fprintf(r.Out, ", budget.max-chars %d", res.MaxChars)
 	}
 	fmt.Fprintln(r.Out)
 	r.sizeWarnings(text, "")
@@ -184,7 +184,7 @@ func (r report) doctor(dir string) int {
 		fmt.Fprintf(r.Out, "  MISSING: %s\n", m)
 	}
 	for _, h := range res.Dropped {
-		fmt.Fprintf(r.Out, "  DROPPED (over budget.maxChars): %s\n", h.Path)
+		fmt.Fprintf(r.Out, "  DROPPED (over budget.max-chars): %s\n", h.Path)
 	}
 	for _, n := range res.Notices {
 		fmt.Fprintf(r.Out, "  NOTICE: %s\n", n)
@@ -246,8 +246,8 @@ func describeSource(s config.Source) string {
 		return "trusted-path " + paths.Tilde(s.TrustedPath) + state
 	}
 	d := fmt.Sprintf("git %s, branch %s, ", s.Git, s.Branch)
-	if s.PinnedPath != "" {
-		d = "pinned-path " + paths.Tilde(s.PinnedPath) + ", follows its committed HEAD, "
+	if s.LocalGit != "" {
+		d = "local-git " + paths.Tilde(s.LocalGit) + ", follows its committed HEAD, "
 	}
 	switch {
 	case s.Commit == "":

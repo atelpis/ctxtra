@@ -22,15 +22,13 @@ stdout '\\u0000'
 -- no.txt --
 n
 -- srv/skill/bindings.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: top
-spec:
-  selector:
-    global: true
-  files: [..notes.md]
-  skills: [.]
+schema: ctxtra/v1
+bindings:
+  - name: top
+    match:
+      global: true
+    instructions: [..notes.md]
+    skills: [.]
 -- srv/skill/SKILL.md --
 ---
 description: A skill at the top.

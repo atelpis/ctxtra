@@ -26,7 +26,7 @@ func TestCleanStoreKeepsOtherConfigs(t *testing.T) {
 	}
 	cfg := func(name, commit string) string {
 		p := filepath.Join(h, name)
-		testenv.Write(t, p, "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n  team: {git: '"+url+"', branch: main, commit: '"+commit+"'}\n")
+		testenv.Write(t, p, "schema: ctxtra/v1\nsources:\n  team: {git: '"+url+"', branch: main, commit: '"+commit+"'}\n")
 		return p
 	}
 	mine, other := cfg("mine.yaml", a), cfg("other.yaml", b)

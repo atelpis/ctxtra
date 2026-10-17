@@ -16,7 +16,7 @@ import (
 )
 
 // Source is one entry of sources. It has exactly one kind: TrustedPath,
-// Git or PinnedPath.
+// Git or LocalGit.
 type Source struct {
 	Name string
 	Line int
@@ -25,22 +25,22 @@ type Source struct {
 	// git: a repository pinned to Commit, read from ctxtra's store. Commit
 	// is "" until the first sync.
 	Git, Branch string
-	// pinned-path: a clone on this disk, pinned to Commit like git; sync
+	// local-git: a clone on this disk, pinned to Commit like git; sync
 	// follows the clone's committed HEAD.
-	PinnedPath string // absolute, ~ expanded
-	Commit     string
+	LocalGit string // absolute, ~ expanded
+	Commit   string
 }
 
 // Pinned reports whether s is read from the store.
 func (s Source) Pinned() bool { return s.Remote() != "" }
 
 // Remote is where a pinned source's commits come from: the git URL, or the
-// clone of a pinned-path source. "" for a trusted source.
+// clone of a local-git source. "" for a trusted source.
 func (s Source) Remote() string {
 	if s.Git != "" {
 		return s.Git
 	}
-	return s.PinnedPath
+	return s.LocalGit
 }
 
 // errUnavailable marks a reference to a pinned source whose accepted commit
@@ -112,12 +112,12 @@ func (c *Config) decodeSources(n *yaml.Node) error {
 }
 
 func decodeSource(n *yaml.Node) (Source, error) {
-	f, err := fields(n, "trusted-path", "git", "pinned-path", "branch", "commit")
+	f, err := fields(n, "trusted-path", "git", "local-git", "branch", "commit")
 	if err != nil {
 		return Source{}, err
 	}
 	kinds := 0
-	for _, k := range []string{"trusted-path", "git", "pinned-path"} {
+	for _, k := range []string{"trusted-path", "git", "local-git"} {
 		if f[k] != nil {
 			kinds++
 		}
@@ -125,18 +125,18 @@ func decodeSource(n *yaml.Node) (Source, error) {
 	var s Source
 	switch {
 	case kinds > 1:
-		return Source{}, fmt.Errorf("line %d: a source has one kind: trusted-path, git or pinned-path", n.Line)
+		return Source{}, fmt.Errorf("line %d: a source has one kind: trusted-path, git or local-git", n.Line)
 	case f["branch"] != nil && f["git"] == nil:
 		return Source{}, fmt.Errorf("line %d: branch is only for git sources", f["branch"].Line)
 	case f["commit"] != nil && f["trusted-path"] != nil:
-		return Source{}, fmt.Errorf("line %d: commit is only for git and pinned-path sources", f["commit"].Line)
+		return Source{}, fmt.Errorf("line %d: commit is only for git and local-git sources", f["commit"].Line)
 	case f["trusted-path"] != nil:
 		if s.TrustedPath, err = folder(f["trusted-path"], "trusted-path"); err != nil {
 			return Source{}, err
 		}
 		return s, nil
-	case f["pinned-path"] != nil:
-		if s.PinnedPath, err = folder(f["pinned-path"], "pinned-path"); err != nil {
+	case f["local-git"] != nil:
+		if s.LocalGit, err = folder(f["local-git"], "local-git"); err != nil {
 			return Source{}, err
 		}
 	case f["git"] != nil:
@@ -156,7 +156,7 @@ func decodeSource(n *yaml.Node) (Source, error) {
 			return Source{}, fmt.Errorf("line %d: %w", f["branch"].Line, err)
 		}
 	default:
-		return Source{}, fmt.Errorf("line %d: a source needs trusted-path, git or pinned-path", n.Line)
+		return Source{}, fmt.Errorf("line %d: a source needs trusted-path, git or local-git", n.Line)
 	}
 	if v := f["commit"]; v != nil {
 		s.Commit, _ = str(v, "commit")
