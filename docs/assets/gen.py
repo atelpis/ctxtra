@@ -233,59 +233,6 @@ def demo():
     write("demo.svg", "\n".join(b), w, h, "ctxtra demo: four sessions in four folders get four different sets of files from one config")
 
 
-# ---------------------------------------------------------------- code and context, versioned apart
-
-def separate(theme):
-    """Code, personal context and team context: three repos, three histories, one session."""
-    c = THEMES[theme]
-    w, h = 1280, 470
-    b = [frame(c, w, h)]
-    b.append(f'<text x="56" y="62" font-size="15" font-weight="700" letter-spacing="2" fill="{c["CYAN"]}">NOT A GENERATOR</text>')
-    b.append(f'<text x="56" y="96" font-size="25" font-weight="600" fill="{c["TEXT"]}">Code, context and bindings stay apart. ctxtra joins them at runtime.</text>')
-    cols = [
-        ("acme/billing", "code", c["DIM"], [("AGENTS.md", None, "the team's, untouched"), ("go.mod  cmd/  internal/", None, None), (".git  remote acme/billing", None, None)],
-         "git status: clean", "nothing added, nothing to ignore"),
-        ("~/dev/dotfiles", "your package", c["GREEN"],
-         [("me.md", 0, None), ("go-style.md", 1, None), ("ctxtra/bindings.yaml", None, None)],
-         "live", "edits apply to the next session"),
-        ("acme/team-ctx", "team package", c["CYAN"],
-         [("billing.md", 2, None), ("skills/deploy/", 3, None), ("bindings/billing.yaml", None, None)],
-         "pinned def5678", "updated after you review the diff"),
-    ]
-    x0, cwid, gap, y0, ch = 56, 376, 30, 128, 214
-    session_y = 392
-    for k, (repo, kind, tagc, files, tag, note) in enumerate(cols):
-        x = x0 + k * (cwid + gap)
-        b.append(f'<rect x="{x}" y="{y0}" width="{cwid}" height="{ch}" rx="12" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>')
-        b.append(f'<text x="{x+18}" y="{y0+30}" font-family="{MONO}" font-size="17" font-weight="700" fill="{c["TEXT"]}">{escape(repo)}</text>')
-        b.append(f'<text x="{x+cwid-18}" y="{y0+30}" font-size="14" fill="{c["MUTED"]}" text-anchor="end">{kind}</text>')
-        for n, (name, ci, aside) in enumerate(files):
-            y = y0 + 52 + n * 34
-            dot = c[FILE_COLORS[ci]] if ci is not None else c["DIM"]
-            b.append(f'<circle cx="{x+24}" cy="{y+11}" r="5" fill="{dot}"/>')
-            b.append(f'<text x="{x+38}" y="{y+16}" font-family="{MONO}" font-size="15" fill="{c["TEXT"] if ci is not None else c["MUTED"]}">{escape(name)}</text>')
-            if aside:
-                b.append(f'<text x="{x+cwid-18}" y="{y+16}" font-size="14" fill="{c["DIM"]}" text-anchor="end">{escape(aside)}</text>')
-        b.append(f'<line x1="{x+18}" y1="{y0+ch-58}" x2="{x+cwid-18}" y2="{y0+ch-58}" stroke="{c["EDGE"]}"/>')
-        b.append(f'<text x="{x+18}" y="{y0+ch-32}" font-family="{MONO}" font-size="15" fill="{tagc}">{escape(tag)}</text>')
-        b.append(f'<text x="{x+18}" y="{y0+ch-12}" font-size="14" fill="{c["MUTED"]}">{escape(note)}</text>')
-        mx = x + cwid / 2
-        why = "session folder" if k == 0 else "bindings"
-        b.append(f'<line x1="{mx}" y1="{y0+ch}" x2="{mx}" y2="{session_y-6}" stroke="{c["MUTED"]}" stroke-width="2"{' stroke-dasharray="3 5"' if k == 0 else ''}/>')
-        b.append(f'<path d="M{mx-5} {session_y-12} L{mx} {session_y-5} L{mx+5} {session_y-12}" fill="none" stroke="{c["MUTED"]}" stroke-width="2"/>')
-        b.append(f'<text x="{mx+10}" y="{(y0+ch+session_y)/2+5}" font-family="{MONO}" font-size="14" fill="{c["MUTED"]}">{why}</text>')
-    b.append(f'<rect x="{x0}" y="{session_y}" width="{w-2*x0}" height="48" rx="10" fill="{c["BG"]}" stroke="{c["EDGE"]}"/>')
-    parts = [f'<tspan fill="{c["TEXT"]}" font-weight="700">claude in ~/wt/billing-fix</tspan><tspan fill="{c["MUTED"]}">   ctxtra: added 3 files (</tspan>']
-    for k, i in enumerate([0, 1, 2]):
-        if k:
-            parts.append(f'<tspan fill="{c["MUTED"]}">, </tspan>')
-        parts.append(f'<tspan fill="{c[FILE_COLORS[i]]}">{FILE_NAMES[i]}</tspan>')
-    parts.append(f'<tspan fill="{c["MUTED"]}">) and 1 skill (</tspan><tspan fill="{c["LIME"]}">deploy</tspan><tspan fill="{c["MUTED"]}">)</tspan>')
-    b.append(f'<text x="{x0+20}" y="{session_y+30}" font-family="{MONO}" font-size="16" xml:space="preserve">' + "".join(parts) + "</text>")
-    write(f"separate-{theme}.svg", "\n".join(b), w, h,
-          "Code, your context package and your team's package are three repos with their own history; a session in a worktree gets files from both packages and nothing is added to the code repo")
-
-
 # ---------------------------------------------------------------- team sync
 
 def team_sync(theme):
@@ -329,9 +276,85 @@ def team_sync(theme):
           "A team repository is pinned to a commit; new commits reach your sessions only after you accept them in ctxtra sync")
 
 
+# ---------------------------------------------------------------- what each approach gives you
+
+def compare(theme):
+    """Three columns: an agent out of the box, generator tools, ctxtra."""
+    c = THEMES[theme]
+    w, h = 1280, 640
+    b = [frame(c, w, h), gradient(c)]
+    b.append(f'<text x="40" y="58" font-size="15" font-weight="700" letter-spacing="2" fill="{c["CYAN"]}">WHERE YOUR AGENT INSTRUCTIONS LIVE</text>')
+    b.append(f'<text x="40" y="92" font-size="25" font-weight="600" fill="{c["TEXT"]}">Out of the box, with a generator, and with ctxtra</text>')
+    cols = [
+        ("Agent out of the box", "each agent reads its own files", [
+            ("~/.claude/CLAUDE.md", "every repo", "DIM"),
+            ("~/.codex/AGENTS.md", "every repo", "DIM"),
+            ("~/dev/AGENTS.md", "parent folder", "DIM"),
+            ("~/dev/shop-api/", "", None),
+            ("  AGENTS.md", "in the repo", "AMBER"),
+            ("  api/AGENTS.md", "in the repo", "AMBER"),
+        ], [
+            (False, "Different files and places per agent"),
+            (False, "Personal notes: global, or in the project"),
+            (False, "Scoped by folder, not by repo identity"),
+        ]),
+        ("Generator tools", "one source, generated into each agent's files", [
+            ("~/dev/shop-api/", "", None),
+            ("  .ruler/  .rulesync/", "source", "DIM"),
+            ("  AGENTS.md", "generated", "AMBER"),
+            ("  CLAUDE.md", "generated", "AMBER"),
+            ("  .cursor/rules/", "generated", "AMBER"),
+            ("  .gitignore", "+ generated files", "AMBER"),
+            ("~/.claude/  ~/.codex/", "global mode", "DIM"),
+        ], [
+            (True, "One source for many agents"),
+            (False, "Writes generated files into projects"),
+            (False, "Regenerate after each change, or watch"),
+        ]),
+        ("ctxtra", "injected into the session at runtime", [
+            ("~/dev/shop-api/", "nothing added", "GREEN"),
+            ("  AGENTS.md", "the team's, untouched", "DIM"),
+            ("~/dotfiles/", "your package, live", "GREEN"),
+            ("  go-style.md  review/", "", None),
+            ("your-org/team-ctx", "shared, pinned", "CYAN"),
+            ("  services.md  deploy/", "", None),
+        ], [
+            (True, "All supported agents, one config"),
+            (True, "Nothing written into your projects"),
+            (True, "Local files, or shared repos you review"),
+            (True, "Target by folder, git remote or subpath"),
+            (True, "Every worktree, automatically"),
+        ]),
+    ]
+    cw, gap, x0, y0, ch = 384, 24, 40, 122, 486
+    for k, (title, sub, tree, verdicts) in enumerate(cols):
+        x = x0 + k * (cw + gap)
+        ours = k == 2
+        b.append(f'<rect x="{x}" y="{y0}" width="{cw}" height="{ch}" rx="14" fill="{c["PANEL"]}" '
+                 f'stroke="{"url(#g)" if ours else c["EDGE"]}" stroke-width="{2.5 if ours else 1}"/>')
+        b.append(f'<text x="{x+22}" y="{y0+40}" font-size="21" font-weight="700" fill="{c["TEXT"]}"'
+                 f'{f" font-family={chr(34)}{MONO}{chr(34)}" if ours else ""}>{escape(title)}</text>')
+        b.append(f'<text x="{x+22}" y="{y0+64}" font-size="15" fill="{c["MUTED"]}">{escape(sub)}</text>')
+        for n, (path, tag, col) in enumerate(tree):
+            y = y0 + 104 + n * 28
+            b.append(f'<text x="{x+22}" y="{y}" font-family="{MONO}" font-size="15" fill="{c["TEXT"]}" xml:space="preserve">{escape(path)}</text>')
+            if tag:
+                b.append(f'<text x="{x+cw-22}" y="{y}" font-size="14" fill="{c[col]}" text-anchor="end">{escape(tag)}</text>')
+        ly = y0 + 104 + 7 * 28 - 6
+        b.append(f'<line x1="{x+22}" y1="{ly}" x2="{x+cw-22}" y2="{ly}" stroke="{c["EDGE"]}"/>')
+        for n, (good, text) in enumerate(verdicts):
+            y = ly + 34 + n * 30
+            mark, mc = ("✓", c["GREEN"]) if good else ("✕", c["RED"])
+            b.append(f'<text x="{x+22}" y="{y}" font-size="17" font-weight="700" fill="{mc}">{mark}</text>')
+            b.append(f'<text x="{x+46}" y="{y}" font-size="16" fill="{c["TEXT"]}">{escape(text)}</text>')
+    write(f"compare-{theme}.svg", "\n".join(b), w, h,
+          "Where agent instructions live: out of the box each agent reads its own files, global or committed; "
+          "generator tools write generated files into every project; ctxtra injects them at runtime and writes nothing into your projects")
+
+
 for theme in THEMES:
     hero(theme)
-    separate(theme)
     team_sync(theme)
+    compare(theme)
 demo()
 social()

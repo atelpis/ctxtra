@@ -12,14 +12,25 @@
   <img src="https://img.shields.io/badge/status-preview-F59E0B" alt="Status: preview">
 </p>
 
-**Not another CLAUDE.md generator.** Bind instructions and skills to `github.com/acme/billing` once. Every
-clone and every worktree gets them at runtime, in every supported agent, including the worktree your agent
-created ten seconds ago.
+Attach instructions and skills to a repo once, by its git remote. Every clone and every worktree of that repo
+gets them, in every supported agent, including the worktree your agent created ten seconds ago. Your own notes
+stay in your own folders, and your team's stay in a shared repo that you review.
 
 `0 files written to your repo` · `0 setup steps per worktree` · `0 symlinks`
 
+How it gets in: `ctxtra setup` adds one hook to each agent's user-level config, once. When a session starts,
+the agent runs it, and ctxtra adds the files that match that session's folder and repo. You keep running plain
+`claude`, `codex` or `opencode`.
+
 <p align="center">
   <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get four different sets of files from one config" width="100%">
+</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/compare-dark.svg">
+    <img src="docs/assets/compare-light.svg" alt="Where agent instructions live. Out of the box: each agent reads its own files, global or in the project. Generator tools: one source, but generated files written into projects. ctxtra: injected at runtime from your own folders or shared repos, nothing written into your projects, targeted by folder, git remote or subpath, every worktree automatically" width="100%">
+  </picture>
 </p>
 
 ## Yes, it's prompt injection
@@ -30,13 +41,6 @@ and warns when a binding widens its scope. `ctxtra show DIR` prints the rendered
 what ctxtra adds and where; ctxtra doesn't make that content safe.
 
 ## Why ctxtra
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/separate-dark.svg">
-    <img src="docs/assets/separate-light.svg" alt="Not a generator: the code repo, your package and your team's package stay apart; a session in a worktree gets files from both packages, and nothing is written into the code repo" width="100%">
-  </picture>
-</p>
 
 - **Markdown packages, bound instead of installed.** A package is a folder or git repo of instruction files,
   skills and binding files (a `source` in the config). Use your own, your team's, or both. Bindings decide
@@ -49,6 +53,18 @@ what ctxtra adds and where; ctxtra doesn't make that content safe.
 - **Remote packages, pinned and reviewed.** A team's package is served from the commit you accepted. `ctxtra sync`
   shows the diff and warns when a binding widens its scope, and sessions never fetch. Bindings in a pinned
   package can reference only that package's own files, never `~/.ssh` or anything else on your disk.
+
+<details>
+<summary>Why not a symlink, an <code>@import</code> or <code>CLAUDE.local.md</code>?</summary>
+
+- A symlink from `~/.codex/AGENTS.md` to `~/.claude/CLAUDE.md` keeps two agents in sync, but it is still
+  global: every repository gets everything.
+- `@import` is Claude Code syntax; the other agents don't read it. A `CLAUDE.md` in a parent folder like
+  `~/dev` doesn't cover a worktree in `~/wt/` or `.orca/`.
+- `CLAUDE.local.md` must exist in each checkout, so a new worktree starts without it. `.git/info/exclude` can
+  hide local files in every worktree, but doesn't create or share them.
+
+</details>
 
 ## Quick start
 
@@ -176,33 +192,6 @@ A binding applies when any entry of its selector matches the folder the session 
 
 Files are plain Markdown, and skills are folders with a `SKILL.md`, the format the agents already use.
 Nothing in them is specific to ctxtra.
-
-</details>
-
-## How it compares
-
-| Approach | How context reaches the agent | Files in your project | A new linked worktree | Shared updates |
-|---|---|---|---|---|
-| Generators<br>(Ruler, Rulesync) | Generated native files | Project mode writes generated files | Gets the committed files, or generate again | Git workflow; locks in Rulesync |
-| Skill and package managers<br>(Vercel Skills, Skillshare, APM) | Copied or linked into agent folders | Project installs write into the project; global installs don't | Project installs: install again | Locks and audits in APM and Skillshare |
-| Runtime injectors<br>(CARL, Coder Config) | Hook at runtime | Global injection can avoid project files | Depends on directory scope or active workstream | No accepted-commit workflow found |
-| Personal overlays<br>(Skul) | Files written into each worktree | Local files; index flags for tracked shadows | `skul apply` in each worktree | Branch, tag or commit refs |
-| **ctxtra** | **User-level hooks, plugins or extensions** | **None** | **Matched by remote or main checkout** | **Pinned commit, diff review, scope-change warnings** |
-
-Representative workflows, from each tool's docs and source as of October 2026; most of them also have other
-modes. Each feature exists somewhere; ctxtra's point is the combination. It also does less: it manages
-Markdown context and skills only, with no MCP servers, permissions, commands, registries or dependency
-resolution.
-
-<details>
-<summary>Why not a symlink, an <code>@import</code> or <code>CLAUDE.local.md</code>?</summary>
-
-- A symlink from `~/.codex/AGENTS.md` to `~/.claude/CLAUDE.md` keeps two agents in sync, but it is still
-  global: every repository gets everything.
-- `@import` is Claude Code syntax; the other agents don't read it. A `CLAUDE.md` in a parent folder like
-  `~/dev` doesn't cover a worktree in `~/wt/` or `.orca/`.
-- `CLAUDE.local.md` must exist in each checkout, so a new worktree starts without it. `.git/info/exclude` can
-  hide local files in every worktree, but doesn't create or share them.
 
 </details>
 
@@ -343,6 +332,7 @@ Details: [docs/spec.md](docs/spec.md).
 - OpenCode: only OpenCode 2 (tested with 2.0.29).
 - `setup` follows `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `XDG_CONFIG_HOME` when they are set.
 - macOS and Linux. Windows isn't supported yet.
+- ctxtra manages Markdown context and skills only: no MCP servers, permissions, commands or registries.
 
 </details>
 
