@@ -69,5 +69,5 @@ jobs:
             gh issue comment "$n" --body "Still failing: $RUN"
           else
             gh issue create --label e2e-latest --title "e2e fails with the latest agent versions" \
-              --body "The nightly run against the latest Claude Code, Codex, Pi, OpenCode and Copilot failed: $RUN"
+              --body "The nightly run against the latest Claude Code, Codex, Pi, OpenCode, Copilot and Muse Code failed: $RUN"
           fi

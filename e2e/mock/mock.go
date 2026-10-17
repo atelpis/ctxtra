@@ -108,6 +108,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodHead:
 		w.WriteHeader(http.StatusOK)
 		return
+	case r.Method == http.MethodGet && path == "/muse-code/models": // before the generic /models
+		writeJSON(w, museCatalog)
+		return
 	case r.Method == http.MethodGet && strings.HasSuffix(strings.TrimSuffix(path, "/"), "/models"):
 		writeJSON(w, map[string]any{"object": "list", "data": []any{
 			map[string]any{"id": "mock-model", "object": "model", "type": "model", "display_name": "mock"}}})
@@ -198,3 +201,18 @@ func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
 }
+
+// museCatalog is the model catalog Muse Code reads from the origin of its
+// base URL before the first request. It offers mock-model with tool calls
+// and without reasoning, so Muse sends no reasoning parameters.
+var museCatalog = map[string]any{"object": "list", "data": []any{map[string]any{
+	"id": "mock-model", "object": "model", "created": 1, "owned_by": "mock",
+	"metadata": map[string]any{"muse-code": map[string]any{
+		"name": "mock-model", "family": "mock", "release_date": "2026-01-01", "is_hidden": false,
+		"attachment": false, "reasoning": false, "temperature": false, "tool_call": true,
+		"modalities": map[string]any{"input": []string{"text"}, "output": []string{"text"}},
+		"limit":      map[string]any{"context": 200000, "output": 8192},
+		"options":    map[string]any{}, "variants": map[string]any{}, "description": "mock",
+		"cost": map[string]any{"input": "0", "output": "0", "cached": "0", "currency": "USD"},
+	}},
+}}}

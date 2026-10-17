@@ -1,7 +1,8 @@
 name: e2e
 
 # Agent contract tests against the agent versions pinned in
-# e2e/agents/package-lock.json. No secrets: the agents talk only to the mock.
+# e2e/agents/package-lock.json and e2e/agents/muse.json. No secrets: the
+# agents talk only to the mock.
 
 on:
   push:

@@ -50,8 +50,9 @@ type Driver interface {
 	// into home. env is the fixture's environment; the result replaces it.
 	Command(bin, home, dir, mockURL, prompt string, opts Options, env []string) (*exec.Cmd, error)
 	// UserMessages are the messages for the user that hooks added, read from
-	// the run's output. Only called for drivers with UserMessage.
-	UserMessages(stdout string) []string
+	// the run's output or from the agent's session log in home. Only called
+	// for drivers with UserMessage.
+	UserMessages(home, stdout string) []string
 }
 
 // Options change one run.
@@ -63,7 +64,7 @@ type Options struct {
 }
 
 // All is every driver.
-var All = []Driver{Claude{}, Codex{}, Pi{}, OpenCode{}, Copilot{}}
+var All = []Driver{Claude{}, Codex{}, Pi{}, OpenCode{}, Copilot{}, Muse{}}
 
 // Has reports whether d declares c.
 func Has(d Driver, c Cap) bool {

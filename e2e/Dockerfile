@@ -22,7 +22,8 @@ WORKDIR /src
 
 # AGENTS=latest installs the latest agent releases instead of the pinned ones.
 ARG AGENTS=pinned
-COPY --chown=e2e e2e/agents/package.json e2e/agents/package-lock.json e2e/agents/install.sh e2e/agents/
+COPY --chown=e2e e2e/agents/package.json e2e/agents/package-lock.json e2e/agents/install.sh \
+	e2e/agents/install-muse.mjs e2e/agents/muse.json e2e/agents/
 RUN e2e/agents/install.sh "$AGENTS"
 
 COPY --chown=e2e go.mod go.sum ./

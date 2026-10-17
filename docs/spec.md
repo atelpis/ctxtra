@@ -205,7 +205,7 @@ When you answer `N`, ctxtra remembers the commit as dismissed. Sessions that use
 
 Sessions never fetch, so they can't know about new commits. When a session uses a pinned source that
 wasn't checked for 7 days, it says `team-ctx last checked 12 days ago; run ctxtra sync to check for
-changes` (Claude Code, Codex and Pi show it at session start, and `files` and `doctor` show it too). A
+changes` (Claude Code, Codex, Muse and Pi show it at session start, and `files` and `doctor` show it too). A
 check is a fetch of the branch that worked, by `add` or `sync`. A source that was never checked on this
 machine, for example after `sync --restore` on a new laptop, says so.
 
@@ -319,7 +319,7 @@ any of them matches.
   the same `name`: the first is used, the other is reported.
 - `SKILL.md` must start with YAML frontmatter that has a `description`. `name` is optional (default: the
   folder name). Other keys are ignored.
-- Claude Code, Codex, Cursor and Copilot get the file contents and a list of the skills (name, description, path),
+- Claude Code, Codex, Muse, Cursor and Copilot get the file contents and a list of the skills (name, description, path),
   and read a `SKILL.md` when a task needs it. Pi gets files as context files and skills as native skills.
   OpenCode gets files in the system prompt and skills as native skills, which its `skill` tool loads.
 
@@ -387,6 +387,8 @@ Problems never make ctxtra add more than the config says:
 |---|---|
 | `CTXTRA_CONFIG` | `~/.config/ctxtra/config.yaml` |
 | `CTXTRA_LOG` | `~/.ctxtra/log.jsonl` |
+
+Muse Code runs hooks with a cleared environment, so its sessions always use the defaults.
 
 The session folder is the `cwd` the agent sends to the hook. If it is empty: the first `workspace_roots`
 entry (Cursor), else the hook's working folder.

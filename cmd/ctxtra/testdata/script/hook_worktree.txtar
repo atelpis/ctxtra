@@ -1,8 +1,8 @@
 # The hook command that setup wrote gives each agent the bound files, in
-# config order, in a worktree outside the project folder. Claude and Codex
-# show the user a summary at session start, not for subagents.
+# config order, in a worktree outside the project folder. Claude, Codex and
+# Muse show the user a summary at session start, not for subagents.
 
-exec ctxtra setup --agent claude --agent codex --agent pi --agent opencode
+exec ctxtra setup --agent claude --agent codex --agent pi --agent opencode --agent muse
 gitrepo dev/svc git@github.com:Acme/Svc.git
 exec git -C dev/svc worktree add -q -b feature ../../elsewhere/svc-feature
 
@@ -22,6 +22,16 @@ stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
 runhook codex SessionStart elsewhere/svc-feature
 stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
 stdout '"systemMessage":"ctxtra: added 3 files'
+
+runhook muse SessionStart elsewhere/svc-feature
+stdout '"hookEventName":"SessionStart"'
+stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
+stdout '"systemMessage":"ctxtra: added 3 files'
+
+runhook muse SubagentStart elsewhere/svc-feature
+stdout '"hookEventName":"SubagentStart"'
+stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
+! stdout 'systemMessage'
 
 # Pi gets files as context files, skills as native skill paths.
 runhook pi before_agent_start elsewhere/svc-feature

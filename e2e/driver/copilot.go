@@ -34,4 +34,4 @@ func (Copilot) Command(bin, home, dir, mockURL, prompt string, o Options, env []
 	return cmd, nil
 }
 
-func (Copilot) UserMessages(string) []string { return nil }
+func (Copilot) UserMessages(_, _ string) []string { return nil }
