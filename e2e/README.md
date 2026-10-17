@@ -1,7 +1,7 @@
 # Agent contract tests
 
-These tests run real agents (Claude Code, Codex CLI, Pi, OpenCode) with ctxtra set up, and check what reaches the
-model. The model is a mock on `127.0.0.1` ([mock/](mock)) that records every request and answers with
+These tests run real agents (Claude Code, Codex CLI, Pi, OpenCode, GitHub Copilot CLI) with ctxtra set up, and
+check what reaches the model. The model is a mock on `127.0.0.1` ([mock/](mock)) that records every request and answers with
 text or a scripted tool call, so the tests are free and deterministic.
 
 Every run gets its own home folder, with the agents' config folders inside it, a minimal environment and
@@ -29,7 +29,7 @@ body, ctxtra's log and Claude's debug log in `DIR/<test>/run<N>`. CI uploads tha
 
 Agent binaries are found in this order:
 
-1. `$CTXTRA_E2E_CLAUDE`, `$CTXTRA_E2E_CODEX`, `$CTXTRA_E2E_PI`, `$CTXTRA_E2E_OPENCODE`
+1. `$CTXTRA_E2E_CLAUDE`, `$CTXTRA_E2E_CODEX`, `$CTXTRA_E2E_PI`, `$CTXTRA_E2E_OPENCODE`, `$CTXTRA_E2E_COPILOT`
 2. The pinned versions in `agents/`, installed with `agents/install.sh`
 3. `PATH`
 
@@ -54,14 +54,15 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestUntrustedHookAddsNothing` | Codex without hook trust: the session works and gets nothing from ctxtra |
 | `TestUserMessage` | Claude gets the one-line message for the user from the hook |
 | `TestOutsideGit` | Outside git, only `global` and `dirs` bindings apply |
+| `TestResume` | A resumed Copilot session has the files once: Copilot doesn't keep the hook's text in the session |
 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped
 with the reason for the others. A declared capability that stops working fails the test.
 
 Not covered here, and checked by hand before a release:
 
-- What the interactive TUI shows (the session-start message on screen), `/clear`, `/compact` and resume.
-  These need a pseudo-terminal runner.
+- What the interactive TUI shows (the session-start message on screen), `/clear`, `/compact`, and resume in
+  Claude, Codex, Pi and OpenCode. These need a pseudo-terminal runner.
 - Codex hook trust through `/hooks`. These tests run Codex with `--dangerously-bypass-hook-trust`, which
   checks delivery only.
 - Cursor Agent CLI: its model protocol can't be mocked.
@@ -83,7 +84,8 @@ Dependabot opens a PR for new agent versions every week; the e2e workflow runs o
 
 ```bash
 cd e2e/agents
-npm install --ignore-scripts @anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest @opencode/cli@latest
+npm install --ignore-scripts @anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest \
+  @opencode/cli@latest @github/copilot@latest
 ./install.sh && cd .. && go test -count=1 ./...
 ```
 

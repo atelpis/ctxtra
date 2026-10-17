@@ -1,11 +1,12 @@
-// Package hookjson edits the JSON hook configs of Claude Code, Codex CLI and
-// Cursor. It changes only ctxtra's own entries: other tools' entries keep
+// Package hookjson edits the JSON hook configs of Claude Code, Codex CLI,
+// Cursor and Copilot CLI. It changes only ctxtra's own entries: other tools' entries keep
 // their content and order, and our entries are updated in place, because
 // Codex keys hook trust by position.
 package hookjson
 
 import (
 	"fmt"
+	"os"
 	"slices"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -25,13 +26,17 @@ type Config struct {
 	Agent  string
 	Path   string
 	Events []Event
-	// Flat is Cursor's layout: each entry is a handler. Otherwise (Claude,
+	// Flat is the layout of Cursor and Copilot: each entry is a handler. Otherwise (Claude,
 	// Codex) each entry is a group with a matcher and a list of handlers.
 	Flat bool
 	// StatusMessage names the hook in Codex's /hooks review.
 	StatusMessage string
-	// Version is written as the top-level "version" if missing (Cursor).
+	// Version is written as the top-level "version" if missing (Cursor,
+	// Copilot).
 	Version int
+	// Own is a file that only ctxtra writes (Copilot): --remove deletes it
+	// when nothing but the version is left.
+	Own bool
 }
 
 // Apply adds, updates or removes our entries and writes the file when it
@@ -106,6 +111,13 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		data.Set("hooks", hooks)
 	} else {
 		data.Delete("hooks")
+	}
+	if _, ok := data.Get("version"); c.Own && !add && len(data.Keys) == 1 && ok {
+		r.Changes = append(r.Changes, c.Path)
+		if o.DryRun {
+			return nil
+		}
+		return os.Remove(c.Path)
 	}
 	out, err := jsonorder.MarshalIndent(data)
 	if err != nil {

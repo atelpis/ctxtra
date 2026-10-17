@@ -58,7 +58,9 @@ func decide(api API, body map[string]any, script []Step) *call {
 	}
 	step := steps[len(results)]
 	if step.kind == "skill" {
-		if _, _, ok := findTool(api, body, "skill"); ok { // OpenCode
+		// OpenCode's skill tool takes an id. Copilot's takes a name, but
+		// loads only its own skills: there the agent reads SKILL.md.
+		if _, schema, ok := findTool(api, body, "skill"); ok && hasParam(schema, "id") {
 			return &call{name: "skill", args: map[string]any{"id": step.name}}
 		}
 		step.kind = "read"
@@ -68,6 +70,7 @@ func decide(api API, body map[string]any, script []Step) *call {
 		for _, c := range []call{
 			{name: "Read", args: map[string]any{"file_path": step.path}},                            // Claude
 			{name: "read", args: map[string]any{"path": step.path}},                                 // Pi, OpenCode
+			{name: "view", args: map[string]any{"path": step.path}},                                 // Copilot
 			{name: "exec_command", args: map[string]any{"cmd": fmt.Sprintf("cat '%s'", step.path)}}, // Codex
 		} {
 			if ns, _, ok := findTool(api, body, c.name); ok {
@@ -82,6 +85,10 @@ func decide(api API, body map[string]any, script []Step) *call {
 		}
 		if _, _, ok := findTool(api, body, "subagent"); ok { // OpenCode
 			return &call{name: "subagent", args: map[string]any{"agent": "general", "description": "e2e probe", "prompt": SubagentTask}}
+		}
+		if _, _, ok := findTool(api, body, "task"); ok { // Copilot
+			return &call{name: "task", args: map[string]any{"name": "e2e-probe", "description": "e2e probe",
+				"prompt": SubagentTask, "agent_type": "general-purpose", "mode": "sync"}}
 		}
 		if ns, _, ok := findTool(api, body, "spawn_agent"); ok {
 			return &call{namespace: ns, name: "spawn_agent", args: map[string]any{"message": SubagentTask}}
@@ -110,6 +117,13 @@ func decide(api API, body map[string]any, script []Step) *call {
 		return &call{namespace: ns, name: "wait_agent", args: args}
 	}
 	return nil
+}
+
+// hasParam reports whether a tool's parameter schema has the property.
+func hasParam(schema map[string]any, name string) bool {
+	props, _ := schema["properties"].(map[string]any)
+	_, ok := props[name]
+	return ok
 }
 
 var uuidRe = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
