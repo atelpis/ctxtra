@@ -112,10 +112,20 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 	} else {
 		data.Delete("hooks")
 	}
-	if _, ok := data.Get("version"); c.Own && !add && len(data.Keys) == 1 && ok {
+	// A symlink (for example into a dotfiles repo) is not deleted: its
+	// target is written below, like any other change.
+	_, version := data.Get("version")
+	if st, err := os.Lstat(c.Path); err == nil && st.Mode().IsRegular() && c.Own && !add && len(data.Keys) == 1 && version {
 		r.Changes = append(r.Changes, c.Path)
 		if o.DryRun {
 			return nil
+		}
+		old, err := os.ReadFile(c.Path)
+		if err != nil {
+			return err
+		}
+		if err := fsutil.Backup(c.Path, old, paths.BackupDir()); err != nil {
+			return err
 		}
 		return os.Remove(c.Path)
 	}
