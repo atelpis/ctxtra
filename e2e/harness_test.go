@@ -1,7 +1,7 @@
 package e2e
 
 // Agent contract tests: each scenario runs real agents (Claude Code, Codex,
-// Pi, OpenCode) non-interactively against the mock model, with ctxtra set up in an
+// Pi, OpenCode, Copilot) non-interactively against the mock model, with ctxtra set up in an
 // isolated home folder, and checks what reaches the model.
 //
 //	go test -count=1 ./...                 every agent found
@@ -32,7 +32,7 @@ import (
 )
 
 var (
-	agentFlag  = flag.String("agent", "", "run only this agent (claude, codex, pi, opencode)")
+	agentFlag  = flag.String("agent", "", "run only this agent (claude, codex, pi, opencode, copilot)")
 	keepFlag   = flag.Bool("keep", false, "keep each run's home folder and log its path")
 	timeoutRun = flag.Duration("run-timeout", 3*time.Minute, "timeout of one agent run")
 )
@@ -81,7 +81,8 @@ func realHomeState() string {
 	home, _ := os.UserHomeDir()
 	var b strings.Builder
 	for _, p := range []string{".claude/settings.json", ".codex/hooks.json", ".codex/config.toml",
-		".pi/agent/extensions/ctxtra.ts", ".config/opencode/plugins/ctxtra.ts", ".cursor/hooks.json"} {
+		".pi/agent/extensions/ctxtra.ts", ".config/opencode/plugins/ctxtra.ts", ".cursor/hooks.json",
+		".copilot/hooks/ctxtra.json"} {
 		st, err := os.Stat(filepath.Join(home, p))
 		if err != nil {
 			fmt.Fprintf(&b, "%s:none ", p)

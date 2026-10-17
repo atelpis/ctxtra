@@ -39,6 +39,12 @@ func otherTool(s *Session, agent string) {
 		cmd := `/bin/sh -c 'cat >/dev/null; /bin/cat ` + path + `'`
 		file := map[string]string{"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}[agent]
 		s.Write(file, `{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "`+cmd+`"}]}]}}`)
+	case "copilot":
+		// Copilot reads only JSON from a hook; the tool has a file of its
+		// own next to ctxtra's.
+		s.Write("other-tool/answer.json", `{"additionalContext": "CTXMARK-OTHERTOOL"}`)
+		cmd := `/bin/sh -c 'cat >/dev/null; /bin/cat ` + s.Path("other-tool/answer.json") + `'`
+		s.Write(".copilot/hooks/other-tool.json", `{"version": 1, "hooks": {"sessionStart": [{"type": "command", "bash": "`+cmd+`"}]}}`)
 	case "pi":
 		s.Write(".pi/agent/extensions/other-tool.ts", `import { readFileSync } from "node:fs";
 export default function (pi: any) {

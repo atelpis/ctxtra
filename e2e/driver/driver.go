@@ -32,6 +32,9 @@ const (
 	// SkillTool: the agent loads a skill by name with a skill tool
 	// (mock.LoadSkill), and its skill list doesn't show the SKILL.md path.
 	SkillTool Cap = "skill-tool"
+	// Resume: the agent can continue its last session non-interactively
+	// (Options.Resume).
+	Resume Cap = "resume"
 )
 
 // Driver is one agent.
@@ -55,10 +58,12 @@ type Driver interface {
 type Options struct {
 	// Untrusted runs Codex without bypassing hook trust.
 	Untrusted bool
+	// Resume continues the agent's last session.
+	Resume bool
 }
 
 // All is every driver.
-var All = []Driver{Claude{}, Codex{}, Pi{}, OpenCode{}}
+var All = []Driver{Claude{}, Codex{}, Pi{}, OpenCode{}, Copilot{}}
 
 // Has reports whether d declares c.
 func Has(d Driver, c Cap) bool {

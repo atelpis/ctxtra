@@ -140,6 +140,7 @@ func (f *Fixture) Env() []string {
 		"CLAUDE_CONFIG_DIR=" + f.Path(".claude"),
 		"CODEX_HOME=" + f.Path(".codex"),
 		"PI_CODING_AGENT_DIR=" + f.Path(".pi/agent"),
+		"COPILOT_HOME=" + f.Path(".copilot"),
 	}
 }
 

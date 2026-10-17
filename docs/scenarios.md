@@ -184,7 +184,7 @@ Where it can surprise you:
 
 - There is no notice when the maintainer pushes, only "last checked N days ago". Run `ctxtra sync`
   yourself to get changes sooner.
-- Cursor and OpenCode don't show notices at session start. `ctxtra files` and `ctxtra doctor` do.
+- Cursor, Copilot and OpenCode don't show notices at session start. `ctxtra files` and `ctxtra doctor` do.
 - If your config is in a repository, `sync` changes it (the new `commit`). Commit that like any other config
   change.
 
@@ -321,7 +321,7 @@ $ ctxtra add --trust ~/notes
 added source notes (trusted-path: ~/notes); changes apply right away
 ```
 
-In Cursor and OpenCode the file is gone without a message: only `ctxtra files` and `doctor` say why.
+In Cursor, Copilot and OpenCode the file is gone without a message: only `ctxtra files` and `doctor` say why.
 
 ### 5b. Your clone moves or is deleted
 

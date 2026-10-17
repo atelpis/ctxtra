@@ -4,16 +4,18 @@
 # package-lock.json. With "latest" as the argument, it installs the latest
 # releases instead (the nightly check). Package install scripts are skipped,
 # except Claude Code's and OpenCode's, which only copy their native binary
-# into place.
+# into place. Copilot has none: its loader runs the binary of the platform
+# package.
 set -eu
 cd "$(dirname "$0")"
 if [ "${1:-}" = latest ]; then
 	npm install --ignore-scripts --no-audit --no-fund --no-save \
-		@anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest @opencode/cli@latest
+		@anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest @opencode/cli@latest \
+		@github/copilot@latest
 else
 	npm ci --ignore-scripts --no-audit --no-fund
 fi
 npm rebuild @anthropic-ai/claude-code @opencode/cli
-for b in claude codex pi opencode; do
+for b in claude codex pi opencode copilot; do
 	printf '%s: %s\n' "$b" "$(./node_modules/.bin/$b --version | head -n 1)"
 done

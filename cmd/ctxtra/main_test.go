@@ -160,8 +160,9 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	input, _ := json.Marshal(map[string]string{"cwd": dir, "hook_event_name": event, "source": "startup"})
 	var cmd *exec.Cmd
 	switch agent {
-	case "claude", "codex":
-		cfg := map[string]string{"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}[agent]
+	case "claude", "codex", "copilot":
+		cfg := map[string]string{"claude": ".claude/settings.json", "codex": ".codex/hooks.json",
+			"copilot": ".copilot/hooks/ctxtra.json"}[agent]
 		cmd = exec.Command("/bin/sh", "-c", hookCommand(ts, filepath.Join(home, cfg), event))
 	case "pi", "opencode":
 		path := map[string]string{"pi": ".pi/agent/extensions/ctxtra.ts", "opencode": ".config/opencode/plugins/ctxtra.ts"}[agent]
@@ -189,17 +190,20 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 }
 
 // hookCommand is the one ctxtra command among the hooks for event in a
-// Claude or Codex hook file.
+// Claude or Codex hook file, or a flat one (Copilot) where each entry is a
+// handler.
 func hookCommand(ts *testscript.TestScript, path, event string) string {
+	type handler struct{ Command string }
 	var cfg struct {
 		Hooks map[string][]struct {
-			Hooks []struct{ Command string }
+			handler
+			Hooks []handler
 		}
 	}
 	ts.Check(json.Unmarshal([]byte(ts.ReadFile(path)), &cfg))
 	var found []string
 	for _, g := range cfg.Hooks[event] {
-		for _, h := range g.Hooks {
+		for _, h := range append(g.Hooks, g.handler) {
 			if strings.Contains(h.Command, " hook ") && strings.Contains(h.Command, "ctxtra") {
 				found = append(found, h.Command)
 			}
