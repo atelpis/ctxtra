@@ -19,33 +19,20 @@ func TestStartup(t *testing.T) {
 		s.Marked("ctx/svc.md", "SVC")
 		s.Marked("ctx/me.md", "PERSONAL")
 		s.Marked("ctx/other.md", "OTHER")
-		s.Config(`apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata: {name: acme}
-spec:
-  selector: {gitRepos: [{remote: "github.com/acme/**"}]}
-  files: [~/ctx/work.md]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata: {name: svc}
-spec:
-  selector: {dirs: [~/dev/svc]}
-  files: [~/ctx/svc.md]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata: {name: me}
-spec:
-  selector: {global: true}
-  files: [~/ctx/me.md]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata: {name: other}
-spec:
-  selector: {gitRepos: [{remote: github.com/acme/other}]}
-  files: [~/ctx/other.md]
+		s.Config(`schema: ctxtra/v1
+bindings:
+  - name: acme
+    match: {repos: [{remote: "github.com/acme/**"}]}
+    instructions: [~/ctx/work.md]
+  - name: svc
+    match: {dirs: [~/dev/svc]}
+    instructions: [~/ctx/svc.md]
+  - name: me
+    match: {global: true}
+    instructions: [~/ctx/me.md]
+  - name: other
+    match: {repos: [{remote: github.com/acme/other}]}
+    instructions: [~/ctx/other.md]
 `)
 		s.Setup()
 		r := s.Run(wt, driver.Options{})

@@ -50,13 +50,13 @@ exists cphome/hooks/ctxtra.json
   }
 }
 -- .config/ctxtra/config.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Config
-bindings: [b.yaml]
+schema: ctxtra/v1
+include: [b.yaml]
 -- .config/ctxtra/b.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata: {name: me}
-spec: {selector: {global: true}, files: [~/me.md]}
+schema: ctxtra/v1
+bindings:
+  - name: me
+    match: {global: true}
+    instructions: [~/me.md]
 -- me.md --
 CTXMARK-ME

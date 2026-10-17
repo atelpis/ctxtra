@@ -18,7 +18,7 @@ The cases:
 1. [My own files, no git](#1-my-own-files-no-git)
 2. [My own files in my own repository](#2-my-own-files-in-my-own-repository)
 3. [A team repository: first use and the first change](#3-a-team-repository-first-use-and-the-first-change)
-4. [The maintainer widens a selector and adds a skill](#4-the-maintainer-widens-a-selector-and-adds-a-skill)
+4. [The maintainer widens a match block and adds a skill](#4-the-maintainer-widens-a-match-block-and-adds-a-skill)
 5. [Things change](#5-things-change): my notes get a remote, my clone moves, I leave the team, a new laptop
 6. [Tricky layouts](#6-tricky-layouts): two repositories with the same name, editing the team repository, a
    submodule
@@ -30,28 +30,17 @@ You keep notes in `~/notes/agents/`, which is not a git repository.
 
 ```text
 $ ctxtra setup
-$ $EDITOR ~/.config/ctxtra/bindings.yaml
+$ $EDITOR ~/.config/ctxtra/config.yaml
 ```
 
 ```yaml
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: me
-spec:
-  selector:
-    global: true
-  files:
-    - ~/notes/agents/me.md
-```
-
-```text
-$ ctxtra add ~/.config/ctxtra/bindings.yaml
-created ~/.config/ctxtra/config.yaml
-added bindings.yaml
-  trusted: changes apply right away
-  binding me: for every session
-    files: ~/notes/agents/me.md
+schema: ctxtra/v1
+bindings:
+  - name: me
+    match:
+      global: true
+    instructions:
+      - ~/notes/agents/me.md
 ```
 
 ```text
@@ -72,17 +61,16 @@ $ ctxtra add --trust ~/dev/dotfiles/ctxtra/work.yaml
 added source dotfiles (trusted-path: ~/dev/dotfiles); changes apply right away
 added ctxtra://dotfiles/ctxtra/work.yaml
   binding work: for github.com/acme/**
-    files: ~/dev/dotfiles/notes/work.md
+    instructions: ~/dev/dotfiles/notes/work.md
 ```
 
-The config now has:
+The config now has, after your own bindings from case 1:
 
 ```yaml
 sources:
   dotfiles:
     trusted-path: ~/dev/dotfiles
-bindings:
-  - bindings.yaml
+include:
   - ctxtra://dotfiles/ctxtra/work.yaml   # the same as ~/dev/dotfiles/ctxtra/work.yaml
 ```
 
@@ -125,7 +113,7 @@ fetched team-ctx: main at abc1234 (git@github.com:acme/team-ctx.git)
 added source team-ctx (pinned: changes apply after `ctxtra sync`)
 added ctxtra://team-ctx/bindings/billing.yaml
   binding billing: for github.com/acme/billing
-    files: services-overview.md
+    instructions: services-overview.md
 ```
 
 The first version is accepted without review. Read a team repository before you add it, as you would
@@ -137,8 +125,7 @@ sources:
     git: git@github.com:acme/team-ctx.git
     branch: main
     commit: 'abc1234...'          # the full commit ID
-bindings:
-  - bindings.yaml
+include:
   - ctxtra://team-ctx/bindings/billing.yaml
 ```
 
@@ -146,9 +133,9 @@ bindings:
 ctxtra's store.
 
 ```diff
-   files:
-     - ~/notes/agents/work.md
-+    - ctxtra://team-ctx/jira-ticket.md
+     instructions:
+       - ~/notes/agents/work.md
++      - ctxtra://team-ctx/jira-ticket.md
 ```
 
 ```text
@@ -198,7 +185,7 @@ $ ctxtra add ~/dev/team-ctx/bindings/billing.yaml
 starts at your local commit 9f8e7d6; later sync follows origin/main (remote not checked yet)
 added ctxtra://team-ctx/bindings/billing.yaml (pinned: changes apply after `ctxtra sync`)
   binding billing: for github.com/acme/billing
-    files: services-overview.md
+    instructions: services-overview.md
 if the repository is yours, read it from disk instead: ctxtra add --trust ~/dev/team-ctx/bindings/billing.yaml
 ```
 
@@ -206,9 +193,9 @@ The config entry is the same as above, with your local commit. Your own bindings
 clone:
 
 ```diff
-   files:
-     - ~/notes/agents/work.md
-+    - ~/dev/team-ctx/jira-ticket.md        # served as ctxtra://team-ctx/jira-ticket.md
+     instructions:
+       - ~/notes/agents/work.md
++      - ~/dev/team-ctx/jira-ticket.md        # served as ctxtra://team-ctx/jira-ticket.md
 ```
 
 Where it can surprise you:
@@ -219,7 +206,7 @@ Where it can surprise you:
   another laptop can't fetch it.
 - A clone with several remotes, or whose branch has no upstream, needs `--remote` or `--branch`.
 
-## 4. The maintainer widens a selector and adds a skill
+## 4. The maintainer widens a match block and adds a skill
 
 You are at the end of case 3, on `def5678`. The maintainer changes `bindings/billing.yaml` to apply to
 every session and adds a `deploy` skill with a script.
@@ -229,14 +216,14 @@ $ ctxtra sync
 team-ctx: def5678 -> 1a2b3c4 (main, git@github.com:acme/team-ctx.git)
 WARNING: binding billing in bindings/billing.yaml now applies to every session (was: github.com/acme/billing)
 diff --git a/bindings/billing.yaml b/bindings/billing.yaml
-   selector:
--    gitRepos:
--      - remote: github.com/acme/billing
-+    global: true
-   files:
-     - ../services-overview.md
-+  skills:
-+    - ../skills/deploy
+     match:
+-      repos:
+-        - github.com/acme/billing
++      global: true
+     instructions:
+       - ../services-overview.md
++    skills:
++      - ../skills/deploy
 diff --git a/skills/deploy/SKILL.md b/skills/deploy/SKILL.md
 new file mode 100644
 ...
@@ -247,7 +234,7 @@ Accept? [y/N] N
 not accepted; you keep def5678
 ```
 
-Accepting is all or nothing: you can't take the new skill and leave the old selector. Until you accept a
+Accepting is all or nothing: you can't take the new skill and leave the old match block. Until you accept a
 newer commit, sessions say `team-ctx 1a2b3c4 not accepted (dismissed); you have def5678`.
 
 **Option A: accept it.** Run `ctxtra sync` again and answer `y`. Every session, in every repository, gets
@@ -257,22 +244,18 @@ newer commit, sessions say `team-ctx 1a2b3c4 not accepted (dismissed); you have 
 
 ```text
 $ ctxtra remove ctxtra://team-ctx/bindings/billing.yaml
-removed ctxtra://team-ctx/bindings/billing.yaml from bindings
-$ $EDITOR ~/.config/ctxtra/bindings.yaml
+removed ctxtra://team-ctx/bindings/billing.yaml from include
+$ $EDITOR ~/.config/ctxtra/config.yaml
 ```
 
 ```diff
-+---
-+apiVersion: ctxtra/v1alpha1
-+kind: Binding
-+metadata:
-+  name: billing
-+spec:
-+  selector:
-+    gitRepos:
-+      - remote: github.com/acme/billing
-+  files:
-+    - ctxtra://team-ctx/services-overview.md
+ bindings:
++  - name: billing
++    match:
++      repos:
++        - github.com/acme/billing
++    instructions:
++      - ctxtra://team-ctx/services-overview.md
 ```
 
 ```text
@@ -309,7 +292,7 @@ $ git -C ~/notes push -u origin main
 $ claude
 ctxtra: added nothing; 1 problem (run ctxtra doctor)
 $ ctxtra doctor
-  PROBLEM: me (~/.config/ctxtra/bindings.yaml): ~/notes/agents/me.md is in ~/notes, which has the remote
+  PROBLEM: me (~/.config/ctxtra/config.yaml): ~/notes/agents/me.md is in ~/notes, which has the remote
     github.com/acme/my-notes and is not a trusted source; skipped. If the repository is yours:
     ctxtra add --trust ~/notes; to pin it, add the file with ctxtra add
 ```
@@ -340,10 +323,10 @@ is still `ctxtra://team-ctx/jira-ticket.md`. `doctor` suggests writing it that w
 
 ```text
 $ ctxtra remove team-ctx
-removed source team-ctx and 1 bindings entry
+removed source team-ctx and 1 include entry
 your bindings still use it:
-  ~/.config/ctxtra/bindings.yaml:12  - ctxtra://team-ctx/jira-ticket.md
-$ $EDITOR ~/.config/ctxtra/bindings.yaml
+  ~/.config/ctxtra/config.yaml:7  - ctxtra://team-ctx/jira-ticket.md
+$ $EDITOR ~/.config/ctxtra/config.yaml
 ```
 
 New sessions stop getting the source's files at once. If you had added the source from a clone, paths in
@@ -383,12 +366,12 @@ binding files in the source (add one with: ctxtra add ctxtra://globex-ctx/<file>
 
 You contribute to `team-ctx` and want to try your changes before you open a PR.
 
-**Option A: your commits, reviewed.** A `pinned-path` source follows your clone's committed `HEAD`
+**Option A: your commits, reviewed.** A `local-git` source follows your clone's committed `HEAD`
 instead of the remote:
 
 ```text
-$ ctxtra add --pinned-path ~/dev/team-ctx --as team-ctx-dev
-added source team-ctx-dev (pinned-path: ~/dev/team-ctx at 9f8e7d6); sync follows the clone's committed HEAD
+$ ctxtra add --local-git ~/dev/team-ctx --as team-ctx-dev
+added source team-ctx-dev (local-git: ~/dev/team-ctx at 9f8e7d6); sync follows the clone's committed HEAD
 $ $EDITOR ~/dev/team-ctx/jira-ticket.md && git -C ~/dev/team-ctx commit -am "wip"
 $ ctxtra sync team-ctx-dev
 team-ctx-dev: 9f8e7d6 -> 0a1b2c3 (local HEAD, ~/dev/team-ctx)
@@ -430,13 +413,18 @@ content as your own.
 
 ### 7a. Paths outside the source
 
-The maintainer's binding has:
+The maintainer's binding file has:
 
 ```yaml
-  files:
-    - ../services-overview.md
-    - ~/.ssh/id_ed25519                    # an absolute or ~ path
-    - ../../../.aws/credentials            # leaves the source
+schema: ctxtra/v1
+bindings:
+  - name: billing
+    match:
+      repos: [github.com/acme/billing]
+    instructions:
+      - ../services-overview.md
+      - ~/.ssh/id_ed25519                  # an absolute or ~ path
+      - ../../../.aws/credentials          # leaves the source
 ```
 
 ```text
@@ -444,7 +432,7 @@ $ ctxtra add git@github.com:acme/team-ctx.git bindings/billing.yaml
 fetched team-ctx: main at abc1234 (git@github.com:acme/team-ctx.git)
 added source team-ctx (pinned: changes apply after `ctxtra sync`)
 added ctxtra://team-ctx/bindings/billing.yaml
-  ERROR: line 9: ~/.ssh/id_ed25519 is not a path in the source team-ctx; binding skipped
+  ERROR: line 7: ~/.ssh/id_ed25519 is not a path in the source team-ctx; binding skipped
 ```
 
 A binding file in a pinned source can only reference files in the same source, so the whole binding is
@@ -464,8 +452,8 @@ A reference to it is reported as not found.
 
 ### 7c. Making ctxtra run something
 
-- A binding file can't declare sources. Only your `config.yaml` does, so a team repository can't make
-  ctxtra fetch a URL.
+- A binding file can't declare sources or include other files. Only your `config.yaml` does, so a team
+  repository can't make ctxtra fetch a URL.
 - Submodules are left out and never fetched.
 - `.gitattributes` filters (git-lfs, smudge) never run: ctxtra never checks out files.
 - Git hooks can't arrive by a fetch, and ctxtra's copies of the repositories have none.

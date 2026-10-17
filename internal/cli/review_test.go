@@ -7,7 +7,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/config"
 )
 
-// Selectors are compared as data, not by how they print: a remote pattern
+// Match blocks are compared as data, not by how they print: a remote pattern
 // named "every session" prints like global: true.
 func TestSelectorWarnings(t *testing.T) {
 	cfg := func(sel config.Selector) *config.Config {
@@ -18,7 +18,7 @@ func TestSelectorWarnings(t *testing.T) {
 		want     string
 	}{
 		{config.Selector{GitRepos: []config.GitRepo{{Remote: "every session"}}}, config.Selector{Global: true}, "now applies to every session"},
-		{config.Selector{GitRepos: []config.GitRepo{{Remote: "a, b"}}}, config.Selector{GitRepos: []config.GitRepo{{Remote: "a"}, {Remote: "b"}}}, "selector changed"},
+		{config.Selector{GitRepos: []config.GitRepo{{Remote: "a, b"}}}, config.Selector{GitRepos: []config.GitRepo{{Remote: "a"}, {Remote: "b"}}}, "match changed"},
 		{config.Selector{Dirs: []string{"/x"}}, config.Selector{Dirs: []string{"/x"}}, ""},
 	}
 	for _, c := range cases {

@@ -16,7 +16,7 @@ import (
 
 // timeout is the time all git calls for one session may take together. It is
 // well under the agents' hook timeout (10 seconds), so a slow repository
-// costs the gitRepos bindings, not the whole hook. A variable for tests.
+// costs the repos bindings, not the whole hook. A variable for tests.
 var timeout = 3 * time.Second
 
 // locationVars point git at another repository, work tree, index or config

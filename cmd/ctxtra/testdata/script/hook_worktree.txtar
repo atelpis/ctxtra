@@ -87,51 +87,36 @@ exec git -C elsewhere/svc-feature status --porcelain
 ! stdout .
 
 -- .config/ctxtra/config.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Config
-bindings:
+schema: ctxtra/v1
+include:
   - work.yaml
   - me.yaml
 -- .config/ctxtra/work.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: acme
-spec:
-  selector:
-    gitRepos:
-      - remote: github.com/acme/**
-  files: [~/ctx/work.md]
-  skills: [~/skills/deploy]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: svc
-spec:
-  selector:
-    dirs: [~/dev/svc]
-  files: [~/ctx/svc.md]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: not-here
-spec:
-  selector:
-    gitRepos:
-      - remote: github.com/acme/svc
-        subpath: services/**
-  files: [~/ctx/other.md]
+schema: ctxtra/v1
+bindings:
+  - name: acme
+    match:
+      repos:
+        - remote: github.com/acme/**
+    instructions: [~/ctx/work.md]
+    skills: [~/skills/deploy]
+  - name: svc
+    match:
+      dirs: [~/dev/svc]
+    instructions: [~/ctx/svc.md]
+  - name: not-here
+    match:
+      repos:
+        - remote: github.com/acme/svc
+          subpath: services/**
+    instructions: [~/ctx/other.md]
 -- .config/ctxtra/me.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: me
-spec:
-  selector:
-    global: true
-  files: [~/ctx/me.md]
+schema: ctxtra/v1
+bindings:
+  - name: me
+    match:
+      global: true
+    instructions: [~/ctx/me.md]
 -- ctx/work.md --
 CTXMARK-WORK
 -- ctx/svc.md --

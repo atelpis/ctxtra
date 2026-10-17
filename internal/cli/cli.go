@@ -31,16 +31,16 @@ Usage:
                           add a team repository as a pinned source; its files change
                           only when you accept a new commit with sync
   ctxtra add <binding file> [--trust] [--as NAME]
-                          add one of your binding files; --trust adds its repository
+                          include one of your binding files; --trust adds its repository
                           as a trusted source (read from disk, changes apply right away)
   ctxtra add --trust <folder>  add a folder of your own files as a trusted source
-  ctxtra add --pinned-path <clone> [--as NAME]
+  ctxtra add --local-git <clone> [--as NAME]
                           add your clone of a team repository as a pinned source that
                           follows its committed HEAD, to try changes before you push
-  ctxtra remove <source>|<bindings entry>
-                          remove a source with its bindings entries, or one entry
+  ctxtra remove <source>|<include entry>
+                          remove a source with its include entries, or one entry
   ctxtra add ctxtra://<source>/<binding file>
-                          add a binding file from a source you have
+                          include a binding file from a source you have
   ctxtra sync [--full] [SOURCE]...
                           fetch pinned sources, show what changed, and accept it;
                           --full shows changed files you don't use in full too

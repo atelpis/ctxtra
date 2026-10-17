@@ -13,12 +13,12 @@ import (
 	"github.com/atelpis/ctxtra/internal/paths"
 )
 
-// Selector says which sessions a binding applies to. It matches when any of
-// its entries matches.
+// Selector is a binding's match block: which sessions the binding applies
+// to. It matches when any of its entries matches.
 type Selector struct {
 	Global   bool      // every session
 	Dirs     []string  // globs on the session folder or the repository's main checkout
-	GitRepos []GitRepo // repositories by remote
+	GitRepos []GitRepo // repos: repositories by remote
 }
 
 // GitRepo matches a repository by remote and, optionally, the part of the
@@ -29,12 +29,12 @@ type GitRepo struct {
 }
 
 func decodeSelector(n *yaml.Node) (Selector, error) {
-	f, err := fields(n, "global", "dirs", "gitRepos")
+	f, err := fields(n, "global", "dirs", "repos")
 	if err != nil {
 		return Selector{}, err
 	}
 	if len(f) == 0 {
-		return Selector{}, fmt.Errorf("line %d: selector is empty; use `global: true` for every session", n.Line)
+		return Selector{}, fmt.Errorf("line %d: match is empty; use `global: true` for every session", n.Line)
 	}
 	var s Selector
 	if v := f["global"]; v != nil {
@@ -59,9 +59,9 @@ func decodeSelector(n *yaml.Node) (Selector, error) {
 			s.Dirs = append(s.Dirs, filepath.ToSlash(filepath.Clean(d)))
 		}
 	}
-	if v := f["gitRepos"]; v != nil {
+	if v := f["repos"]; v != nil {
 		if v.Kind != yaml.SequenceNode || len(v.Content) == 0 {
-			return Selector{}, fmt.Errorf("line %d: gitRepos must be a non-empty list", v.Line)
+			return Selector{}, fmt.Errorf("line %d: repos must be a non-empty list", v.Line)
 		}
 		for _, e := range v.Content {
 			g, err := decodeGitRepo(e)
@@ -74,7 +74,17 @@ func decodeSelector(n *yaml.Node) (Selector, error) {
 	return s, nil
 }
 
+// decodeGitRepo reads a repos entry: a remote pattern, or a map with remote
+// and subpath.
 func decodeGitRepo(n *yaml.Node) (GitRepo, error) {
+	var g GitRepo
+	var err error
+	if n.Kind == yaml.ScalarNode {
+		if g.Remote, err = str(n, "repos entry"); err != nil {
+			return GitRepo{}, err
+		}
+		return g, checkRemote(n, &g)
+	}
 	f, err := fields(n, "remote", "subpath")
 	if err != nil {
 		return GitRepo{}, err
@@ -82,13 +92,11 @@ func decodeGitRepo(n *yaml.Node) (GitRepo, error) {
 	if err := require(n, f, "remote"); err != nil {
 		return GitRepo{}, err
 	}
-	var g GitRepo
 	if g.Remote, err = str(f["remote"], "remote"); err != nil {
 		return GitRepo{}, err
 	}
-	g.Remote = strings.ToLower(g.Remote)
-	if !doublestar.ValidatePattern(g.Remote) {
-		return GitRepo{}, fmt.Errorf("line %d: remote %q is not a valid pattern", n.Line, g.Remote)
+	if err := checkRemote(n, &g); err != nil {
+		return GitRepo{}, err
 	}
 	if v := f["subpath"]; v != nil {
 		if g.Subpath, err = str(v, "subpath"); err != nil {
@@ -103,6 +111,15 @@ func decodeGitRepo(n *yaml.Node) (GitRepo, error) {
 		}
 	}
 	return g, nil
+}
+
+// checkRemote lower-cases the remote pattern of g and checks it.
+func checkRemote(n *yaml.Node, g *GitRepo) error {
+	g.Remote = strings.ToLower(g.Remote)
+	if !doublestar.ValidatePattern(g.Remote) {
+		return fmt.Errorf("line %d: remote %q is not a valid pattern", n.Line, g.Remote)
+	}
+	return nil
 }
 
 // Match reports whether s applies to a session in dir (repo is nil outside
@@ -131,10 +148,10 @@ func (s Selector) Match(dir string, repo *gitrepo.Repo) (bool, string) {
 				continue
 			}
 			if g.Subpath == "" {
-				return true, "gitRepos remote " + r
+				return true, "repos remote " + r
 			}
 			if globMatch(g.Subpath, repo.Subpath) {
-				return true, fmt.Sprintf("gitRepos remote %s, subpath %s", r, repo.Subpath)
+				return true, fmt.Sprintf("repos remote %s, subpath %s", r, repo.Subpath)
 			}
 		}
 	}
@@ -145,11 +162,11 @@ func (s Selector) Match(dir string, repo *gitrepo.Repo) (bool, string) {
 	if len(s.GitRepos) > 0 {
 		switch {
 		case repo == nil:
-			why = append(why, "gitRepos: not in a git repository")
+			why = append(why, "repos: not in a git repository")
 		case len(repo.Remotes) == 0:
-			why = append(why, "gitRepos: the repository has no remotes")
+			why = append(why, "repos: the repository has no remotes")
 		default:
-			why = append(why, fmt.Sprintf("gitRepos do not match %s (subpath %s)", strings.Join(repo.Remotes, ", "), repo.Subpath))
+			why = append(why, fmt.Sprintf("repos do not match %s (subpath %s)", strings.Join(repo.Remotes, ", "), repo.Subpath))
 		}
 	}
 	return false, strings.Join(why, "; ")

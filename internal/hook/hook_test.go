@@ -18,9 +18,9 @@ func TestOutputPerAgent(t *testing.T) {
 	r := testenv.Repo(t, filepath.Join(h, "svc"), "")
 	testenv.Write(t, filepath.Join(h, "a.md"), "Rule A <&>")
 	testenv.Skill(t, filepath.Join(h, "s", "deploy"), "description: Deploy it.")
-	good := "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n"
+	good := "schema: ctxtra/v1\ninclude: [b.yaml]\n"
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
-		"apiVersion: ctxtra/v1alpha1\nkind: Binding\nmetadata: {name: a}\nspec: {selector: {global: true}, files: [~/a.md], skills: [~/s/deploy]}\n")
+		"schema: ctxtra/v1\nbindings:\n  - {name: a, match: {global: true}, instructions: [~/a.md], skills: [~/s/deploy]}\n")
 	testenv.Config(t, h, good)
 
 	run := func(agent, event, input string) map[string]any {
@@ -75,7 +75,7 @@ func TestOutputPerAgent(t *testing.T) {
 	}
 	// A broken config adds nothing, tells the user, and still answers with
 	// valid JSON.
-	testenv.Config(t, h, "apiVersion: [")
+	testenv.Config(t, h, "schema: [")
 	if m := run("codex", "SessionStart", input); len(m) != 1 || !strings.Contains(m["systemMessage"].(string), "1 problem (run ctxtra doctor)") {
 		t.Errorf("broken config: %v", m)
 	}
@@ -106,8 +106,8 @@ func TestClaudeHookUnderDevin(t *testing.T) {
 	r := testenv.Repo(t, filepath.Join(h, "svc"), "")
 	testenv.Write(t, filepath.Join(h, "a.md"), "Rule A")
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
-		"apiVersion: ctxtra/v1alpha1\nkind: Binding\nmetadata: {name: a}\nspec: {selector: {global: true}, files: [~/a.md]}\n")
-	testenv.Config(t, h, "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n")
+		"schema: ctxtra/v1\nbindings:\n  - {name: a, match: {global: true}, instructions: [~/a.md]}\n")
+	testenv.Config(t, h, "schema: ctxtra/v1\ninclude: [b.yaml]\n")
 	cmd, _ := json.Marshal(agent.Command("/bin/ctxtra", "devin", "SessionStart"))
 	testenv.Write(t, filepath.Join(h, ".config", "devin", "config.json"),
 		`{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": `+string(cmd)+`}]}]}}`)

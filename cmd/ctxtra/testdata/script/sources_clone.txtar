@@ -12,7 +12,7 @@ exec ctxtra add dev/team-ctx/bindings/billing.yaml
 stdout '^~/dev/team-ctx is a clone of https://127.0.0.1:\d+/team-ctx \(not trusted\), added as source team-ctx$'
 stdout '^starts at your local commit [0-9a-f]{7}; later sync follows origin/main \(remote not checked yet\)$'
 stdout '^added ctxtra://team-ctx/bindings/billing.yaml \(pinned: changes apply after `ctxtra sync`\)$'
-stdout '^    files: services-overview.md$'
+stdout '^    instructions: services-overview.md$'
 stdout 'ctxtra add --trust ~/dev/team-ctx/bindings/billing.yaml'
 
 # Your own binding keeps the plain path; it is served from the store, at
@@ -42,10 +42,10 @@ exec ctxtra sync team-ctx
 stdout 'WARNING: [0-9a-f]{7} doesn''t continue [0-9a-f]{7}'
 stdout '^-LOCAL-COMMIT$'
 
-# A pinned-path source follows the clone's committed HEAD instead.
-exec ctxtra add --pinned-path dev/team-ctx --as team-ctx-dev
-stdout '^added source team-ctx-dev \(pinned-path: ~/dev/team-ctx at [0-9a-f]{7}\); sync follows the clone''s committed HEAD$'
-grep '^    pinned-path: ~/dev/team-ctx$' .config/ctxtra/config.yaml
+# A local-git source follows the clone's committed HEAD instead.
+exec ctxtra add --local-git dev/team-ctx --as team-ctx-dev
+stdout '^added source team-ctx-dev \(local-git: ~/dev/team-ctx at [0-9a-f]{7}\); sync follows the clone''s committed HEAD$'
+grep '^    local-git: ~/dev/team-ctx$' .config/ctxtra/config.yaml
 cp wip.md dev/team-ctx/services-overview.md
 gitcommit dev/team-ctx
 stdin yes.txt
@@ -53,49 +53,41 @@ exec ctxtra sync team-ctx-dev
 stdout '^team-ctx-dev: [0-9a-f]{7} -> [0-9a-f]{7} \(local HEAD, ~/dev/team-ctx\)$'
 stdout 'accepted team-ctx-dev'
 exec ctxtra doctor notes
-stdout 'source team-ctx-dev: pinned-path ~/dev/team-ctx, follows its committed HEAD, pinned to [0-9a-f]{7}, last checked'
+stdout 'source team-ctx-dev: local-git ~/dev/team-ctx, follows its committed HEAD, pinned to [0-9a-f]{7}, last checked'
 
-# Removing the source: its bindings entries go, your own references are
+# Removing the source: its include entries go, your own references are
 # listed, and the clone's old paths are skipped, not read from disk.
 exec ctxtra remove team-ctx
-stdout '^removed source team-ctx and 2 bindings entries$'
+stdout '^removed source team-ctx and 2 include entries$'
 stdout '^your bindings still use it:$'
-stdout '^  ~/.config/ctxtra/bindings.yaml:\d+  files: \[ctxtra://team-ctx/services-overview.md\]$'
-stdout '^  ~/.config/ctxtra/bindings.yaml:\d+  files: \[~/dev/team-ctx/jira-ticket.md\]$'
+stdout '^  ~/.config/ctxtra/bindings.yaml:\d+  instructions: \[ctxtra://team-ctx/services-overview.md\]$'
+stdout '^  ~/.config/ctxtra/bindings.yaml:\d+  instructions: \[~/dev/team-ctx/jira-ticket.md\]$'
 ! grep 'ctxtra://team-ctx/' .config/ctxtra/config.yaml
 ! exec ctxtra files notes
 stderr '~/dev/team-ctx/jira-ticket.md: ~/dev/team-ctx was imported as the source team-ctx \(https://.*\), which is not in the config any more; skipped, not read from disk'
 ! stdout 'jira-ticket.md'
 
-# Removing a bindings entry.
+# Removing an include entry.
 exec ctxtra remove bindings.yaml
-stdout '^removed bindings.yaml from bindings$'
+stdout '^removed bindings.yaml from include$'
 ! exec ctxtra remove bindings.yaml
-stderr 'neither a source nor in bindings'
+stderr 'neither a source nor in include'
 
 -- .config/ctxtra/config.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Config
-bindings:
+schema: ctxtra/v1
+include:
   - bindings.yaml
 -- .config/ctxtra/bindings.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: me
-spec:
-  selector:
-    global: true
-  files: [~/dev/team-ctx/jira-ticket.md]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: team
-spec:
-  selector:
-    dirs: [~/nowhere]
-  files: [ctxtra://team-ctx/services-overview.md]
+schema: ctxtra/v1
+bindings:
+  - name: me
+    match:
+      global: true
+    instructions: [~/dev/team-ctx/jira-ticket.md]
+  - name: team
+    match:
+      dirs: [~/nowhere]
+    instructions: [ctxtra://team-ctx/services-overview.md]
 -- notes/.keep --
 -- no.txt --
 n
@@ -112,20 +104,16 @@ REMOTE
 -- srv/team-ctx/services-overview.md --
 overview
 -- srv/team-ctx/bindings/billing.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: billing
-spec:
-  selector:
-    gitRepos: [{remote: github.com/acme/billing}]
-  files: [../services-overview.md]
+schema: ctxtra/v1
+bindings:
+  - name: billing
+    match:
+      repos: [{remote: github.com/acme/billing}]
+    instructions: [../services-overview.md]
 -- srv/team-ctx/bindings/other.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: other
-spec:
-  selector:
-    gitRepos: [{remote: github.com/acme/other}]
-  files: [../services-overview.md]
+schema: ctxtra/v1
+bindings:
+  - name: other
+    match:
+      repos: [{remote: github.com/acme/other}]
+    instructions: [../services-overview.md]

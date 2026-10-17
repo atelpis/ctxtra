@@ -24,10 +24,10 @@ func (u *used) has(p string) bool {
 }
 
 // add adds what cfg takes from gen: binding files there, and every file and
-// skill folder of every binding, under any selector.
+// skill folder of every binding, under any match block.
 func (u *used) add(cfg *config.Config, gen string) {
 	for _, b := range cfg.Bindings {
-		for _, f := range append([]string{b.Source}, b.Files...) {
+		for _, f := range append([]string{b.Source}, b.Instructions...) {
 			if r, ok := paths.Rel(gen, f); ok {
 				u.files[r] = true
 			}
@@ -48,7 +48,7 @@ func (u *used) add(cfg *config.Config, gen string) {
 
 // review shows what changes in src from its accepted commit to commit:
 // files the config uses (with the accepted commit or the new one) in full,
-// every other changed file by name, and warnings for changed selectors and
+// every other changed file by name, and warnings for changed match blocks and
 // broken references. With full, every changed file in full. Both commits
 // must be in the store.
 func (s *sources) review(r *source.Repo, src config.Source, commit string, full bool) error {
@@ -141,8 +141,8 @@ func describeChange(c source.Change) string {
 }
 
 // selectorWarnings warns about bindings in the source's binding files whose
-// selector changes, and about new ones: they decide which sessions get the
-// source's files.
+// match block changes, and about new ones: they decide which sessions get
+// the source's files.
 func (s *sources) selectorWarnings(src config.Source, before, after *config.Config, oldGen, newGen string) {
 	type key struct{ file, name string }
 	selectors := func(cfg *config.Config, gen string) map[key]config.Selector {
@@ -170,7 +170,7 @@ func (s *sources) selectorWarnings(src config.Source, before, after *config.Conf
 		case sel.Global:
 			fmt.Fprintf(s.Out, "WARNING: binding %s in %s now applies to every session (was: %s)\n", k.name, k.file, prev)
 		default:
-			fmt.Fprintf(s.Out, "WARNING: binding %s in %s: selector changed from %s to %s\n", k.name, k.file, prev, sel)
+			fmt.Fprintf(s.Out, "WARNING: binding %s in %s: match changed from %s to %s\n", k.name, k.file, prev, sel)
 		}
 	}
 }

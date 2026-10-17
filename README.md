@@ -5,7 +5,7 @@ DeepSeek Harness (dsh), Cursor Agent CLI, GitHub Copilot CLI, Antigravity and De
 formerly Windsurf) sessions, for the folders and repositories you choose, in every worktree. Nothing is written into
 repositories, and the repo's own `AGENTS.md` and your user-level agent files keep working as before.
 
-**Status: preview (`v0`, config `ctxtra/v1alpha1`).** The config format may still change. ctxtra does
+**Status: preview (`v0`, config `ctxtra/v1`).** The config format may still change. ctxtra does
 not check what the bound files say: bind only files you wrote or reviewed.
 
 ## How it works
@@ -50,38 +50,24 @@ the hooks again in Codex; `doctor` shows which binary the hooks run and whether 
 `~/.config/ctxtra/config.yaml`:
 
 ```yaml
-apiVersion: ctxtra/v1alpha1
-kind: Config
+schema: ctxtra/v1
 bindings:
-  - bindings.yaml
+  - name: me
+    match:
+      global: true
+    instructions:
+      - ~/notes/agents/me.md
+  - name: work
+    match:
+      repos:
+        - github.com/acme/**
+    instructions:
+      - ~/notes/agents/work.md
+    skills:
+      - ~/notes/skills/deploy
 ```
 
-`~/.config/ctxtra/bindings.yaml`:
-
-```yaml
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: me
-spec:
-  selector:
-    global: true
-  files:
-    - ~/notes/agents/me.md
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: work
-spec:
-  selector:
-    gitRepos:
-      - remote: github.com/acme/**
-  files:
-    - ~/notes/agents/work.md
-  skills:
-    - ~/notes/skills/deploy
-```
+Bindings can also live in their own files, which the config includes: your dotfiles, or a team repository.
 
 Files in a git repository that has a remote are read only if you declare the repository as a source of
 your own files. Its content may come from other people, so ctxtra skips it otherwise and says how to trust
@@ -91,8 +77,7 @@ it. Files outside git and in repositories without a remote are always read.
 sources:
   dotfiles:
     trusted-path: ~/dev/dotfiles
-bindings:
-  - bindings.yaml
+include:
   - ctxtra://dotfiles/ctxtra/work.yaml   # the same as ~/dev/dotfiles/ctxtra/work.yaml
 ```
 
@@ -170,7 +155,7 @@ and the hook commands that `setup` writes, the way an agent runs them. Run one w
 Layout:
 
 - `cmd/ctxtra`: the binary.
-- `internal/config`: loads and validates the config and binding files, and matches selectors.
+- `internal/config`: loads and validates the config and binding files, and matches `match` blocks.
 - `internal/resolve`: decides what a session gets and renders the text.
 - `internal/agent`: the `Agent` interface. One package per agent (`antigravity`, `claude`, `codex`, `copilot`,
   `cursor`, `devin`, `dsh`, `hermes`, `muse`, `opencode`, `pi`) with its hook setup and answer format; `hookjson`

@@ -45,7 +45,7 @@ type Result struct {
 	Repo     *gitrepo.Repo // nil outside git
 	Files    []Hit
 	Skills   []Hit
-	Dropped  []Hit // over budget.maxChars
+	Dropped  []Hit // over budget.max-chars
 	Missing  []string
 	Problems []string
 	Notices  []string // about the pinned sources the session uses
@@ -130,7 +130,7 @@ func (r *Result) uses(dir string) bool {
 }
 
 func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
-	for _, raw := range b.Files {
+	for _, raw := range b.Instructions {
 		f := paths.Real(raw)
 		t.Files = append(t.Files, f)
 		if content, ok := l.load(t, raw, f, l.files); ok {
@@ -214,11 +214,11 @@ func (r *Result) dedupeSkillNames() {
 }
 
 // Chars is the length of s in characters (Unicode code points), the unit of
-// budget.maxChars.
+// budget.max-chars.
 func Chars(s string) int { return utf8.RuneCountInString(s) }
 
 // applyBudget drops whole files from the end until the text fits
-// budget.maxChars. The skill list is never dropped.
+// budget.max-chars. The skill list is never dropped.
 func (r *Result) applyBudget() {
 	total := Chars(r.Render())
 	if r.MaxChars <= 0 || total <= r.MaxChars {
