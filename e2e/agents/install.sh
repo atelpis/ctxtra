@@ -12,16 +12,27 @@
 # downloaded into bin/agy, checked against the SHA-512 in antigravity.lock
 # (or, with "latest", in Google's release manifest), and its own install
 # script, which edits shell profiles, isn't run.
+#
+# Hermes, a Python app, isn't published as a package: its source at the
+# commit in hermes.ref goes into hermes/, with the dependencies and hashes
+# of its uv.lock in hermes/.venv (with "latest", the latest release tag).
+# It needs Python 3.11 to 3.13: the first one found in PATH, or
+# $E2E_PYTHON.
 set -eu
 cd "$(dirname "$0")"
+hermes_repo=https://github.com/NousResearch/hermes-agent.git
+# uv installs Hermes from its lock file.
+uv_version=0.13.1
 if [ "${1:-}" = latest ]; then
 	npm install --ignore-scripts --no-audit --no-fund --no-save \
 		@anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest @opencode/cli@latest \
 		@github/copilot@latest
 	node install-muse.mjs latest
+	hermes=$(git ls-remote --tags --refs "$hermes_repo" | sed 's#.*refs/tags/##' | sort -V | tail -n 1)
 else
 	npm ci --ignore-scripts --no-audit --no-fund
 	node install-muse.mjs
+	read -r hermes _ <hermes.ref
 fi
 npm rebuild @anthropic-ai/claude-code @opencode/cli
 
@@ -61,7 +72,29 @@ mkdir -p bin
 mv "$tmp/antigravity" bin/agy
 chmod +x bin/agy
 
-for b in node_modules/.bin/claude node_modules/.bin/codex node_modules/.bin/pi node_modules/.bin/opencode node_modules/.bin/copilot bin/agy; do
+py=${E2E_PYTHON:-}
+if [ -z "$py" ]; then
+	for p in python3.13 python3.12 python3.11 python3; do
+		if command -v "$p" >/dev/null && "$p" -c 'import sys; sys.exit(not (3, 11) <= sys.version_info[:2] <= (3, 13))'; then
+			py=$p
+			break
+		fi
+	done
+fi
+if [ -z "$py" ]; then
+	echo "install.sh: Hermes needs Python 3.11 to 3.13; set E2E_PYTHON" >&2
+	exit 1
+fi
+rm -rf hermes
+git init -q hermes
+git -C hermes fetch -q --depth 1 "$hermes_repo" "$hermes"
+git -C hermes -c advice.detachedHead=false checkout -q FETCH_HEAD
+"$py" -m venv hermes/.uv
+hermes/.uv/bin/pip install --quiet --disable-pip-version-check "uv==$uv_version"
+(cd hermes && UV_PYTHON="$py" UV_PYTHON_DOWNLOADS=never .uv/bin/uv sync --quiet --frozen --no-dev)
+
+for b in node_modules/.bin/claude node_modules/.bin/codex node_modules/.bin/pi node_modules/.bin/opencode node_modules/.bin/copilot bin/agy \
+	hermes/.venv/bin/hermes; do
 	printf '%s: %s\n' "${b##*/}" "$(./$b --version | head -n 1)"
 done
 printf 'muse: %s\n' "$(./bin/muse --version | head -n 1)"

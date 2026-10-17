@@ -127,7 +127,7 @@ func environ(ts *testscript.TestScript) []string {
 	for _, k := range []string{"PATH", "HOME", "TMPDIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
 		"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
 		"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR",
-		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "GIT_SSL_NO_VERIFY"} {
+		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "HERMES_HOME", "GIT_SSL_NO_VERIFY"} {
 		if v := ts.Getenv(k); v != "" {
 			env = append(env, k+"="+v)
 		}
@@ -148,10 +148,10 @@ func expandFile(ts *testscript.TestScript, neg bool, args []string) {
 
 // runhook AGENT EVENT DIR: runs the hook command that setup wrote into the
 // agent's config for EVENT, with the hook input the agent sends for a
-// session in DIR, and makes its output available to stdout/stderr. For Pi
-// and OpenCode, whose extensions aren't shell commands, it runs the binary
-// named in the extension the way the extension does. Antigravity gets its
-// own input and working folder.
+// session in DIR, and makes its output available to stdout/stderr. For Pi,
+// OpenCode and Hermes, whose extensions aren't shell commands, it runs the
+// binary named in the extension the way the extension does. Antigravity
+// gets its own input and working folder.
 func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) != 3 {
 		ts.Fatalf("usage: runhook AGENT EVENT DIR")
@@ -178,9 +178,10 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 		input, _ = json.Marshal(map[string]any{"workspacePaths": []string{dir}, "conversationId": "e2e"})
 		cmd = exec.Command("/bin/sh", "-c", hooks.Ctxtra.SessionStart[0].Command)
 		cmd.Dir = filepath.Dir(cfg)
-	case "pi", "opencode":
-		path := map[string]string{"pi": ".pi/agent/extensions/ctxtra.ts", "opencode": ".config/opencode/plugins/ctxtra.ts"}[agent]
-		m := regexp.MustCompile(`(?m)^// binary: (.+)$`).FindStringSubmatch(ts.ReadFile(filepath.Join(home, path)))
+	case "pi", "opencode", "hermes":
+		path := map[string]string{"pi": ".pi/agent/extensions/ctxtra.ts", "opencode": ".config/opencode/plugins/ctxtra.ts",
+			"hermes": ".hermes/plugins/ctxtra/__init__.py"}[agent]
+		m := regexp.MustCompile(`(?m)^(?://|#) binary: (.+)$`).FindStringSubmatch(ts.ReadFile(filepath.Join(home, path)))
 		if m == nil {
 			ts.Fatalf("no binary in %s", path)
 		}

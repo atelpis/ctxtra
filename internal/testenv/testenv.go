@@ -21,7 +21,7 @@ func Home(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", h)
-	for _, k := range []string{"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR", "OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME"} {
+	for _, k := range []string{"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR", "OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "HERMES_HOME"} {
 		t.Setenv(k, "")
 	}
 	// Git variables that point git at another repository, index or config:

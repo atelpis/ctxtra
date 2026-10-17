@@ -72,7 +72,7 @@ func decide(api API, body map[string]any, script []Step) *call {
 			{name: "read", args: map[string]any{"path": step.path}},                                 // Pi, OpenCode
 			{name: "view", args: map[string]any{"path": step.path}},                                 // Copilot
 			{name: "exec_command", args: map[string]any{"cmd": fmt.Sprintf("cat '%s'", step.path)}}, // Codex
-			{name: "read_file", args: map[string]any{"path": step.path}},                            // Muse
+			{name: "read_file", args: map[string]any{"path": step.path}},                            // Muse, Hermes
 			{name: "view_file", args: map[string]any{"AbsolutePath": step.path, // Antigravity
 				"toolAction": "Reading file", "toolSummary": "File read"}},
 		} {
@@ -96,6 +96,9 @@ func decide(api API, body map[string]any, script []Step) *call {
 		if _, _, ok := findTool(api, body, "invoke_subagent"); ok { // Antigravity; runs in the background
 			return &call{name: "invoke_subagent", args: map[string]any{"toolAction": "Starting subagent", "toolSummary": "E2e probe",
 				"Subagents": []any{map[string]any{"TypeName": "self", "Role": "E2E Probe", "Prompt": SubagentTask}}}}
+		}
+		if _, _, ok := findTool(api, body, "delegate_task"); ok { // Hermes
+			return &call{name: "delegate_task", args: map[string]any{"tasks": []any{map[string]any{"goal": SubagentTask}}}}
 		}
 		if ns, _, ok := findTool(api, body, "spawn_agent"); ok {
 			return &call{namespace: ns, name: "spawn_agent", args: map[string]any{"message": SubagentTask}}

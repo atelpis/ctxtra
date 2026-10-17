@@ -80,6 +80,14 @@ export default {
 	},
 };
 `)
+	case "hermes":
+		s.Write(".hermes/plugins/other-tool/plugin.yaml", "name: other-tool\n")
+		s.Write(".hermes/plugins/other-tool/__init__.py", `def register(ctx):
+    def add(is_first_turn=False, **kwargs):
+        if is_first_turn:
+            return {"context": open("`+path+`").read()}
+    ctx.register_hook("pre_llm_call", add)
+`)
 	default:
 		s.t.Fatalf("otherTool: no hook for %s", agent)
 	}

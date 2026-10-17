@@ -69,7 +69,7 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 func (Agent) PreviewLimit() int { return 0 }
 
 // Extension is the extension that runs bin.
-func Extension(bin string) string { return extfile.Content(bin, extensionBody) }
+func Extension(bin string) string { return extfile.Content(extfile.TypeScript, bin, extensionBody) }
 
 // extensionBody runs the binary asynchronously, so Pi's event loop never
 // waits on it, with a 10 second timeout and room for the largest output
