@@ -88,7 +88,7 @@ func decide(api API, body map[string]any, script []Step) *call {
 		}
 		if _, _, ok := findTool(api, body, "task"); ok { // Copilot
 			return &call{name: "task", args: map[string]any{"name": "e2e-probe", "description": "e2e probe",
-				"prompt": SubagentTask, "agent_type": "general-purpose", "mode": "sync"}}
+				"prompt": SubagentTask, "agent_type": "explore", "mode": "sync"}}
 		}
 		if ns, _, ok := findTool(api, body, "spawn_agent"); ok {
 			return &call{namespace: ns, name: "spawn_agent", args: map[string]any{"message": SubagentTask}}

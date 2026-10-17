@@ -250,3 +250,42 @@ func TestRemoveWithoutOurEntries(t *testing.T) {
 		t.Errorf("reformatted: %s", b)
 	}
 }
+
+// --remove deletes a file of ctxtra's own after a backup, but keeps a
+// symlink and writes its target.
+func TestOwnFileRemoved(t *testing.T) {
+	h := testenv.Home(t)
+	on := fakeBinary(t, h)
+	c := Config{Agent: "copilot", Path: filepath.Join(h, ".copilot", "hooks", "ctxtra.json"),
+		Events: []Event{{Name: "sessionStart"}}, Flat: true, Version: 1, Own: true}
+	var r agent.Report
+	if err := c.Apply(on, &r); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Apply(remove, &r); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(c.Path); !os.IsNotExist(err) {
+		t.Errorf("not removed: %v", err)
+	}
+	if b, _ := os.ReadDir(filepath.Join(h, ".ctxtra", "backups")); len(b) == 0 {
+		t.Error("no backup")
+	}
+	target := filepath.Join(h, "dotfiles", "ctxtra.json")
+	testenv.Write(t, target, "{}")
+	if err := os.Symlink(target, c.Path); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Apply(on, &r); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Apply(remove, &r); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Lstat(c.Path); err != nil || st.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("symlink not kept: %v", err)
+	}
+	if b, err := os.ReadFile(target); err != nil || strings.Contains(string(b), "ctxtra") {
+		t.Errorf("target: %v\n%s", err, b)
+	}
+}
