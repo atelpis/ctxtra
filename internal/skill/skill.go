@@ -5,6 +5,7 @@ package skill
 
 import (
 	"bytes"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -16,8 +17,13 @@ import (
 
 // Write writes every file of the skill that differs from this binary's, and
 // reports whether it changed any. The folder is ctxtra's: changed files get
-// no backup.
+// no backup. A link in place of the folder is refused, so the hook never
+// writes into a folder somewhere else.
 func Write() (bool, error) {
+	dir := paths.SkillDir()
+	if fi, err := os.Lstat(dir); err == nil && !fi.IsDir() {
+		return false, fmt.Errorf("%s isn't a folder; not changed", paths.Tilde(dir))
+	}
 	changed := false
 	err := fs.WalkDir(ctxtra.Skill(), ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
@@ -27,8 +33,10 @@ func Write() (bool, error) {
 		if err != nil {
 			return err
 		}
-		dest := filepath.Join(paths.SkillDir(), filepath.FromSlash(p))
-		if got, err := os.ReadFile(dest); err == nil && bytes.Equal(got, want) {
+		dest := filepath.Join(dir, filepath.FromSlash(p))
+		// A bounded read that refuses a FIFO, so the hook can't block; a
+		// file it can't read is replaced.
+		if got, err := fsutil.ReadBounded(dest, len(want)); err == nil && bytes.Equal(got, want) {
 			return nil
 		}
 		changed = true
