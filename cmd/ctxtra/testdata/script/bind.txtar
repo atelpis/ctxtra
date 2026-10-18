@@ -63,6 +63,20 @@ stdout '^  instructions: ctxtra://team/team.md, ~/dev/team/team.md$'
 grep '^      - ctxtra://team/team.md$' .config/ctxtra/config.yaml
 grep '^      - ~/dev/team/team.md$' .config/ctxtra/config.yaml
 
+# A problem that exists already still fails a binding that brings it again:
+# a reference to a commit not in the store is skipped.
+env CTXTRA_CONFIG=$HOME/pinned.yaml
+cp pinned.yaml pinned-want.yaml
+! exec ctxtra bind y --global --file ctxtra://pin/a.md
+stderr 'is not in ctxtra''s store'
+cmp pinned.yaml pinned-want.yaml
+
+# A file over budget.max-chars by itself never reaches a session.
+env CTXTRA_CONFIG=$HOME/budget.yaml
+! exec ctxtra bind y --global --file notes/work.md
+stderr '^  ~/notes/work.md alone is over budget.max-chars \(5\)$'
+env CTXTRA_CONFIG=
+
 # Usage errors.
 ! exec ctxtra bind x --file notes/me.md
 stderr 'say which sessions get it: --global, --dir or --repo'
@@ -105,6 +119,22 @@ bindings:           # mine
 
 budget:
   max-chars: 40000  # enough
+-- pinned.yaml --
+schema: ctxtra/v1
+sources:
+  pin:
+    local-git: ~/dev/team
+    commit: '1111111111111111111111111111111111111111'
+bindings:
+  - name: x
+    match:
+      global: true
+    instructions:
+      - ctxtra://pin/a.md
+-- budget.yaml --
+schema: ctxtra/v1
+budget:
+  max-chars: 5
 -- notes/me.md --
 CTXMARK-ME
 -- notes/work.md --

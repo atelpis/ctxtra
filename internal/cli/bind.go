@@ -132,16 +132,28 @@ func runBind(args []string, stdio IO) int {
 // checkBinding loads the config as out, the changed file, and returns the
 // binding name in it. The change fails when it brings a new problem, or
 // when a session that the binding matches wouldn't get one of its files:
-// missing, not trusted, or a SKILL.md without a description.
+// missing, not trusted, a SKILL.md without a description, or over
+// budget.max-chars by itself.
 func checkBinding(file string, old, out []byte, name, dir string) (*config.Binding, error) {
 	before := config.Load(file, withConfig{file, old, newReader()})
 	rd := newReader()
 	after := config.Load(file, withConfig{file, out, rd})
+	// Problems are counted: the new binding can bring the same problem as
+	// one that exists, for example a reference to a commit not in the store.
+	// Line numbers are left out: the new binding moves the lines below it,
+	// and the changed file isn't written.
+	seen := map[string]int{}
+	for _, p := range before.Problems {
+		seen[reLine.ReplaceAllString(p, "")]++
+	}
 	var problems []string
 	for _, p := range after.Problems {
-		if !slices.ContainsFunc(before.Problems, func(q string) bool { return sameProblem(p, q) }) {
-			problems = append(problems, reLine.ReplaceAllString(p, "")) // lines of a file not written
+		p = reLine.ReplaceAllString(p, "")
+		if seen[p] > 0 {
+			seen[p]--
+			continue
 		}
+		problems = append(problems, p)
 	}
 	i := slices.IndexFunc(after.Bindings, func(b config.Binding) bool { return b.Source == after.File && b.Name == name })
 	if i >= 0 {
@@ -156,6 +168,9 @@ func checkBinding(file string, old, out []byte, name, dir string) (*config.Bindi
 		for _, m := range res.Missing {
 			problems = append(problems, "missing: "+paths.Tilde(m))
 		}
+		for _, h := range res.Dropped {
+			problems = append(problems, fmt.Sprintf("%s alone is over budget.max-chars (%d)", paths.Tilde(h.Path), res.MaxChars))
+		}
 	}
 	if len(problems) > 0 {
 		return nil, fmt.Errorf("sessions wouldn't get the binding as asked; nothing changed:\n  %s", strings.Join(problems, "\n  "))
@@ -167,12 +182,6 @@ func checkBinding(file string, old, out []byte, name, dir string) (*config.Bindi
 }
 
 var reLine = regexp.MustCompile(`line \d+: `)
-
-// sameProblem compares problems without their line numbers: the new
-// binding moves the lines below it.
-func sameProblem(a, b string) bool {
-	return reLine.ReplaceAllString(a, "") == reLine.ReplaceAllString(b, "")
-}
 
 func newReader() *fsutil.Reader { return fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes) }
 
