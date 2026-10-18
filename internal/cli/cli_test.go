@@ -2,6 +2,8 @@ package cli
 
 import (
 	"bytes"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -85,5 +87,33 @@ func TestSizeWarnings(t *testing.T) {
 			strings.Contains(out, "antigravity drops the rest") != tc.antigravity {
 			t.Errorf("%d bytes: warnings:\n%s", len(tc.content), out)
 		}
+	}
+}
+
+// In a terminal, setup offers the skill once; the answer decides.
+func TestSetupOffersSkill(t *testing.T) {
+	h := testenv.Home(t)
+	isTerminal := interactive
+	binary = func() (string, []string, error) { return "/opt/homebrew/bin/ctxtra", nil, nil }
+	interactive = func(io.Reader) bool { return true }
+	t.Cleanup(func() { binary, interactive = setup.Binary, isTerminal })
+	setupWith := func(answer string) string {
+		var o, e bytes.Buffer
+		if code := Run([]string{"setup", "--agent", "claude"}, IO{In: strings.NewReader(answer), Out: &o, Err: &e}, "test"); code != 0 {
+			t.Fatalf("setup: %d %s", code, e.String())
+		}
+		return o.String()
+	}
+	if out := setupWith("\n"); !strings.Contains(out, "Install the ctxtra skill? [y/N]") || !strings.Contains(out, "not installed") {
+		t.Errorf("declined:\n%s", out)
+	}
+	if _, err := os.Stat(filepath.Join(h, ".ctxtra", "skills")); err == nil {
+		t.Error("declined, but the skill was written")
+	}
+	if out := setupWith("y\n"); !strings.Contains(out, "added binding ctxtra") {
+		t.Errorf("accepted:\n%s", out)
+	}
+	if out := setupWith(""); strings.Contains(out, "ctxtra skill") {
+		t.Errorf("installed, but asked again:\n%s", out)
 	}
 }

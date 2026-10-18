@@ -51,12 +51,17 @@ Usage:
   ctxtra show [DIR]       the exact text a session in DIR gets
   ctxtra explain [DIR]    why each binding matches or not
   ctxtra doctor [DIR]     config problems, setup state, Codex trust, recent hook runs
+  ctxtra skill [install]  show the ctxtra skill, which lets your agents set up and
+                          change ctxtra; install adds it to every session
+  ctxtra help [TOPIC]     this text, or a topic of the docs of this version
   ctxtra hook AGENT [EVENT]  hook entry point; reads the agent's hook JSON on stdin
   ctxtra version
 
 Agents: %s. Without --agent: every agent found on this machine.
-Config: $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml (see docs/spec.md).
-`, strings.Join(registry.Names(), ", "))
+Config: $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml.
+
+Help topics (ctxtra help TOPIC):
+%s`, strings.Join(registry.Names(), ", "), helpTopics())
 
 // Run runs one command and returns the exit code.
 func Run(args []string, stdio IO, version string) int {
@@ -72,9 +77,11 @@ func Run(args []string, stdio IO, version string) int {
 		stdio.Out, stdio.Err = term.Writer{W: stdio.Out}, term.Writer{W: stdio.Err}
 	}
 	switch cmd {
-	case "-h", "--help", "help":
+	case "-h", "--help":
 		fmt.Fprint(stdio.Out, usage)
 		return 0
+	case "help":
+		return runHelp(rest, stdio)
 	case "version":
 		fmt.Fprintln(stdio.Out, version)
 		return 0
@@ -96,6 +103,8 @@ func Run(args []string, stdio IO, version string) int {
 		return runSync(rest, stdio)
 	case "remove":
 		return runRemove(rest, stdio)
+	case "skill":
+		return runSkill(rest, stdio)
 	case "files", "show", "explain", "doctor":
 		fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 		fs.SetOutput(stdio.Err)

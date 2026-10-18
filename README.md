@@ -45,6 +45,25 @@ Hermes loads the plugin only after you enable it once (`hermes plugins enable ct
 An upgrade in the same place needs no new setup. If the binary moves, run `ctxtra setup` again, and trust
 the hooks again in Codex; `doctor` shows which binary the hooks run and whether it exists.
 
+## Let your agent help
+
+ctxtra comes with a skill that teaches agents its commands, how to change the config safely, and the
+risks of team repositories. `ctxtra setup` asks whether to install it; without a terminal, for example when
+an agent runs setup, it doesn't ask. To install it at any time:
+
+```bash
+ctxtra skill           # the skill, exactly as the agents get it
+ctxtra skill install   # writes it to ~/.ctxtra/skills/ctxtra, and adds a binding for it to your config
+```
+
+The binding is an ordinary one, named `ctxtra`, with `match: {global: true}`: remove it from your config to
+stop adding the skill. Then ask any agent, for example "add my notes to every session in my work
+repositories". The skill tells the agent to ask you before every change, and never to trust a repository or
+accept a `sync` for you. Before setup, you can paste the output of `ctxtra skill` into an agent to start.
+
+The skill is part of the binary: each version has a fixed text, which `ctxtra skill` shows. When you upgrade
+ctxtra, the hook of the next session writes the new version to `~/.ctxtra/skills/ctxtra`. Antigravity asks before it reads the skill there (see [Limits](#limits)).
+
 ## Configure
 
 `~/.config/ctxtra/config.yaml`:
@@ -91,7 +110,8 @@ ctxtra sync --restore       # a new laptop: fetch exactly the accepted commits
 ```
 
 Full spec: [docs/spec.md](docs/spec.md). Use cases, from your own notes to a team repository you
-contribute to: [docs/scenarios.md](docs/scenarios.md).
+contribute to: [docs/scenarios.md](docs/scenarios.md). `ctxtra help config` and `ctxtra help scenarios` show
+them for the version you have.
 
 ## Check
 
@@ -155,6 +175,8 @@ and the hook commands that `setup` writes, the way an agent runs them. Run one w
 Layout:
 
 - `cmd/ctxtra`: the binary.
+- `skills/ctxtra`: the ctxtra skill. `embed.go` embeds it and the docs into the binary (`ctxtra skill`,
+  `ctxtra help`).
 - `internal/config`: loads and validates the config and binding files, and matches `match` blocks.
 - `internal/resolve`: decides what a session gets and renders the text.
 - `internal/agent`: the `Agent` interface. One package per agent (`antigravity`, `claude`, `codex`, `copilot`,

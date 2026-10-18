@@ -158,7 +158,7 @@ func (r report) doctor(dir string) int {
 	res, cfg := r.resolve(dir)
 	fmt.Fprintf(r.Out, "config: %s\n", cfg.File)
 	if _, err := os.Stat(cfg.File); err != nil {
-		fmt.Fprintln(r.Out, "  not found: nothing is added (see docs/spec.md)")
+		fmt.Fprintln(r.Out, "  not found: nothing is added (the format: ctxtra help config)")
 	}
 	fmt.Fprintf(r.Out, "  binding files: %d, bindings: %d\n", len(cfg.BindingFiles), len(cfg.Bindings))
 	for _, src := range cfg.Sources {
@@ -243,7 +243,7 @@ func describeSource(s config.Source) string {
 		if _, err := os.Stat(s.TrustedPath); err != nil {
 			state = " (not found)"
 		}
-		return "trusted-path " + paths.Tilde(s.TrustedPath) + state
+		return "trusted-path " + paths.Tilde(s.TrustedPath) + state + ": read from disk, changes apply without review"
 	}
 	d := fmt.Sprintf("git %s, branch %s, ", s.Git, s.Branch)
 	if s.LocalGit != "" {
@@ -255,7 +255,7 @@ func describeSource(s config.Source) string {
 	case !source.Has(s.Remote(), s.Commit):
 		return d + "pinned to " + source.Short(s.Commit) + ", NOT IN THE STORE (run: ctxtra sync --restore)"
 	}
-	d += "pinned to " + source.Short(s.Commit)
+	d += "pinned to " + source.Short(s.Commit) + " (new commits apply after you accept them in ctxtra sync)"
 	e := state.Load().Get(source.ID(s.Remote()), s.Remote(), s.Branch)
 	if e.LastCheck.IsZero() {
 		d += ", not checked for new commits on this machine yet"

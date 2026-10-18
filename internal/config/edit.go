@@ -211,6 +211,72 @@ func AddInclude(data []byte, ref string) ([]byte, error) {
 	})
 }
 
+// AddGlobalSkill appends a binding name to the config's own bindings that
+// adds the skill folder to every session.
+func AddGlobalSkill(data []byte, name, skill string) ([]byte, error) {
+	doc, err := root(data)
+	if err != nil {
+		return nil, err
+	}
+	want := func(m map[string]any) {
+		l, _ := m["bindings"].([]any)
+		m["bindings"] = append(l, map[string]any{
+			"name":   name,
+			"match":  map[string]any{"global": true},
+			"skills": []any{skill},
+		})
+	}
+	list := get(doc, "bindings")
+	if list != nil && list.Kind == yaml.SequenceNode {
+		for _, b := range list.Content {
+			if n := get(b, "name"); n != nil && n.Value == name {
+				return nil, fmt.Errorf("a binding named %s already exists", name)
+			}
+		}
+	}
+	entry := func(first, indent string) string {
+		return first + "name: " + scalar(name) + "\n" +
+			indent + "match:\n" + indent + "  global: true\n" +
+			indent + "skills:\n" + indent + "  - " + scalar(skill) + "\n"
+	}
+	var out []byte
+	ok := false
+	switch {
+	case list == nil:
+		out, ok = appendText(data, "bindings:\n"+entry("  - ", "    ")), true
+	case list.Kind == yaml.SequenceNode && len(list.Content) > 0:
+		// The new entry starts like the last one: "  - name: ...". A flow
+		// value or block scalar that ends below its last node's line puts
+		// the text in the wrong place: then same fails, and it is encoded
+		// again.
+		last := list.Content[len(list.Content)-1]
+		ls := lines(data)
+		if last.Line >= 1 && last.Line <= len(ls) {
+			prefix := ls[last.Line-1][:min(last.Column-1, len(ls[last.Line-1]))]
+			if strings.TrimSpace(prefix) == "-" {
+				out, ok = insertAfter(data, lastLine(list), entry(prefix, strings.Repeat(" ", len(prefix)))), true
+			}
+		}
+	}
+	if ok && same(data, out, want) {
+		return out, nil
+	}
+	return reencode(doc, func() {
+		if list == nil || list.Kind != yaml.SequenceNode {
+			list = &yaml.Node{Kind: yaml.SequenceNode}
+			set(doc, "bindings", list)
+		}
+		str := func(v string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Value: v} }
+		match := &yaml.Node{Kind: yaml.MappingNode}
+		set(match, "global", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: "true"})
+		b := &yaml.Node{Kind: yaml.MappingNode}
+		set(b, "name", str(name))
+		set(b, "match", match)
+		set(b, "skills", &yaml.Node{Kind: yaml.SequenceNode, Content: []*yaml.Node{str(skill)}})
+		list.Content = append(list.Content, b)
+	})
+}
+
 // root parses data and returns the top-level map. Empty data is a new
 // config.
 func root(data []byte) (*yaml.Node, error) {

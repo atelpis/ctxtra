@@ -293,11 +293,11 @@ $ claude
 ctxtra: added nothing; 1 problem (run ctxtra doctor)
 $ ctxtra doctor
   PROBLEM: me (~/.config/ctxtra/config.yaml): ~/notes/agents/me.md is in ~/notes, which has the remote
-    github.com/acme/my-notes and is not a trusted source; skipped. If the repository is yours:
-    ctxtra add --trust ~/notes; to pin it, add the file with ctxtra add
+    github.com/acme/my-notes and is not a trusted source; skipped. If only you push to the repository:
+    ctxtra add --trust ~/notes; else pin it: add the file with ctxtra add
 ```
 
-The file is skipped, not served from an old copy. If the repository is yours:
+The file is skipped, not served from an old copy. If only you push to the repository:
 
 ```text
 $ ctxtra add --trust ~/notes
