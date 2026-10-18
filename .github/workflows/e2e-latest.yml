@@ -4,9 +4,11 @@ name: e2e-latest
 # a breaking agent update before users do. Never blocks a PR; on failure it
 # opens (or comments on) one issue.
 
+# Disabled while the repo is private: macOS minutes count 10x against the
+# free Actions quota. Re-enable the triggers below once the repo is public.
 on:
-  schedule:
-    - cron: "17 5 * * *"
+  # schedule:
+  #   - cron: "17 5 * * *"
   workflow_dispatch:
 
 permissions:
