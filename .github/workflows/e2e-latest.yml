@@ -4,9 +4,11 @@ name: e2e-latest
 # a breaking agent update before users do. Never blocks a PR; on failure it
 # opens (or comments on) one issue.
 
+# Disabled while the repo is private: macOS minutes count 10x against the
+# free Actions quota. Re-enable the triggers below once the repo is public.
 on:
-  schedule:
-    - cron: "17 5 * * *"
+  # schedule:
+  #   - cron: "17 5 * * *"
   workflow_dispatch:
 
 permissions:
@@ -39,6 +41,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # Hermes needs Python 3.11 to 3.13.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
       - run: e2e/agents/install.sh latest
       - working-directory: e2e
         env:
@@ -69,5 +75,5 @@ jobs:
             gh issue comment "$n" --body "Still failing: $RUN"
           else
             gh issue create --label e2e-latest --title "e2e fails with the latest agent versions" \
-              --body "The nightly run against the latest Claude Code, Codex, Pi and OpenCode failed: $RUN"
+              --body "The nightly run against the latest Claude Code, Codex, Pi, OpenCode, Copilot, Muse Code, Antigravity CLI, Hermes and DSH failed: $RUN"
           fi

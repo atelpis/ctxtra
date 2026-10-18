@@ -1,0 +1,51 @@
+# DSH: setup writes a managed plugin and adds the row that loads it to the
+# home patch file, after the user's own patches. It never overwrites
+# someone else's plugin, and --remove leaves the patch file a list, which
+# DSH needs.
+
+exec ctxtra setup --agent dsh
+stdout '^ctxtra setup \(dsh\): changed$'
+grep '^// @ctxtra-managed' .dsh/ctxtra.mjs
+grep '^// binary: '$BIN'$' .dsh/ctxtra.mjs
+expand want-patch.yml want-patch-expanded.yml
+cmp .dsh/cordis.patch.yml want-patch-expanded.yml
+
+exec ctxtra doctor
+stdout 'dsh: set up, runs .*/ctxtra \(ok\)'
+
+# Setup again changes nothing.
+exec ctxtra setup --agent dsh
+stdout '^ctxtra setup \(dsh\): nothing to change$'
+
+exec ctxtra setup --remove --agent dsh
+! exists .dsh/ctxtra.mjs
+cmp .dsh/cordis.patch.yml own-patch.yml
+
+cp foreign.mjs .dsh/ctxtra.mjs
+! exec ctxtra setup --agent dsh
+stderr 'is not managed by ctxtra; left alone'
+cmp .dsh/ctxtra.mjs foreign.mjs
+cmp .dsh/cordis.patch.yml own-patch.yml
+
+-- .dsh/cordis.patch.yml --
+# My machine-wide patches.
+- id: agent-default-model
+  config:
+    model: !!js process.env.MY_MODEL ?? 'deepseek-flash'
+-- own-patch.yml --
+# My machine-wide patches.
+- id: agent-default-model
+  config:
+    model: !!js process.env.MY_MODEL ?? 'deepseek-flash'
+-- want-patch.yml --
+# My machine-wide patches.
+- id: agent-default-model
+  config:
+    model: !!js process.env.MY_MODEL ?? 'deepseek-flash'
+# >>> ctxtra: loads ctxtra's plugin; `ctxtra setup --remove` removes it
+- insert:
+    - id: ctxtra
+      name: "$HOME/.dsh/ctxtra.mjs"
+# <<< ctxtra
+-- foreign.mjs --
+export function apply() {}

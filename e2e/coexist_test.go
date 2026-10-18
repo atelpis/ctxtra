@@ -34,11 +34,25 @@ func otherTool(s *Session, agent string) {
 	s.Marked("other-tool/context.md", "OTHERTOOL")
 	path := s.Path("other-tool/context.md")
 	switch agent {
-	case "claude", "codex":
-		// Plain stdout is added as context by Claude and Codex.
+	case "claude", "codex", "muse":
+		// Plain stdout is added as context by Claude, Codex and Muse. Muse
+		// also needs the schema version.
 		cmd := `/bin/sh -c 'cat >/dev/null; /bin/cat ` + path + `'`
-		file := map[string]string{"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}[agent]
-		s.Write(file, `{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "`+cmd+`"}]}]}}`)
+		hooks := `"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "` + cmd + `"}]}]}`
+		switch agent {
+		case "claude":
+			s.Write(".claude/settings.json", "{"+hooks+"}")
+		case "codex":
+			s.Write(".codex/hooks.json", "{"+hooks+"}")
+		case "muse":
+			s.Write(".config/muse/settings.json", `{"schema_version": 1, `+hooks+"}")
+		}
+	case "copilot":
+		// Copilot reads only JSON from a hook; the tool has a file of its
+		// own next to ctxtra's.
+		s.Write("other-tool/answer.json", `{"additionalContext": "CTXMARK-OTHERTOOL"}`)
+		cmd := `/bin/sh -c 'cat >/dev/null; /bin/cat ` + s.Path("other-tool/answer.json") + `'`
+		s.Write(".copilot/hooks/other-tool.json", `{"version": 1, "hooks": {"sessionStart": [{"type": "command", "bash": "`+cmd+`"}]}}`)
 	case "pi":
 		s.Write(".pi/agent/extensions/other-tool.ts", `import { readFileSync } from "node:fs";
 export default function (pi: any) {
@@ -49,6 +63,12 @@ export default function (pi: any) {
 	});
 }
 `)
+	case "antigravity":
+		// Hooks are keyed by name, and the answer is JSON.
+		answer := s.Path("other-tool/answer.json")
+		s.Write("other-tool/answer.json", `{"injectSteps": [{"systemMessage": {"systemMessage": "CTXMARK-OTHERTOOL"}}]}`)
+		cmd := `/bin/sh -c 'cat >/dev/null; /bin/cat ` + answer + `'`
+		s.Write(".gemini/config/hooks.json", `{"other-tool": {"SessionStart": [{"type": "command", "command": "`+cmd+`"}]}}`)
 	case "opencode":
 		s.Write(".config/opencode/plugins/other-tool.ts", `import { readFileSync } from "node:fs";
 export default {
@@ -60,6 +80,26 @@ export default {
 	},
 };
 `)
+	case "hermes":
+		s.Write(".hermes/plugins/other-tool/plugin.yaml", "name: other-tool\n")
+		s.Write(".hermes/plugins/other-tool/__init__.py", `def register(ctx):
+    def add(is_first_turn=False, **kwargs):
+        if is_first_turn:
+            return {"context": open("`+path+`").read()}
+    ctx.register_hook("pre_llm_call", add)
+`)
+	case "dsh":
+		s.Write(".dsh/other-tool.mjs", `import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+export const name = "other-tool";
+export function apply(ctx) {
+	ctx.on("agent/created", ({ agent }) => {
+		const text = readFileSync("`+path+`", "utf8");
+		agent.inject({ id: randomUUID(), role: "user", content: [{ type: "text", text }], source: { kind: "other-tool" } });
+	});
+}
+`)
+		s.Write(".dsh/cordis.patch.yml", "- insert:\n    - id: other-tool\n      name: \""+s.Path(".dsh/other-tool.mjs")+"\"\n")
 	default:
 		s.t.Fatalf("otherTool: no hook for %s", agent)
 	}

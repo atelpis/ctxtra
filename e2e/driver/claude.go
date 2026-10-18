@@ -34,7 +34,7 @@ func (Claude) Command(bin, home, dir, mockURL, prompt string, _ Options, env []s
 
 // UserMessages reads hook responses from the stream-json output: Claude
 // shows a hook's systemMessage to the user.
-func (Claude) UserMessages(stdout string) []string {
+func (Claude) UserMessages(_, stdout string) []string {
 	var out []string
 	for _, line := range strings.Split(stdout, "\n") {
 		var ev struct {

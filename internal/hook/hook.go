@@ -8,12 +8,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"time"
 
+	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/registry"
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
+	"github.com/atelpis/ctxtra/internal/skill"
 )
 
 const maxInput = 10 << 20
@@ -22,6 +25,7 @@ const maxInput = 10 << 20
 type payload struct {
 	Cwd            string   `json:"cwd"`
 	WorkspaceRoots []string `json:"workspace_roots"` // Cursor
+	WorkspacePaths []string `json:"workspacePaths"`  // Antigravity
 	Source         string   `json:"source"`
 	AgentType      string   `json:"agent_type"`
 }
@@ -62,11 +66,29 @@ func Run(harness, event string, in io.Reader, out, errOut io.Writer) (code int) 
 	if dir == "" && len(p.WorkspaceRoots) > 0 {
 		dir = p.WorkspaceRoots[0]
 	}
+	// Antigravity runs hooks in the hook file's folder, not the session's.
+	if dir == "" && len(p.WorkspacePaths) > 0 {
+		dir = p.WorkspacePaths[0]
+	}
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
+	// Before resolving: the session lists the skill as it is on disk.
+	skillErr := skill.Refresh()
 	res, _ := resolve.Session(dir, paths.ConfigPath())
-	logEntry(newEntry(ts, harness, event, p, res, resolve.Chars(res.Render())))
+	e := newEntry(ts, harness, event, p, res, resolve.Chars(res.Render()))
+	if skillErr != nil {
+		e.Problems = append(slices.Clip(e.Problems), "can't update the ctxtra skill: "+skillErr.Error())
+	}
+	if s, ok := a.(agent.Skipper); ok {
+		if e.Skipped = s.Skip(); e.Skipped != "" {
+			e.Chars = 0
+			logEntry(e)
+			fmt.Fprintln(out, empty)
+			return 0
+		}
+	}
+	logEntry(e)
 	for _, m := range res.Missing {
 		fmt.Fprintf(errOut, "ctxtra: bound file not found: %s\n", m)
 	}

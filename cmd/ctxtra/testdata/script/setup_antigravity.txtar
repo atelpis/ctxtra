@@ -1,0 +1,91 @@
+# Antigravity: setup adds a hook named ctxtra next to other tools' hooks,
+# doctor reports a hook turned off with "enabled": false, and --remove
+# restores the original file.
+
+exec ctxtra setup --agent antigravity
+stdout '^ctxtra setup \(antigravity\): changed$'
+cmpenv .gemini/config/hooks.json want.json
+
+exec ctxtra setup --agent antigravity
+stdout 'nothing to change'
+
+exec ctxtra doctor
+stdout 'antigravity: set up for \[SessionStart\], runs .*/ctxtra \(ok\)  '
+
+# Turned off in the App's settings: setup leaves it off, doctor says so.
+expand off.json .gemini/config/hooks.json
+exec ctxtra setup --agent antigravity
+stdout 'nothing to change'
+! exec ctxtra doctor
+stdout 'antigravity: set up for \[SessionStart\], runs .*/ctxtra \(ok\); turned off \("enabled": false\)'
+
+expand want.json .gemini/config/hooks.json
+exec ctxtra setup --remove --agent antigravity
+stdout '^ctxtra setup --remove \(antigravity\): changed$'
+cmp .gemini/config/hooks.json original.json
+
+-- .gemini/config/hooks.json --
+{
+  "lint": {
+    "PostToolUse": [
+      {
+        "matcher": "write_to_file",
+        "hooks": [
+          {
+            "command": "./lint.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+-- original.json --
+{
+  "lint": {
+    "PostToolUse": [
+      {
+        "matcher": "write_to_file",
+        "hooks": [
+          {
+            "command": "./lint.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
+-- want.json --
+{
+  "lint": {
+    "PostToolUse": [
+      {
+        "matcher": "write_to_file",
+        "hooks": [
+          {
+            "command": "./lint.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "ctxtra": {
+    "SessionStart": [
+      {
+        "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook antigravity SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+        "timeout": 10
+      }
+    ]
+  }
+}
+-- off.json --
+{
+  "ctxtra": {
+    "enabled": false,
+    "SessionStart": [
+      {
+        "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook antigravity SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+        "timeout": 10
+      }
+    ]
+  }
+}

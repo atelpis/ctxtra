@@ -116,10 +116,10 @@ func (f *Fixture) Clean(rels ...string) {
 	}
 }
 
-// Config writes the ctxtra config, which lists one binding file with
-// the given YAML documents.
+// Config writes the ctxtra config, which includes one binding file with
+// the given content.
 func (f *Fixture) Config(bindings string) {
-	f.Write(".config/ctxtra/config.yaml", "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [bindings.yaml]\n")
+	f.Write(".config/ctxtra/config.yaml", "schema: ctxtra/v1\ninclude: [bindings.yaml]\n")
 	f.Write(".config/ctxtra/bindings.yaml", bindings)
 }
 
@@ -140,6 +140,8 @@ func (f *Fixture) Env() []string {
 		"CLAUDE_CONFIG_DIR=" + f.Path(".claude"),
 		"CODEX_HOME=" + f.Path(".codex"),
 		"PI_CODING_AGENT_DIR=" + f.Path(".pi/agent"),
+		"COPILOT_HOME=" + f.Path(".copilot"),
+		"DSH_HOME=" + f.Path(".dsh"),
 	}
 }
 

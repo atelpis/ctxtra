@@ -105,7 +105,7 @@ func (s *sources) importClone(p, top, name, remote, branch string) error {
 	err = s.edit(func(old []byte) ([]byte, error) {
 		data, err := config.AddSource(old, name, [][2]string{{"git", url}, {"branch", branch}, {"commit", commit}})
 		if err == nil {
-			data, err = config.AddBinding(data, ref)
+			data, err = config.AddInclude(data, ref)
 		}
 		return data, err
 	})
@@ -149,10 +149,10 @@ func (s *sources) mapToSource(same []config.Source, top, url, rel string) error 
 	return nil
 }
 
-// addPinnedPath adds a clone as a pinned-path source: pinned like a git
-// source, but sync follows the clone's committed HEAD instead of a remote.
-// It adds no mapping: its files are referenced as ctxtra://<name>/<path>.
-func (s *sources) addPinnedPath(dir, name string) error {
+// addLocalGit adds a clone as a local-git source: pinned like a git source,
+// but sync follows the clone's committed HEAD instead of a remote. It adds
+// no mapping: its files are referenced as ctxtra://<name>/<path>.
+func (s *sources) addLocalGit(dir, name string) error {
 	c, err := source.InspectClone(s.ctx, dir)
 	if err != nil {
 		return err
@@ -162,7 +162,7 @@ func (s *sources) addPinnedPath(dir, name string) error {
 		return err
 	}
 	for _, src := range cur.Sources {
-		if src.PinnedPath != "" && sameFile(src.PinnedPath, c.Top) {
+		if src.LocalGit != "" && sameFile(src.LocalGit, c.Top) {
 			return fmt.Errorf("%s is the source %s already", paths.Tilde(c.Top), src.Name)
 		}
 	}
@@ -182,13 +182,13 @@ func (s *sources) addPinnedPath(dir, name string) error {
 		return err
 	}
 	err = s.edit(func(old []byte) ([]byte, error) {
-		return config.AddSource(old, name, [][2]string{{"pinned-path", paths.Tilde(c.Top)}, {"commit", commit}})
+		return config.AddSource(old, name, [][2]string{{"local-git", paths.Tilde(c.Top)}, {"commit", commit}})
 	})
 	if err != nil {
 		return err
 	}
-	s.checked(config.Source{Name: name, PinnedPath: c.Top})
-	fmt.Fprintf(s.Out, "added source %s (pinned-path: %s at %s); sync follows the clone's committed HEAD\n",
+	s.checked(config.Source{Name: name, LocalGit: c.Top})
+	fmt.Fprintf(s.Out, "added source %s (local-git: %s at %s); sync follows the clone's committed HEAD\n",
 		name, paths.Tilde(c.Top), source.Short(commit))
 	s.listBindingFiles(name, gen)
 	return nil
@@ -200,7 +200,7 @@ func (s *sources) addPinnedPath(dir, name string) error {
 // goes. With a name, a new trusted source is added and the pinned one
 // stays: plain paths under the folder are then live, ctxtra:// references
 // to the pinned source stay pinned. p is the file or folder given; a file is
-// added to bindings.
+// added to include.
 func (s *sources) trustMapped(cur *config.Config, m state.Mapping, p, name string) error {
 	unlock, err := transition()
 	if err != nil {
@@ -241,7 +241,7 @@ func (s *sources) trustMapped(cur *config.Config, m state.Mapping, p, name strin
 	return s.addTrustedFile(src.Name, m.Path, p)
 }
 
-// addTrustedFile adds p to bindings through the trusted source name at
+// addTrustedFile adds p to include through the trusted source name at
 // root, when p is a file.
 func (s *sources) addTrustedFile(name, root, p string) error {
 	if st, err := os.Stat(p); err != nil || st.IsDir() {
@@ -251,7 +251,7 @@ func (s *sources) addTrustedFile(name, root, p string) error {
 	if !ok {
 		return nil
 	}
-	if err := s.addBinding(config.Scheme + name + "/" + rel); err != nil {
+	if err := s.addInclude(config.Scheme + name + "/" + rel); err != nil {
 		return err
 	}
 	s.showBindings(paths.Real(p), "")
@@ -265,7 +265,7 @@ func transition() (func(), error) {
 	return fsutil.Lock(filepath.Join(paths.StateDir(), "sources.lock"))
 }
 
-const removeUsage = "usage: ctxtra remove <source>|<bindings entry>\n"
+const removeUsage = "usage: ctxtra remove <source>|<include entry>\n"
 
 func runRemove(args []string, stdio IO) int {
 	if len(args) != 1 || strings.HasPrefix(args[0], "-") {
@@ -279,7 +279,7 @@ func runRemove(args []string, stdio IO) int {
 	return 0
 }
 
-// remove removes a source with its bindings entries, or one bindings entry.
+// remove removes a source with its include entries, or one include entry.
 // A clone mapping of a removed source stays: its old paths are skipped,
 // never read from disk.
 func (s *sources) remove(what string) error {
@@ -303,9 +303,9 @@ func (s *sources) remove(what string) error {
 			}
 			data, err := config.RemoveSource(old, src.Name)
 			n = 0
-			for _, e := range c.BindingEntries {
+			for _, e := range c.Includes {
 				if err == nil && strings.HasPrefix(e, prefix) {
-					data, err = config.RemoveBinding(data, e)
+					data, err = config.RemoveInclude(data, e)
 					n++
 				}
 			}
@@ -318,13 +318,13 @@ func (s *sources) remove(what string) error {
 		if n == 1 {
 			entries = "entry"
 		}
-		fmt.Fprintf(s.Out, "removed source %s and %d bindings %s\n", src.Name, n, entries)
+		fmt.Fprintf(s.Out, "removed source %s and %d include %s\n", src.Name, n, entries)
 		s.stillUsed(src, prefix)
 		return nil
 	}
 	entry := ""
 	base := filepath.Dir(s.file)
-	for _, e := range cur.BindingEntries {
+	for _, e := range cur.Includes {
 		if e == what || !strings.HasPrefix(e, config.Scheme) && !strings.HasPrefix(what, config.Scheme) &&
 			paths.Resolve(base, e) == paths.Resolve(base, paths.Expand(what)) {
 			entry = e
@@ -332,17 +332,18 @@ func (s *sources) remove(what string) error {
 		}
 	}
 	if entry == "" {
-		return fmt.Errorf("%s is neither a source nor in bindings", what)
+		return fmt.Errorf("%s is neither a source nor in include", what)
 	}
-	if err := s.edit(func(old []byte) ([]byte, error) { return config.RemoveBinding(old, entry) }); err != nil {
+	if err := s.edit(func(old []byte) ([]byte, error) { return config.RemoveInclude(old, entry) }); err != nil {
 		return err
 	}
-	fmt.Fprintf(s.Out, "removed %s from bindings\n", entry)
+	fmt.Fprintf(s.Out, "removed %s from include\n", entry)
 	return nil
 }
 
-// stillUsed lists the lines of the user's binding files that reference the
-// removed source src: by prefix, or by a path in a clone mapped to it.
+// stillUsed lists the lines of the config and the user's binding files that
+// reference the removed source src: by prefix, or by a path in a clone
+// mapped to it.
 func (s *sources) stillUsed(src config.Source, prefix string) {
 	needles := []string{prefix}
 	ms, _ := state.LoadMappings()
@@ -353,7 +354,7 @@ func (s *sources) stillUsed(src config.Source, prefix string) {
 	}
 	cfg := config.Load(s.file, fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes))
 	var found []string
-	for _, f := range cfg.BindingFiles {
+	for _, f := range append([]string{cfg.File}, cfg.BindingFiles...) {
 		if _, inStore := paths.Rel(source.StoreDir(), f); inStore {
 			continue
 		}

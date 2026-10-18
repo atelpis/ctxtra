@@ -11,7 +11,8 @@ FROM golang:1.27-trixie AS go
 
 FROM node:24-trixie-slim
 COPY --from=go /usr/local/go /usr/local/go
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates \
+# Python 3.13 for Hermes.
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl python3 python3-venv \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Agents refuse some modes as root, and the tests should not need it.
@@ -22,7 +23,8 @@ WORKDIR /src
 
 # AGENTS=latest installs the latest agent releases instead of the pinned ones.
 ARG AGENTS=pinned
-COPY --chown=e2e e2e/agents/package.json e2e/agents/package-lock.json e2e/agents/install.sh e2e/agents/
+COPY --chown=e2e e2e/agents/package.json e2e/agents/package-lock.json e2e/agents/install.sh \
+	e2e/agents/install-muse.mjs e2e/agents/muse.json e2e/agents/antigravity.lock e2e/agents/hermes.ref e2e/agents/
 RUN e2e/agents/install.sh "$AGENTS"
 
 COPY --chown=e2e go.mod go.sum ./

@@ -1,11 +1,12 @@
-// Package hookjson edits the JSON hook configs of Claude Code, Codex CLI and
-// Cursor. It changes only ctxtra's own entries: other tools' entries keep
-// their content and order, and our entries are updated in place, because
-// Codex keys hook trust by position.
+// Package hookjson edits the JSON hook configs of Claude Code, Codex CLI,
+// Muse Code, Cursor, Copilot CLI, Antigravity and Devin. It changes only ctxtra's own entries:
+// other tools' entries keep their content and order, and our entries are
+// updated in place, because Codex keys hook trust by position.
 package hookjson
 
 import (
 	"fmt"
+	"os"
 	"slices"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -25,13 +26,28 @@ type Config struct {
 	Agent  string
 	Path   string
 	Events []Event
-	// Flat is Cursor's layout: each entry is a handler. Otherwise (Claude,
-	// Codex) each entry is a group with a matcher and a list of handlers.
+	// Flat is the layout of Cursor, Copilot and Antigravity: each entry is a handler.
+	// Otherwise (Claude, Codex, Muse, Devin) each entry is a group with a matcher
+	// and a list of handlers.
 	Flat bool
 	// StatusMessage names the hook in Codex's /hooks review.
 	StatusMessage string
-	// Version is written as the top-level "version" if missing (Cursor).
-	Version int
+	// Version is written as the top-level VersionKey if missing: "version"
+	// (the default) for Cursor and Copilot, "schema_version" for Muse.
+	Version    int
+	VersionKey string
+	// Own is a file that only ctxtra writes (Copilot): --remove deletes it
+	// when nothing but the version is left.
+	Own bool
+	// Key overrides the top-level event list key (Antigravity uses "ctxtra").
+	Key string
+}
+
+func (c Config) key() string {
+	if c.Key == "" {
+		return "hooks"
+	}
+	return c.Key
 }
 
 // Apply adds, updates or removes our entries and writes the file when it
@@ -42,10 +58,10 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		return err
 	}
 	hooks := jsonorder.NewMap()
-	if v, ok := data.Get("hooks"); ok {
+	if v, ok := data.Get(c.key()); ok {
 		h, ok := v.(*jsonorder.Map)
 		if !ok {
-			return fmt.Errorf("%s: \"hooks\" is not an object; left alone", c.Path)
+			return fmt.Errorf("%s: %q is not an object; left alone", c.Path, c.key())
 		}
 		hooks = h
 	}
@@ -58,7 +74,7 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		if v, ok := hooks.Get(ev.Name); ok {
 			arr, ok := v.([]any)
 			if !ok {
-				return fmt.Errorf("%s: hooks.%s is not a list; left alone", c.Path, ev.Name)
+				return fmt.Errorf("%s: %s.%s is not a list; left alone", c.Path, c.key(), ev.Name)
 			}
 			list = arr
 		}
@@ -100,12 +116,29 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		}
 	}
 	if len(hooks.Keys) > 0 {
-		if _, ok := data.Get("version"); c.Version != 0 && add && !ok {
-			data.Set("version", c.Version)
+		if _, ok := data.Get(c.versionKey()); c.Version != 0 && add && !ok {
+			data.Set(c.versionKey(), c.Version)
 		}
-		data.Set("hooks", hooks)
+		data.Set(c.key(), hooks)
 	} else {
-		data.Delete("hooks")
+		data.Delete(c.key())
+	}
+	// A symlink (for example into a dotfiles repo) is not deleted: its
+	// target is written below, like any other change.
+	_, version := data.Get(c.versionKey())
+	if st, err := os.Lstat(c.Path); err == nil && st.Mode().IsRegular() && c.Own && !add && len(data.Keys) == 1 && version {
+		r.Changes = append(r.Changes, c.Path)
+		if o.DryRun {
+			return nil
+		}
+		old, err := os.ReadFile(c.Path)
+		if err != nil {
+			return err
+		}
+		if err := fsutil.Backup(c.Path, old, paths.BackupDir()); err != nil {
+			return err
+		}
+		return os.Remove(c.Path)
 	}
 	out, err := jsonorder.MarshalIndent(data)
 	if err != nil {
@@ -118,6 +151,13 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 	return err
 }
 
+func (c Config) versionKey() string {
+	if c.VersionKey == "" {
+		return "version"
+	}
+	return c.VersionKey
+}
+
 // Commands returns our hook commands by event, in file order.
 func (c Config) Commands() (map[string][]Command, error) {
 	data, err := c.read()
@@ -126,7 +166,7 @@ func (c Config) Commands() (map[string][]Command, error) {
 	}
 	out := map[string][]Command{}
 	for _, ev := range c.Events {
-		for gi, e := range entries(data, ev.Name) {
+		for gi, e := range c.entries(data, ev.Name) {
 			if c.Flat {
 				if cmd, ok := ourCommand(commandOf(e)); ok {
 					out[ev.Name] = append(out[ev.Name], Command{cmd, gi, 0})
@@ -325,8 +365,8 @@ func commandOf(h any) any {
 }
 
 // entries returns the hook list for one event, or nil.
-func entries(data *jsonorder.Map, event string) []any {
-	hv, _ := data.Get("hooks")
+func (c Config) entries(data *jsonorder.Map, event string) []any {
+	hv, _ := data.Get(c.key())
 	hooks, ok := hv.(*jsonorder.Map)
 	if !ok {
 		return nil

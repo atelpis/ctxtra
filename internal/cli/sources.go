@@ -128,19 +128,19 @@ const addUsage = `usage:
   ctxtra add ctxtra://<source>/<binding file>
   ctxtra add <local binding file> [--trust] [--as NAME] [--remote REMOTE] [--branch BRANCH]
   ctxtra add --trust <folder> [--as NAME]
-  ctxtra add --pinned-path <clone> [--as NAME]
+  ctxtra add --local-git <clone> [--as NAME]
 `
 
 func runAdd(args []string, stdio IO) int {
-	f, pos, err := parseArgs(args, []string{"as", "branch", "remote", "pinned-path"}, []string{"trust"})
-	if err == nil && f["pinned-path"] != "" {
+	f, pos, err := parseArgs(args, []string{"as", "branch", "remote", "local-git"}, []string{"trust"})
+	if err == nil && f["local-git"] != "" {
 		if len(pos) > 0 || f["trust"] != "" || f["branch"] != "" || f["remote"] != "" {
 			fmt.Fprint(stdio.Err, addUsage)
 			return 2
 		}
 		s := newSources(stdio)
 		wd, _ := os.Getwd()
-		if err := s.addPinnedPath(paths.Resolve(wd, f["pinned-path"]), f["as"]); err != nil {
+		if err := s.addLocalGit(paths.Resolve(wd, f["local-git"]), f["as"]); err != nil {
 			return s.fail("add", err)
 		}
 		return 0
@@ -189,7 +189,11 @@ func runAdd(args []string, stdio IO) int {
 	return 0
 }
 
-var reBindingKind = regexp.MustCompile(`(?m)^kind:\s*Binding\s*$`)
+// A binding file has the ctxtra schema and none of the config's own keys.
+var (
+	reSchema    = regexp.MustCompile(`(?m)^schema:\s*['"]?ctxtra/`)
+	reConfigKey = regexp.MustCompile(`(?m)^(sources|include|budget)\s*:`)
+)
 
 var reRepoName = regexp.MustCompile(`([^/:]+?)(\.git)?/?$`)
 
@@ -216,8 +220,8 @@ func describe(s config.Source) string {
 	switch {
 	case s.Git != "":
 		return s.Git
-	case s.PinnedPath != "":
-		return "pinned-path " + paths.Tilde(s.PinnedPath)
+	case s.LocalGit != "":
+		return "local-git " + paths.Tilde(s.LocalGit)
 	}
 	return "trusted-path " + paths.Tilde(s.TrustedPath)
 }
@@ -276,7 +280,7 @@ func (s *sources) addGit(url, file, name, branch string) error {
 	err = s.edit(func(old []byte) ([]byte, error) {
 		data, err := config.AddSource(old, name, [][2]string{{"git", url}, {"branch", branch}, {"commit", commit}})
 		if err == nil && file != "" {
-			data, err = config.AddBinding(data, ref)
+			data, err = config.AddInclude(data, ref)
 		}
 		return data, err
 	})
@@ -321,23 +325,23 @@ func (s *sources) addRef(ref string) error {
 	if st, err := os.Stat(p); err != nil || !st.Mode().IsRegular() {
 		return fmt.Errorf("%s is not a file in the source %s", file, name)
 	}
-	if err := s.addBinding(ref); err != nil {
+	if err := s.addInclude(ref); err != nil {
 		return err
 	}
 	s.showBindings(p, root)
 	return nil
 }
 
-// addBinding adds entry to bindings unless it is there already.
-func (s *sources) addBinding(entry string) error {
+// addInclude adds entry to include unless it is there already.
+func (s *sources) addInclude(entry string) error {
 	added := false
 	err := s.edit(func(old []byte) ([]byte, error) {
 		c, err := config.Parse(old)
-		if err == nil && slices.Contains(c.BindingEntries, entry) {
+		if err == nil && slices.Contains(c.Includes, entry) {
 			return old, nil
 		}
 		added = true
-		return config.AddBinding(old, entry)
+		return config.AddInclude(old, entry)
 	})
 	switch {
 	case err != nil:
@@ -345,7 +349,7 @@ func (s *sources) addBinding(entry string) error {
 	case added:
 		fmt.Fprintf(s.Out, "added %s\n", entry)
 	default:
-		fmt.Fprintf(s.Out, "%s is in bindings already\n", entry)
+		fmt.Fprintf(s.Out, "%s is in include already\n", entry)
 	}
 	return nil
 }
@@ -391,12 +395,14 @@ func (s *sources) addLocal(p string, trustIt bool, name, remote, branch string) 
 	terr := cfg.Trust.Check(p)
 	var te *trust.Error
 	switch {
+	case terr == nil && sameFile(p, s.file):
+		return fmt.Errorf("%s is the config itself; its bindings apply already", paths.Tilde(p))
 	case terr == nil:
 		entry := paths.Tilde(p)
 		if filepath.Dir(p) == filepath.Dir(paths.Real(s.file)) || filepath.Dir(p) == filepath.Dir(s.file) {
 			entry = filepath.Base(p)
 		}
-		if err := s.addBinding(entry); err != nil {
+		if err := s.addInclude(entry); err != nil {
 			return err
 		}
 		fmt.Fprintln(s.Out, "  trusted: changes apply right away")
@@ -406,7 +412,7 @@ func (s *sources) addLocal(p string, trustIt bool, name, remote, branch string) 
 			return err
 		}
 		rel, _ := filepath.Rel(te.Repo, p)
-		if err := s.addBinding(config.Scheme + src + "/" + filepath.ToSlash(rel)); err != nil {
+		if err := s.addInclude(config.Scheme + src + "/" + filepath.ToSlash(rel)); err != nil {
 			return err
 		}
 		// Another repository around the file may still be untrusted.
@@ -476,8 +482,8 @@ func (s *sources) showBindings(file, root string) {
 			continue
 		}
 		fmt.Fprintf(s.Out, "  binding %s: for %s\n", b.Name, b.Selector)
-		if len(b.Files) > 0 {
-			fmt.Fprintf(s.Out, "    files: %s\n", source.Sanitize(strings.Join(mapList(b.Files, show), ", ")))
+		if len(b.Instructions) > 0 {
+			fmt.Fprintf(s.Out, "    instructions: %s\n", source.Sanitize(strings.Join(mapList(b.Instructions, show), ", ")))
 		}
 		if len(b.Skills) > 0 {
 			fmt.Fprintf(s.Out, "    skills: %s\n", source.Sanitize(strings.Join(mapList(b.Skills, show), ", ")))
@@ -506,7 +512,7 @@ func (s *sources) listBindingFiles(name, gen string) {
 		if err != nil || d.IsDir() || !(strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml")) {
 			return nil
 		}
-		if b, err := fsutil.ReadBounded(p, config.MaxFileBytes); err == nil && reBindingKind.Match(b) {
+		if b, err := fsutil.ReadBounded(p, config.MaxFileBytes); err == nil && reSchema.Match(b) && !reConfigKey.Match(b) {
 			rel, _ := filepath.Rel(gen, p)
 			found = append(found, filepath.ToSlash(rel))
 		}
@@ -658,17 +664,17 @@ func (s *sources) sync(src config.Source, restore bool) error {
 }
 
 // latest fetches the commit that src follows: the branch of a git source,
-// the committed HEAD of a pinned-path source's clone.
+// the committed HEAD of a local-git source's clone.
 func (s *sources) latest(r *source.Repo, src config.Source) (string, error) {
-	if src.PinnedPath != "" {
-		return r.FetchHead(s.ctx, src.PinnedPath)
+	if src.LocalGit != "" {
+		return r.FetchHead(s.ctx, src.LocalGit)
 	}
 	return r.FetchBranch(s.ctx, src.Branch)
 }
 
 // follows is what src follows, for messages.
 func follows(src config.Source) string {
-	if src.PinnedPath != "" {
+	if src.LocalGit != "" {
 		return "local HEAD"
 	}
 	return src.Branch
@@ -676,8 +682,8 @@ func follows(src config.Source) string {
 
 // where is what src follows and where, for messages.
 func where(src config.Source) string {
-	if src.PinnedPath != "" {
-		return "local HEAD, " + paths.Tilde(src.PinnedPath)
+	if src.LocalGit != "" {
+		return "local HEAD, " + paths.Tilde(src.LocalGit)
 	}
 	return src.Branch + ", " + src.Git
 }

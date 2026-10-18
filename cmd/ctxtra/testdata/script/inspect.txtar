@@ -15,8 +15,8 @@ stdout '^CTXMARK-SVC$'
 stdout '<location>.*/skills/deploy/SKILL.md</location>'
 
 exec ctxtra explain dev/other
-stdout '^- svc \(~/.config/ctxtra/b.yaml\): gitRepos do not match github.com/acme/other'
-stdout '^\+ other \(~/.config/ctxtra/b.yaml\): gitRepos remote github.com/acme/other$'
+stdout '^- svc \(~/.config/ctxtra/b.yaml\): repos do not match github.com/acme/other'
+stdout '^\+ other \(~/.config/ctxtra/b.yaml\): repos remote github.com/acme/other$'
 stdout '^total: 1 files, 0 skills'
 
 exec ctxtra files dev/other
@@ -24,30 +24,22 @@ stdout '/ctx/other.md'
 ! stdout 'svc.md'
 
 -- .config/ctxtra/config.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Config
-bindings: [b.yaml]
+schema: ctxtra/v1
+include: [b.yaml]
 -- .config/ctxtra/b.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: svc
-spec:
-  selector:
-    gitRepos:
-      - remote: github.com/acme/svc
-  files: [~/ctx/svc.md]
-  skills: [~/skills/deploy]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: other
-spec:
-  selector:
-    gitRepos:
-      - remote: github.com/acme/other
-  files: [~/ctx/other.md]
+schema: ctxtra/v1
+bindings:
+  - name: svc
+    match:
+      repos:
+        - remote: github.com/acme/svc
+    instructions: [~/ctx/svc.md]
+    skills: [~/skills/deploy]
+  - name: other
+    match:
+      repos:
+        - remote: github.com/acme/other
+    instructions: [~/ctx/other.md]
 -- ctx/svc.md --
 CTXMARK-SVC
 -- ctx/other.md --

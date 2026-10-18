@@ -85,7 +85,8 @@ func TestParityWithLabMock(t *testing.T) {
 func TestStreamingRoundTrip(t *testing.T) {
 	tools := []any{map[string]any{"name": "Read", "input_schema": map[string]any{}},
 		map[string]any{"type": "function", "name": "exec_command", "parameters": map[string]any{}},
-		map[string]any{"type": "function", "function": map[string]any{"name": "read"}}}
+		map[string]any{"type": "function", "function": map[string]any{"name": "read"}},
+		map[string]any{"functionDeclarations": []any{map[string]any{"name": "view_file"}}}}
 	for _, tc := range []struct {
 		path, last string
 		body       map[string]any
@@ -97,6 +98,9 @@ func TestStreamingRoundTrip(t *testing.T) {
 		{"/v1/responses", "response.completed", map[string]any{"stream": true, "tools": tools,
 			"input": []any{map[string]any{"type": "message", "role": "user",
 				"content": []any{map[string]any{"type": "input_text", "text": Prompt + " CTXMARK-A"}}}}}},
+		// Gemini chunks have no event type.
+		{"/v1beta/models/m:streamGenerateContent?alt=sse", "", map[string]any{"tools": tools,
+			"contents": []any{map[string]any{"role": "user", "parts": []any{map[string]any{"text": Prompt + " CTXMARK-A"}}}}}},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			s := New(t, Read("/x"))
@@ -107,12 +111,14 @@ func TestStreamingRoundTrip(t *testing.T) {
 			}
 			defer resp.Body.Close()
 			var last string
+			events := 0
 			sc := bufio.NewScanner(resp.Body)
 			for sc.Scan() {
 				data, ok := strings.CutPrefix(sc.Text(), "data: ")
 				if !ok {
 					continue
 				}
+				events++
 				if data == "[DONE]" {
 					last = data
 					continue
@@ -123,7 +129,7 @@ func TestStreamingRoundTrip(t *testing.T) {
 				}
 				last, _ = ev["type"].(string)
 			}
-			if last != tc.last {
+			if events == 0 || last != tc.last {
 				t.Errorf("last event %q, want %q", last, tc.last)
 			}
 			reqs := s.Requests()
@@ -132,5 +138,30 @@ func TestStreamingRoundTrip(t *testing.T) {
 				t.Errorf("recorded %+v", reqs)
 			}
 		})
+	}
+}
+
+// Muse Code's catalog gets the Muse metadata, other model lists don't.
+func TestModelLists(t *testing.T) {
+	s := New(t)
+	for path, muse := range map[string]bool{"/muse-code/models": true, "/v1/models": false} {
+		resp, err := http.Get(s.URL() + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var list struct {
+			Data []struct {
+				ID       string
+				Metadata map[string]any
+			}
+		}
+		err = json.NewDecoder(resp.Body).Decode(&list)
+		resp.Body.Close()
+		if err != nil || len(list.Data) != 1 || list.Data[0].ID != "mock-model" {
+			t.Fatalf("%s: %+v, %v", path, list, err)
+		}
+		if _, ok := list.Data[0].Metadata["muse-code"]; ok != muse {
+			t.Errorf("%s: muse-code metadata %v, want %v", path, ok, muse)
+		}
 	}
 }

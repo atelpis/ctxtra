@@ -12,8 +12,7 @@ import (
 const commitA = "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"
 const commitB = "1111111111111111111111111111111111111111"
 
-const commented = `apiVersion: ctxtra/v1alpha1
-kind: Config
+const commented = `schema: ctxtra/v1
 
 # my sources
 sources:
@@ -23,11 +22,16 @@ sources:
     branch: main                     # what sync checks
     commit: '` + commitA + `'   # accepted
 
-bindings:                            # binding files
+bindings:                            # my own
+  - name: me
+    match: {global: true}
+    instructions: [me.md]
+
+include:                             # binding files
   - bindings.yaml                    # plain
 
 budget:
-  maxChars: 40000
+  max-chars: 40000
 `
 
 // Text edits keep everything else byte for byte.
@@ -36,9 +40,9 @@ func TestTextEdits(t *testing.T) {
 	if err != nil || string(out) != strings.Replace(commented, commitA, commitB, 1) {
 		t.Errorf("SetCommit %v:\n%s", err, out)
 	}
-	out, err = AddBinding([]byte(commented), "ctxtra://team-ctx/b.yaml")
+	out, err = AddInclude([]byte(commented), "ctxtra://team-ctx/b.yaml")
 	if err != nil || string(out) != strings.Replace(commented, "# plain\n", "# plain\n  - ctxtra://team-ctx/b.yaml\n", 1) {
-		t.Errorf("AddBinding %v:\n%s", err, out)
+		t.Errorf("AddInclude %v:\n%s", err, out)
 	}
 	out, err = AddSource([]byte(commented), "globex", [][2]string{{"git", "https://h/x.git"}, {"branch", "main"}, {"commit", commitB}})
 	want := strings.Replace(commented, "   # accepted\n", "   # accepted\n  globex:\n    git: https://h/x.git\n    branch: main\n    commit: '"+commitB+"'\n", 1)
@@ -48,6 +52,14 @@ func TestTextEdits(t *testing.T) {
 	if _, err := AddSource([]byte(commented), "dotfiles", [][2]string{{"trusted-path", "/x"}}); err == nil {
 		t.Error("AddSource: an existing name was accepted")
 	}
+	out, err = AddBinding([]byte(commented), NewBinding{Name: "ctxtra", Global: true, Skills: []string{"~/.ctxtra/skills/ctxtra"}})
+	want = strings.Replace(commented, "[me.md]\n", "[me.md]\n  - name: ctxtra\n    match:\n      global: true\n    skills:\n      - ~/.ctxtra/skills/ctxtra\n", 1)
+	if err != nil || string(out) != want {
+		t.Errorf("AddBinding %v:\n%s", err, out)
+	}
+	if _, err := AddBinding([]byte(commented), NewBinding{Name: "me", Global: true, Skills: []string{"/x"}}); err == nil {
+		t.Error("AddBinding: an existing name was accepted")
+	}
 }
 
 func TestEditsOnOtherShapes(t *testing.T) {
@@ -55,19 +67,45 @@ func TestEditsOnOtherShapes(t *testing.T) {
 		name, in, want string
 		edit           func([]byte) ([]byte, error)
 	}{
-		{"binding into a flow list", "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [a.yaml, 'b c.yaml']  # x\n",
-			"apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [a.yaml, 'b c.yaml', '#x.yaml']  # x\n",
-			func(d []byte) ([]byte, error) { return AddBinding(d, "#x.yaml") }},
-		{"first binding", "apiVersion: ctxtra/v1alpha1\nkind: Config", "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings:\n  - a.yaml\n",
-			func(d []byte) ([]byte, error) { return AddBinding(d, "a.yaml") }},
+		{"include into a flow list", "schema: ctxtra/v1\ninclude: [a.yaml, 'b c.yaml']  # x\n",
+			"schema: ctxtra/v1\ninclude: [a.yaml, 'b c.yaml', '#x.yaml']  # x\n",
+			func(d []byte) ([]byte, error) { return AddInclude(d, "#x.yaml") }},
+		{"first include", "schema: ctxtra/v1", "schema: ctxtra/v1\ninclude:\n  - a.yaml\n",
+			func(d []byte) ([]byte, error) { return AddInclude(d, "a.yaml") }},
+		{"first include after own bindings", "schema: ctxtra/v1\nbindings:\n  - name: me\n    match: {global: true}\n    instructions: [me.md]\n",
+			"schema: ctxtra/v1\nbindings:\n  - name: me\n    match: {global: true}\n    instructions: [me.md]\ninclude:\n  - a.yaml\n",
+			func(d []byte) ([]byte, error) { return AddInclude(d, "a.yaml") }},
 		{"new config", "", NewConfig + "sources:\n  x:\n    trusted-path: ~/x\n",
 			func(d []byte) ([]byte, error) { return AddSource(d, "x", [][2]string{{"trusted-path", "~/x"}}) }},
-		{"commit of a handwritten source", "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n  t:\n      git: https://h/t\n      branch: main\n",
-			"apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n  t:\n      git: https://h/t\n      branch: main\n      commit: '" + commitB + "'\n",
+		{"commit of a handwritten source", "schema: ctxtra/v1\nsources:\n  t:\n      git: https://h/t\n      branch: main\n",
+			"schema: ctxtra/v1\nsources:\n  t:\n      git: https://h/t\n      branch: main\n      commit: '" + commitB + "'\n",
 			func(d []byte) ([]byte, error) { return SetCommit(d, "t", commitB) }},
+		{"first binding", "schema: ctxtra/v1\ninclude: [a.yaml]\n",
+			"schema: ctxtra/v1\ninclude: [a.yaml]\nbindings:\n  - name: s\n    match:\n      global: true\n    skills:\n      - ~/s\n",
+			func(d []byte) ([]byte, error) {
+				return AddBinding(d, NewBinding{Name: "s", Global: true, Skills: []string{"~/s"}})
+			}},
+		{"binding after an unindented list", "schema: ctxtra/v1\nbindings:\n- name: me\n  match:\n    global: true\n  instructions: [me.md]\n",
+			"schema: ctxtra/v1\nbindings:\n- name: me\n  match:\n    global: true\n  instructions: [me.md]\n- name: s\n  match:\n    global: true\n  skills:\n    - ~/s\n",
+			func(d []byte) ([]byte, error) {
+				return AddBinding(d, NewBinding{Name: "s", Global: true, Skills: []string{"~/s"}})
+			}},
+		{"binding with every list", "schema: ctxtra/v1\nbindings:\n  - name: me\n    match:\n      global: true\n    instructions: [me.md]\n",
+			"schema: ctxtra/v1\nbindings:\n  - name: me\n    match:\n      global: true\n    instructions: [me.md]\n" +
+				"  - name: work\n    match:\n      dirs:\n        - ~/dev/work/**\n      repos:\n        - github.com/acme/*\n" +
+				"    instructions:\n      - ~/notes/work.md\n      - '~/notes/#2.md'\n    skills:\n      - ~/skills/deploy\n",
+			func(d []byte) ([]byte, error) {
+				return AddBinding(d, NewBinding{Name: "work", Dirs: []string{"~/dev/work/**"}, Repos: []string{"github.com/acme/*"},
+					Instructions: []string{"~/notes/work.md", "~/notes/#2.md"}, Skills: []string{"~/skills/deploy"}})
+			}},
+		{"binding into a flow list", "schema: ctxtra/v1\nbindings: [{name: me, match: {global: true}, instructions: [me.md]}]\n",
+			"schema: ctxtra/v1\nbindings: [{name: me, match: {global: true}, instructions: [me.md]}, {name: x, match: {dirs: [/x]}, instructions: [x.md]}]\n",
+			func(d []byte) ([]byte, error) {
+				return AddBinding(d, NewBinding{Name: "x", Dirs: []string{"/x"}, Instructions: []string{"x.md"}})
+			}},
 		// Flow maps are encoded again: the comment stays, the layout doesn't.
-		{"flow map", "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources: {t: {git: 'https://h/t', branch: main}}  # c\n",
-			"apiVersion: ctxtra/v1alpha1\nkind: Config\nsources: {t: {git: 'https://h/t', branch: main, commit: '" + commitB + "'}} # c\n",
+		{"flow map", "schema: ctxtra/v1\nsources: {t: {git: 'https://h/t', branch: main}}  # c\n",
+			"schema: ctxtra/v1\nsources: {t: {git: 'https://h/t', branch: main, commit: '" + commitB + "'}} # c\n",
 			func(d []byte) ([]byte, error) { return SetCommit(d, "t", commitB) }},
 	}
 	for _, c := range cases {
@@ -86,20 +124,20 @@ func TestEditsOnOtherShapes(t *testing.T) {
 func TestEdit(t *testing.T) {
 	h := testenv.Home(t)
 	real := filepath.Join(h, "dotfiles", "config.yaml")
-	testenv.Write(t, real, "apiVersion: ctxtra/v1alpha1\nkind: Config\n")
+	testenv.Write(t, real, "schema: ctxtra/v1\n")
 	os.Chmod(real, 0o640)
 	link := filepath.Join(h, ".config", "ctxtra", "config.yaml")
 	os.MkdirAll(filepath.Dir(link), 0o755)
 	os.Symlink(real, link)
 
-	err := Edit(link, func(old []byte) ([]byte, error) { return AddBinding(old, "a.yaml") })
+	err := Edit(link, func(old []byte) ([]byte, error) { return AddInclude(old, "a.yaml") })
 	if err != nil {
 		t.Fatal(err)
 	}
 	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
 		t.Error("the symlink was replaced")
 	}
-	if b, _ := os.ReadFile(real); !strings.HasSuffix(string(b), "bindings:\n  - a.yaml\n") {
+	if b, _ := os.ReadFile(real); !strings.HasSuffix(string(b), "include:\n  - a.yaml\n") {
 		t.Errorf("content:\n%s", b)
 	}
 	if st, _ := os.Stat(real); st.Mode().Perm() != 0o640 {
@@ -119,7 +157,7 @@ func TestEdit(t *testing.T) {
 // lost.
 func TestEditRefusesInvalidConfig(t *testing.T) {
 	h := testenv.Home(t)
-	in := "apiVersion: ctxtra/v1alpha1\nkind: Config\n---\napiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [x.yaml]\n"
+	in := "schema: ctxtra/v1\n---\nschema: ctxtra/v1\ninclude: [x.yaml]\n"
 	p := testenv.Config(t, h, in)
 	err := Edit(p, func(old []byte) ([]byte, error) { return AddSource(old, "x", [][2]string{{"trusted-path", "/x"}}) })
 	if err == nil || !strings.Contains(err.Error(), "fix it first") {
@@ -137,15 +175,14 @@ func TestEditRefusesInvalidConfig(t *testing.T) {
 }
 
 func TestRemoveAndReplace(t *testing.T) {
-	in := `apiVersion: ctxtra/v1alpha1
-kind: Config
+	in := `schema: ctxtra/v1
 sources:
   dotfiles: {trusted-path: ~/dev/dotfiles}   # live
   team:
     git: https://h/team
     branch: main
     commit: '` + commitA + `'
-bindings:
+include:
   - bindings.yaml        # mine
   - ctxtra://team/b.yaml
 `
@@ -153,8 +190,8 @@ bindings:
 		name, want string
 		edit       func([]byte) ([]byte, error)
 	}{
-		{"remove a binding", strings.Replace(in, "  - ctxtra://team/b.yaml\n", "", 1),
-			func(d []byte) ([]byte, error) { return RemoveBinding(d, "ctxtra://team/b.yaml") }},
+		{"remove an include", strings.Replace(in, "  - ctxtra://team/b.yaml\n", "", 1),
+			func(d []byte) ([]byte, error) { return RemoveInclude(d, "ctxtra://team/b.yaml") }},
 		{"remove a source", strings.Replace(in, "  team:\n    git: https://h/team\n    branch: main\n    commit: '"+commitA+"'\n", "", 1),
 			func(d []byte) ([]byte, error) { return RemoveSource(d, "team") }},
 		{"remove a flow source", strings.Replace(in, "  dotfiles: {trusted-path: ~/dev/dotfiles}   # live\n", "", 1),
@@ -171,18 +208,18 @@ bindings:
 		}
 	}
 	// The last entry takes its key with it.
-	one := "apiVersion: ctxtra/v1alpha1\nkind: Config\nsources:\n  a: {trusted-path: /a}\nbindings:\n  - x.yaml\n"
-	out, _ := RemoveBinding([]byte(one), "x.yaml")
+	one := "schema: ctxtra/v1\nsources:\n  a: {trusted-path: /a}\ninclude:\n  - x.yaml\n"
+	out, _ := RemoveInclude([]byte(one), "x.yaml")
 	out, _ = RemoveSource(out, "a")
-	if string(out) != "apiVersion: ctxtra/v1alpha1\nkind: Config\n" {
+	if string(out) != "schema: ctxtra/v1\n" {
 		t.Errorf("last entries:\n%s", out)
 	}
-	if _, err := RemoveBinding([]byte(one), "y.yaml"); err == nil {
-		t.Error("removing a missing binding")
+	if _, err := RemoveInclude([]byte(one), "y.yaml"); err == nil {
+		t.Error("removing a missing include")
 	}
 	// A flow list is encoded again.
-	out, err := RemoveBinding([]byte("apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [a.yaml, b.yaml]\n"), "a.yaml")
-	if err != nil || string(out) != "apiVersion: ctxtra/v1alpha1\nkind: Config\nbindings: [b.yaml]\n" {
+	out, err := RemoveInclude([]byte("schema: ctxtra/v1\ninclude: [a.yaml, b.yaml]\n"), "a.yaml")
+	if err != nil || string(out) != "schema: ctxtra/v1\ninclude: [b.yaml]\n" {
 		t.Errorf("flow list: %v\n%s", err, out)
 	}
 }

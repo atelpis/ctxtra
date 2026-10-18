@@ -39,4 +39,4 @@ func (OpenCode) Command(bin, home, dir, mockURL, prompt string, _ Options, env [
 	return cmd, nil
 }
 
-func (OpenCode) UserMessages(string) []string { return nil }
+func (OpenCode) UserMessages(_, _ string) []string { return nil }

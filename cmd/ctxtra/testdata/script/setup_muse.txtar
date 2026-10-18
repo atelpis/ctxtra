@@ -1,0 +1,116 @@
+# Muse: setup creates the settings file with the schema version Muse
+# requires, keeps the user's settings and another tool's hooks, and
+# --remove restores the original file.
+
+exec ctxtra setup --agent muse
+stdout '^ctxtra setup \(muse\): changed$'
+cmpenv .config/muse/settings.json new.json
+
+exec ctxtra doctor
+stdout 'muse: set up for \[SessionStart SubagentStart\], runs .*/ctxtra \(ok\)'
+
+exec ctxtra setup --remove --agent muse
+cmp .config/muse/settings.json schema-only.json
+
+# An existing file keeps its keys, and ours come after the other tool's.
+cp original.json .config/muse/settings.json
+exec ctxtra setup --agent muse
+cmpenv .config/muse/settings.json want.json
+
+exec ctxtra setup --agent muse
+stdout 'nothing to change'
+
+exec ctxtra setup --remove --agent muse
+cmp .config/muse/settings.json original.json
+
+# Muse's config folder follows XDG_CONFIG_HOME.
+env XDG_CONFIG_HOME=$WORK/xdg
+exec ctxtra setup --agent muse
+exists xdg/muse/settings.json
+
+-- new.json --
+{
+  "schema_version": 1,
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+-- schema-only.json --
+{
+  "schema_version": 1
+}
+-- original.json --
+{
+  "schema_version": 1,
+  "model": "muse-spark-1.2",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool session-start"
+          }
+        ]
+      }
+    ]
+  }
+}
+-- want.json --
+{
+  "schema_version": 1,
+  "model": "muse-spark-1.2",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool session-start"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

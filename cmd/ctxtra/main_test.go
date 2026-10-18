@@ -127,7 +127,8 @@ func environ(ts *testscript.TestScript) []string {
 	for _, k := range []string{"PATH", "HOME", "TMPDIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM",
 		"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
 		"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR",
-		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "GIT_SSL_NO_VERIFY"} {
+		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "HERMES_HOME", "DSH_HOME", "GIT_SSL_NO_VERIFY",
+		"DEVIN_PROJECT_DIR"} {
 		if v := ts.Getenv(k); v != "" {
 			env = append(env, k+"="+v)
 		}
@@ -148,9 +149,10 @@ func expandFile(ts *testscript.TestScript, neg bool, args []string) {
 
 // runhook AGENT EVENT DIR: runs the hook command that setup wrote into the
 // agent's config for EVENT, with the hook input the agent sends for a
-// session in DIR, and makes its output available to stdout/stderr. For Pi
-// and OpenCode, whose extensions aren't shell commands, it runs the binary
-// named in the extension the way the extension does.
+// session in DIR, and makes its output available to stdout/stderr. For Pi,
+// OpenCode, Hermes and DSH, whose extensions aren't shell commands, it runs
+// the binary named in the extension the way the extension does. Antigravity
+// gets its own input and working folder.
 func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) != 3 {
 		ts.Fatalf("usage: runhook AGENT EVENT DIR")
@@ -160,12 +162,28 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	input, _ := json.Marshal(map[string]string{"cwd": dir, "hook_event_name": event, "source": "startup"})
 	var cmd *exec.Cmd
 	switch agent {
-	case "claude", "codex":
-		cfg := map[string]string{"claude": ".claude/settings.json", "codex": ".codex/hooks.json"}[agent]
+	case "claude", "codex", "copilot", "muse", "devin":
+		cfg := map[string]string{"claude": ".claude/settings.json", "codex": ".codex/hooks.json",
+			"copilot": ".copilot/hooks/ctxtra.json", "muse": ".config/muse/settings.json",
+			"devin": ".config/devin/config.json"}[agent]
 		cmd = exec.Command("/bin/sh", "-c", hookCommand(ts, filepath.Join(home, cfg), event))
-	case "pi", "opencode":
-		path := map[string]string{"pi": ".pi/agent/extensions/ctxtra.ts", "opencode": ".config/opencode/plugins/ctxtra.ts"}[agent]
-		m := regexp.MustCompile(`(?m)^// binary: (.+)$`).FindStringSubmatch(ts.ReadFile(filepath.Join(home, path)))
+	case "antigravity":
+		// No cwd in the input, and the hook runs in the hook file's folder.
+		cfg := filepath.Join(home, ".gemini/config/hooks.json")
+		var hooks struct {
+			Ctxtra struct{ SessionStart []struct{ Command string } }
+		}
+		ts.Check(json.Unmarshal([]byte(ts.ReadFile(cfg)), &hooks))
+		if n := len(hooks.Ctxtra.SessionStart); n != 1 {
+			ts.Fatalf("%s: want one ctxtra SessionStart hook, found %d", cfg, n)
+		}
+		input, _ = json.Marshal(map[string]any{"workspacePaths": []string{dir}, "conversationId": "e2e"})
+		cmd = exec.Command("/bin/sh", "-c", hooks.Ctxtra.SessionStart[0].Command)
+		cmd.Dir = filepath.Dir(cfg)
+	case "pi", "opencode", "hermes", "dsh":
+		path := map[string]string{"pi": ".pi/agent/extensions/ctxtra.ts", "opencode": ".config/opencode/plugins/ctxtra.ts",
+			"hermes": ".hermes/plugins/ctxtra/__init__.py", "dsh": ".dsh/ctxtra.mjs"}[agent]
+		m := regexp.MustCompile(`(?m)^(?://|#) binary: (.+)$`).FindStringSubmatch(ts.ReadFile(filepath.Join(home, path)))
 		if m == nil {
 			ts.Fatalf("no binary in %s", path)
 		}
@@ -175,8 +193,15 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	default:
 		ts.Fatalf("runhook: unknown agent %q", agent)
 	}
-	cmd.Dir = home
+	if cmd.Dir == "" {
+		cmd.Dir = home
+	}
 	cmd.Env = environ(ts)
+	if agent == "muse" {
+		// Muse runs hooks with a cleared environment: HOME and PATH, but
+		// none of the CTXTRA_ or git variables.
+		cmd.Env = []string{"HOME=" + home, "PATH=" + ts.Getenv("PATH")}
+	}
 	cmd.Stdin = strings.NewReader(string(input))
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
@@ -189,17 +214,20 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 }
 
 // hookCommand is the one ctxtra command among the hooks for event in a
-// Claude or Codex hook file.
+// Claude, Codex, Muse or Devin hook file, or a flat one (Copilot) where each
+// entry is a handler.
 func hookCommand(ts *testscript.TestScript, path, event string) string {
+	type handler struct{ Command string }
 	var cfg struct {
 		Hooks map[string][]struct {
-			Hooks []struct{ Command string }
+			handler
+			Hooks []handler
 		}
 	}
 	ts.Check(json.Unmarshal([]byte(ts.ReadFile(path)), &cfg))
 	var found []string
 	for _, g := range cfg.Hooks[event] {
-		for _, h := range g.Hooks {
+		for _, h := range append(g.Hooks, g.handler) {
 			if strings.Contains(h.Command, " hook ") && strings.Contains(h.Command, "ctxtra") {
 				found = append(found, h.Command)
 			}

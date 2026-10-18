@@ -1,0 +1,141 @@
+# Devin: setup adds a SessionStart hook to ~/.config/devin/config.json and
+# keeps Devin's other settings, the hook answers in Claude's format, and
+# --remove restores the file. Devin also runs Claude's hooks: with both set
+# up, only Devin's hook adds the files.
+
+exec ctxtra setup --agent devin
+stdout '^ctxtra setup \(devin\): changed$'
+cmpenv .config/devin/config.json want.json
+
+exec ctxtra setup --agent devin
+stdout 'nothing to change'
+
+exec ctxtra doctor
+stdout 'devin: set up for \[SessionStart\], runs .*/ctxtra \(ok\)'
+
+runhook devin SessionStart repo
+stdout '"additionalContext":"[^"]*CTXMARK-ME","hookEventName":"SessionStart"'
+stdout '"systemMessage":"ctxtra: added 1 file \(me.md\)"'
+
+# Devin runs Claude's hook too, with DEVIN_PROJECT_DIR set: it adds nothing,
+# and doctor says why.
+exec ctxtra setup --agent claude
+env DEVIN_PROJECT_DIR=$WORK/repo
+runhook claude SessionStart repo
+stdout '^\{\}$'
+runhook devin SessionStart repo
+stdout CTXMARK-ME
+exec ctxtra doctor repo
+stdout 'claude SessionStart: .* skipped: run by Devin'
+
+# Without ctxtra's Devin hook, Claude's hook serves Devin.
+exec ctxtra setup --remove --agent devin
+runhook claude SessionStart repo
+stdout CTXMARK-ME
+
+# Claude Code itself doesn't set DEVIN_PROJECT_DIR.
+exec ctxtra setup --agent devin
+env DEVIN_PROJECT_DIR=
+runhook claude SessionStart repo
+stdout CTXMARK-ME
+
+exec ctxtra setup --remove --agent devin
+stdout '^ctxtra setup --remove \(devin\): changed$'
+cmp .config/devin/config.json original.json
+
+# Devin allows comments, which ctxtra would drop: setup leaves such a file
+# alone.
+cp commented.json .config/devin/config.json
+! exec ctxtra setup --agent devin
+stderr 'devin: .*config.json is not plain JSON'
+cmp .config/devin/config.json commented.json
+
+# With XDG_CONFIG_HOME, the hooks go there, as Devin reads them there.
+env XDG_CONFIG_HOME=$WORK/xdg
+exec ctxtra setup --agent devin
+exists xdg/devin/config.json
+cmp .config/devin/config.json commented.json
+
+-- .config/devin/config.json --
+{
+  "agent": {
+    "model": "swe"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool session-start"
+          }
+        ]
+      }
+    ]
+  },
+  "version": 1
+}
+-- original.json --
+{
+  "agent": {
+    "model": "swe"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool session-start"
+          }
+        ]
+      }
+    ]
+  },
+  "version": 1
+}
+-- want.json --
+{
+  "agent": {
+    "model": "swe"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "other-tool session-start"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook devin SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  },
+  "version": 1
+}
+-- commented.json --
+// my settings
+{
+  "agent": {"model": "swe"},
+}
+-- repo/.keep --
+-- .config/ctxtra/config.yaml --
+schema: ctxtra/v1
+include: [b.yaml]
+-- .config/ctxtra/b.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: me
+    match: {global: true}
+    instructions: [~/me.md]
+-- me.md --
+CTXMARK-ME

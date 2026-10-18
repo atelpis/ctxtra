@@ -33,8 +33,23 @@ type Agent interface {
 	PreviewLimit() int
 }
 
-// AdditionalContext is the hook answer format that Claude Code and Codex CLI
-// share: the text as additionalContext for the event. At session start,
+// ByteLimiter is an agent that cuts hook output at a size in bytes, not
+// characters. Its PreviewLimit is 0.
+type ByteLimiter interface {
+	// ByteLimit is the size of hook output, in bytes of UTF-8, above which
+	// the agent drops the rest.
+	ByteLimit() int
+}
+
+// Skipper is an agent whose hook can also run in another agent's session,
+// which that agent's own hook serves. Skip is why the hook adds nothing, or
+// "" when it runs as usual.
+type Skipper interface {
+	Skip() string
+}
+
+// AdditionalContext is the hook answer format that Claude Code, Codex CLI and
+// Devin share: the text as additionalContext for the event. At session start,
 // systemMessage also shows the user a one-line Summary; subagents don't get
 // one, it would repeat for every subagent.
 func AdditionalContext(event string, res *resolve.Result) any {

@@ -15,7 +15,7 @@ stdout 'CTXMARK-OWN'
 stdout '"systemMessage":"ctxtra: added 2 files \(me.md, own.md\); 2 problems \(run ctxtra doctor\)"'
 
 ! exec ctxtra files notes
-stderr 'problem: .*~/dev/team/team.md is in ~/dev/team, which has the remote github.com/acme/team and is not a trusted source; skipped. If the repository is yours: ctxtra add --trust ~/dev/team; to pin it, add the file with ctxtra add'
+stderr 'problem: .*~/dev/team/team.md is in ~/dev/team, which has the remote github.com/acme/team and is not a trusted source; skipped. If only you push to the repository: ctxtra add --trust ~/dev/team; else pin it: add the file with ctxtra add'
 stderr 'problem: .*~/dev/dotfiles/ctxtra/work.yaml is in ~/dev/dotfiles'
 
 exec ctxtra explain notes
@@ -45,44 +45,36 @@ stdout '/ctx/outside.md'
 stderr 'dev/dotfiles/team-link.md leads through a symlink to ~/dev/team/team.md, which is in ~/dev/team'
 
 -- .config/ctxtra/config.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Config
-bindings: [b.yaml, ~/dev/dotfiles/ctxtra/work.yaml]
+schema: ctxtra/v1
+include: [b.yaml, ~/dev/dotfiles/ctxtra/work.yaml]
 -- trusted.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Config
+schema: ctxtra/v1
 sources:
   dotfiles:
     trusted-path: ~/dev/dotfiles
-bindings: [b.yaml, ctxtra://dotfiles/ctxtra/work.yaml]
+include: [b.yaml, ctxtra://dotfiles/ctxtra/work.yaml]
 -- .config/ctxtra/b.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: me
-spec:
-  selector:
-    global: true
-  files: [~/ctx/me.md, ~/own/own.md, ~/dev/team/team.md]
+schema: ctxtra/v1
+bindings:
+  - name: me
+    match:
+      global: true
+    instructions: [~/ctx/me.md, ~/own/own.md, ~/dev/team/team.md]
 -- dev/dotfiles/ctxtra/work.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: work
-spec:
-  selector:
-    global: true
-  files: [ctxtra://dotfiles/work.md]
-  skills: [../skills/deploy]
+schema: ctxtra/v1
+bindings:
+  - name: work
+    match:
+      global: true
+    instructions: [ctxtra://dotfiles/work.md]
+    skills: [../skills/deploy]
 -- links.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: work
-spec:
-  selector:
-    global: true
-  files: [ctxtra://dotfiles/own-link.md, ctxtra://dotfiles/team-link.md]
+schema: ctxtra/v1
+bindings:
+  - name: work
+    match:
+      global: true
+    instructions: [ctxtra://dotfiles/own-link.md, ctxtra://dotfiles/team-link.md]
 -- ctx/outside.md --
 CTXMARK-OUTSIDE
 -- ctx/me.md --

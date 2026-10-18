@@ -1,12 +1,16 @@
 name: e2e
 
 # Agent contract tests against the agent versions pinned in
-# e2e/agents/package-lock.json. No secrets: the agents talk only to the mock.
+# e2e/agents/package-lock.json, e2e/agents/muse.json and e2e/agents/hermes.ref.
+# No secrets: the agents talk only to the mock.
 
+# Disabled while the repo is private: macOS minutes count 10x against the
+# free Actions quota. Re-enable the triggers below once the repo is public.
 on:
-  push:
-    branches: [main]
-  pull_request:
+  workflow_dispatch:
+  # push:
+  #   branches: [main]
+  # pull_request:
 
 permissions:
   contents: read
@@ -39,6 +43,10 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      # Hermes needs Python 3.11 to 3.13.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
       - run: e2e/agents/install.sh
       - working-directory: e2e
         env:

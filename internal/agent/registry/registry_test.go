@@ -39,7 +39,7 @@ func TestAgentsAreComplete(t *testing.T) {
 			t.Errorf("%s: status %+v", name, st)
 		}
 		var r agent.Report
-		if err := a.Setup(agent.Options{Binary: "/bin/ctxtra", DryRun: true}, &r); err != nil || len(r.Changes) != 1 {
+		if err := a.Setup(agent.Options{Binary: "/bin/ctxtra", DryRun: true}, &r); err != nil || len(r.Changes) == 0 {
 			t.Errorf("%s: dry run %v, %v", name, r.Changes, err)
 		}
 	}

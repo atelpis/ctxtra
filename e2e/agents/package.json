@@ -3,7 +3,9 @@
   "description": "Agent versions the e2e tests run against. Install with `npm ci --ignore-scripts` in this folder.",
   "dependencies": {
     "@anthropic-ai/claude-code": "2.1.300",
+    "@deepseek-ai/dsh": "0.2.1-rc.2",
     "@earendil-works/pi-coding-agent": "1.2.0",
+    "@github/copilot": "1.0.98",
     "@openai/codex": "0.162.1",
     "@opencode/cli": "2.0.29"
   }

@@ -1,8 +1,8 @@
 # The hook command that setup wrote gives each agent the bound files, in
-# config order, in a worktree outside the project folder. Claude and Codex
-# show the user a summary at session start, not for subagents.
+# config order, in a worktree outside the project folder. Claude, Codex and
+# Muse show the user a summary at session start, not for subagents.
 
-exec ctxtra setup --agent claude --agent codex --agent pi --agent opencode
+exec ctxtra setup --agent claude --agent codex --agent pi --agent opencode --agent muse --agent antigravity --agent hermes --agent dsh
 gitrepo dev/svc git@github.com:Acme/Svc.git
 exec git -C dev/svc worktree add -q -b feature ../../elsewhere/svc-feature
 
@@ -23,6 +23,16 @@ runhook codex SessionStart elsewhere/svc-feature
 stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
 stdout '"systemMessage":"ctxtra: added 3 files'
 
+runhook muse SessionStart elsewhere/svc-feature
+stdout '"hookEventName":"SessionStart"'
+stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
+stdout '"systemMessage":"ctxtra: added 3 files'
+
+runhook muse SubagentStart elsewhere/svc-feature
+stdout '"hookEventName":"SubagentStart"'
+stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
+! stdout 'systemMessage'
+
 # Pi gets files as context files, skills as native skill paths.
 runhook pi before_agent_start elsewhere/svc-feature
 stdout '"files":\[\{"path":"[^"]*/ctx/work.md".*\{"path":"[^"]*/ctx/svc.md".*\{"path":"[^"]*/ctx/me.md"'
@@ -34,6 +44,23 @@ runhook opencode context elsewhere/svc-feature
 stdout '"text":"Contents of [^"]*/ctx/work.md.*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
 stdout '"skills":\[\{"name":"deploy","description":"Deploy the service.","path":"[^"]*/skills/deploy/SKILL.md","content":"CTXMARK-SKILLBODY"\}\]'
 ! stdout 'available_skills'
+
+# Antigravity gets the text as a system message, without one for the user.
+runhook antigravity SessionStart elsewhere/svc-feature
+stdout '^\{"injectSteps":\[\{"systemMessage":\{"systemMessage":".*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL.*<name>deploy</name>'
+! stdout 'ctxtra: added'
+
+# Hermes gets files and the skill list as text, like Claude.
+runhook hermes pre_llm_call elsewhere/svc-feature
+stdout '^\{"context":"Contents of [^"]*/ctx/work.md.*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL.*<name>deploy</name>'
+! stdout 'systemMessage|CTXMARK-SKILLBODY'
+
+# DSH gets files and the list of skills as one text; a subagent's run is
+# logged as one.
+runhook dsh startup elsewhere/svc-feature
+stdout '"text":"Contents of [^"]*/ctx/work.md.*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL.*<name>deploy</name>'
+runhook dsh subagent elsewhere/svc-feature
+stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
 
 # A repo the bindings don't select gets only the global file.
 gitrepo dev/other git@github.com:someone/other.git
@@ -48,6 +75,10 @@ stdout '"harness":"claude","event":"SubagentStart"'
 stdout '"harness":"codex","event":"SessionStart"'
 stdout '"harness":"pi","event":"before_agent_start"'
 stdout '"harness":"opencode","event":"context"'
+stdout '"harness":"antigravity","event":"SessionStart","dir":"[^"]*/elsewhere/svc-feature"'
+stdout '"harness":"hermes","event":"pre_llm_call"'
+stdout '"harness":"dsh","event":"startup"'
+stdout '"harness":"dsh","event":"subagent"'
 
 # The worktree and the main checkout stay clean.
 exec git -C dev/svc status --porcelain
@@ -56,51 +87,36 @@ exec git -C elsewhere/svc-feature status --porcelain
 ! stdout .
 
 -- .config/ctxtra/config.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Config
-bindings:
+schema: ctxtra/v1
+include:
   - work.yaml
   - me.yaml
 -- .config/ctxtra/work.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: acme
-spec:
-  selector:
-    gitRepos:
-      - remote: github.com/acme/**
-  files: [~/ctx/work.md]
-  skills: [~/skills/deploy]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: svc
-spec:
-  selector:
-    dirs: [~/dev/svc]
-  files: [~/ctx/svc.md]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: not-here
-spec:
-  selector:
-    gitRepos:
-      - remote: github.com/acme/svc
-        subpath: services/**
-  files: [~/ctx/other.md]
+schema: ctxtra/v1
+bindings:
+  - name: acme
+    match:
+      repos:
+        - remote: github.com/acme/**
+    instructions: [~/ctx/work.md]
+    skills: [~/skills/deploy]
+  - name: svc
+    match:
+      dirs: [~/dev/svc]
+    instructions: [~/ctx/svc.md]
+  - name: not-here
+    match:
+      repos:
+        - remote: github.com/acme/svc
+          subpath: services/**
+    instructions: [~/ctx/other.md]
 -- .config/ctxtra/me.yaml --
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: me
-spec:
-  selector:
-    global: true
-  files: [~/ctx/me.md]
+schema: ctxtra/v1
+bindings:
+  - name: me
+    match:
+      global: true
+    instructions: [~/ctx/me.md]
 -- ctx/work.md --
 CTXMARK-WORK
 -- ctx/svc.md --

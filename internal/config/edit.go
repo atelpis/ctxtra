@@ -26,7 +26,7 @@ import (
 // alignment.
 
 // NewConfig is the content of a new config file.
-const NewConfig = "apiVersion: " + APIVersion + "\nkind: " + KindConfig + "\n"
+const NewConfig = "schema: " + Schema + "\n"
 
 // Edit changes the config at path under a lock. fn gets the current content
 // (nil when there is no file) and returns the new one, which must be a
@@ -59,7 +59,8 @@ func Edit(path string, fn func(old []byte) ([]byte, error)) error {
 }
 
 // Check reports whether data is a valid config document. Binding files are
-// not read.
+// not read, and the config's own bindings are not checked one by one: a
+// broken binding is skipped alone.
 func Check(data []byte) error {
 	docs, err := parseDocs(data)
 	if err != nil {
@@ -69,11 +70,12 @@ func Check(data []byte) error {
 		return errors.New("the config must be a single YAML document")
 	}
 	c := &Config{}
-	_, err = c.decode(docs[0])
+	_, _, err = c.decode(docs[0])
 	return err
 }
 
-// Parse decodes the sources of a config, without reading binding files.
+// Parse decodes the sources and include entries of a config, without
+// reading binding files.
 // Empty data is an empty config.
 func Parse(data []byte) (*Config, error) {
 	c := &Config{}
@@ -86,9 +88,9 @@ func Parse(data []byte) (*Config, error) {
 	}
 	if len(docs) == 1 {
 		var entries []*yaml.Node
-		entries, err = c.decode(docs[0])
+		entries, _, err = c.decode(docs[0])
 		for _, e := range entries {
-			c.BindingEntries = append(c.BindingEntries, e.Value)
+			c.Includes = append(c.Includes, e.Value)
 		}
 	}
 	return c, err
@@ -178,22 +180,22 @@ func AddSource(data []byte, name string, kv [][2]string) ([]byte, error) {
 	})
 }
 
-// AddBinding appends ref to bindings.
-func AddBinding(data []byte, ref string) ([]byte, error) {
+// AddInclude appends ref to include.
+func AddInclude(data []byte, ref string) ([]byte, error) {
 	doc, err := root(data)
 	if err != nil {
 		return nil, err
 	}
 	want := func(m map[string]any) {
-		l, _ := m["bindings"].([]any)
-		m["bindings"] = append(l, ref)
+		l, _ := m["include"].([]any)
+		m["include"] = append(l, ref)
 	}
-	list := get(doc, "bindings")
+	list := get(doc, "include")
 	var out []byte
 	ok := false
 	switch {
 	case list == nil:
-		out, ok = appendText(data, "bindings:\n  - "+scalar(ref)+"\n"), true
+		out, ok = appendText(data, "include:\n  - "+scalar(ref)+"\n"), true
 	case list.Kind == yaml.SequenceNode && len(list.Content) > 0:
 		out, ok = appendItem(data, list, scalar(ref))
 	}
@@ -203,10 +205,157 @@ func AddBinding(data []byte, ref string) ([]byte, error) {
 	return reencode(doc, func() {
 		if list == nil {
 			list = &yaml.Node{Kind: yaml.SequenceNode}
-			set(doc, "bindings", list)
+			set(doc, "include", list)
 		}
 		list.Content = append(list.Content, &yaml.Node{Kind: yaml.ScalarNode, Value: ref})
 	})
+}
+
+// NewBinding is a binding for AddBinding, with its values as they are
+// written in the config.
+type NewBinding struct {
+	Name                 string
+	Global               bool
+	Dirs, Repos          []string // match
+	Instructions, Skills []string
+}
+
+// AddBinding appends b to the config's own bindings. It doesn't check b:
+// the config's bindings are checked one by one when it is loaded.
+func AddBinding(data []byte, b NewBinding) ([]byte, error) {
+	doc, err := root(data)
+	if err != nil {
+		return nil, err
+	}
+	want := func(m map[string]any) {
+		l, _ := m["bindings"].([]any)
+		m["bindings"] = append(l, b.data())
+	}
+	list := get(doc, "bindings")
+	if list != nil && list.Kind == yaml.SequenceNode {
+		for _, n := range list.Content {
+			if v := get(n, "name"); v != nil && v.Value == b.Name {
+				return nil, fmt.Errorf("a binding named %s already exists", b.Name)
+			}
+		}
+	}
+	var out []byte
+	ok := false
+	switch {
+	case list == nil:
+		out, ok = appendText(data, "bindings:\n"+b.text("  - ", "    ")), true
+	case list.Kind == yaml.SequenceNode && len(list.Content) > 0:
+		// The new entry starts like the last one: "  - name: ...". A flow
+		// value or block scalar that ends below its last node's line puts
+		// the text in the wrong place: then same fails, and it is encoded
+		// again.
+		last := list.Content[len(list.Content)-1]
+		ls := lines(data)
+		if last.Line >= 1 && last.Line <= len(ls) {
+			prefix := ls[last.Line-1][:min(last.Column-1, len(ls[last.Line-1]))]
+			if strings.TrimSpace(prefix) == "-" {
+				out, ok = insertAfter(data, lastLine(list), b.text(prefix, strings.Repeat(" ", len(prefix)))), true
+			}
+		}
+	}
+	if ok && same(data, out, want) {
+		return out, nil
+	}
+	return reencode(doc, func() {
+		if list == nil || list.Kind != yaml.SequenceNode {
+			list = &yaml.Node{Kind: yaml.SequenceNode}
+			set(doc, "bindings", list)
+		}
+		list.Content = append(list.Content, b.node())
+	})
+}
+
+// bindingList is one of a binding's lists.
+type bindingList struct {
+	key   string
+	vals  []string
+	match bool // in the match block
+}
+
+// lists are b's lists, in the order they are written. Empty ones are left
+// out.
+func (b NewBinding) lists() []bindingList {
+	var out []bindingList
+	for _, l := range []bindingList{
+		{"dirs", b.Dirs, true}, {"repos", b.Repos, true},
+		{"instructions", b.Instructions, false}, {"skills", b.Skills, false},
+	} {
+		if len(l.vals) > 0 {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// text is b as YAML lines; the first starts with first, the others with
+// indent.
+func (b NewBinding) text(first, indent string) string {
+	var s strings.Builder
+	s.WriteString(first + "name: " + scalar(b.Name) + "\n" + indent + "match:\n")
+	if b.Global {
+		s.WriteString(indent + "  global: true\n")
+	}
+	for _, l := range b.lists() {
+		in := indent
+		if l.match {
+			in += "  "
+		}
+		s.WriteString(in + l.key + ":\n")
+		for _, v := range l.vals {
+			s.WriteString(in + "  - " + scalar(v) + "\n")
+		}
+	}
+	return s.String()
+}
+
+// data is b as yaml.Unmarshal reads it.
+func (b NewBinding) data() map[string]any {
+	match := map[string]any{}
+	if b.Global {
+		match["global"] = true
+	}
+	m := map[string]any{"name": b.Name, "match": match}
+	for _, l := range b.lists() {
+		vals := make([]any, len(l.vals))
+		for i, v := range l.vals {
+			vals[i] = v
+		}
+		if l.match {
+			match[l.key] = vals
+		} else {
+			m[l.key] = vals
+		}
+	}
+	return m
+}
+
+// node is b as a YAML node.
+func (b NewBinding) node() *yaml.Node {
+	str := func(v string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Value: v} }
+	match := &yaml.Node{Kind: yaml.MappingNode}
+	if b.Global {
+		set(match, "global", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: "true"})
+	}
+	n := &yaml.Node{Kind: yaml.MappingNode}
+	set(n, "name", str(b.Name))
+	set(n, "match", match)
+	for _, l := range b.lists() {
+		seq := &yaml.Node{Kind: yaml.SequenceNode}
+		for _, v := range l.vals {
+			seq.Content = append(seq.Content, str(v))
+		}
+		if l.match {
+			set(match, l.key, seq)
+		} else {
+			set(n, l.key, seq)
+		}
+	}
+	return n
 }
 
 // root parses data and returns the top-level map. Empty data is a new
@@ -432,35 +581,35 @@ func appendItem(data []byte, l *yaml.Node, val string) ([]byte, bool) {
 	return insertAfter(data, lastLine(l), prefix+val+"\n"), true
 }
 
-// RemoveBinding removes entry from bindings, and bindings itself when it
+// RemoveInclude removes entry from include, and include itself when it
 // becomes empty.
-func RemoveBinding(data []byte, entry string) ([]byte, error) {
+func RemoveInclude(data []byte, entry string) ([]byte, error) {
 	doc, err := root(data)
 	if err != nil {
 		return nil, err
 	}
-	list := get(doc, "bindings")
+	list := get(doc, "include")
 	i := -1
 	if list != nil {
 		i = slices.IndexFunc(list.Content, func(n *yaml.Node) bool { return n.Value == entry })
 	}
 	if i < 0 {
-		return nil, fmt.Errorf("%s is not in bindings", entry)
+		return nil, fmt.Errorf("%s is not in include", entry)
 	}
 	last := len(list.Content) == 1
 	want := func(m map[string]any) {
 		if last {
-			delete(m, "bindings")
+			delete(m, "include")
 			return
 		}
-		l := m["bindings"].([]any)
-		m["bindings"] = slices.Delete(slices.Clone(l), i, i+1)
+		l := m["include"].([]any)
+		m["include"] = slices.Delete(slices.Clone(l), i, i+1)
 	}
 	item := list.Content[i]
 	if list.Style&yaml.FlowStyle == 0 && block(list) && alone(data, item) {
 		from := item.Line
 		if last {
-			from = keyLine(doc, "bindings")
+			from = keyLine(doc, "include")
 		}
 		if out := deleteLines(data, from, item.Line); same(data, out, want) {
 			return out, nil
@@ -468,7 +617,7 @@ func RemoveBinding(data []byte, entry string) ([]byte, error) {
 	}
 	return reencode(doc, func() {
 		if last {
-			unset(doc, "bindings")
+			unset(doc, "include")
 		} else {
 			list.Content = slices.Delete(list.Content, i, i+1)
 		}

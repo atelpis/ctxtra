@@ -1,6 +1,6 @@
-# Config spec: ctxtra/v1alpha1
+# Config spec: ctxtra/v1
 
-> **Preview.** `v1alpha1` may change without a migration path. ctxtra does not protect you from the
+> **Preview.** The format may still change without a migration path. ctxtra does not protect you from the
 > content of the files you bind: an instruction file or skill is acted on like anything you type to the
 > agent. Bind only files you wrote or reviewed.
 
@@ -9,10 +9,10 @@ For how this is meant to be used, step by step, see [scenarios.md](scenarios.md)
 ## Terms
 
 - **Session folder:** the folder an agent session starts in.
-- **Binding:** a document of kind `Binding`. It says: in sessions that match this selector, add these
-  instruction files and these skills.
-- **Binding file:** a YAML file with one or more bindings, separated by `---`.
-- **Config:** the file that lists which binding files you use, and declares your sources.
+- **Binding:** an entry of `bindings`, in the config or in a binding file. It says: in sessions that its
+  `match` block matches, add these instruction files and these skills.
+- **Binding file:** a YAML file with a list of bindings, which the config includes.
+- **Config:** the file that declares your sources, has bindings of its own, and includes binding files.
 - **Source:** a folder of your own files (trusted), or a team git repository pinned to a commit you
   accepted (pinned), declared in the config. Files in it are referenced as `ctxtra://<source>/<path>`.
 
@@ -24,8 +24,7 @@ tools use. Neither has anything specific to ctxtra.
 `~/.config/ctxtra/config.yaml`, or the file in `$CTXTRA_CONFIG`.
 
 ```yaml
-apiVersion: ctxtra/v1alpha1
-kind: Config
+schema: ctxtra/v1
 
 sources:
   dotfiles:
@@ -35,14 +34,31 @@ sources:
     branch: main                      # where sync looks for new commits
     commit: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432'   # the accepted version; sync changes it
 
-bindings:                             # binding files, applied in this order
+bindings:                             # your own bindings, see Binding file below
+  - name: me
+    match:
+      global: true
+    instructions:
+      - ~/notes/agents/me.md          # relative paths are relative to this file's folder
+
+include:                              # binding files, applied after the bindings above, in this order
   - bindings/personal.yaml            # relative to this file's folder
   - ctxtra://dotfiles/ctxtra/go.yaml  # a file in the dotfiles source
   - ctxtra://team-ctx/bindings/billing.yaml
 
 budget:
-  maxChars: 40000                     # optional; 0 or missing = no limit
+  max-chars: 40000                    # optional; 0 or missing = no limit
 ```
+
+Every key except `schema` is optional. A config with only `schema` and `bindings` is enough for your own
+files.
+
+`ctxtra bind NAME (--global | --dir PATTERN... | --repo REMOTE...) [--file FILE]... [--skill FOLDER]... [--dry-run]`
+adds a binding to the config's own `bindings`, after the others. Paths are relative to the current folder
+and are written from `~` when they are under it; `ctxtra://` references are written as they are. The config
+is changed only when a session that the binding matches would get every file and skill in it: none is
+missing, each is trusted, and no other problem is new. `--dry-run` does the same checks and changes
+nothing. A binding in a binding file, and a change to an existing binding, are edits by hand.
 
 ## Sources and trust
 
@@ -72,9 +88,9 @@ The config file itself is always read.
   as untrusted.
 
 A source has a name (letters, digits, `.`, `_`, `-`) and exactly one kind: `trusted-path`, `git` or
-`pinned-path`.
+`local-git`.
 
-`ctxtra://<source>/<path>` works in `bindings` and in `files` and `skills` of any binding file. The path as
+`ctxtra://<source>/<path>` works in `include`, and in `instructions` and `skills` of any binding. The path as
 written must stay inside the source: `..` that leaves it, and absolute paths, are errors. For a trusted
 source it is the same as the path under the source's folder. A symlink there is followed by the rules
 above, so it can lead outside the source, but only to a file that is trusted on its own.
@@ -91,7 +107,7 @@ fetched team-ctx: main at abc1234 (git@github.com:acme/team-ctx.git)
 added source team-ctx (pinned: changes apply after `ctxtra sync`)
 added ctxtra://team-ctx/bindings/billing.yaml
   binding billing: for github.com/acme/billing
-    files: services-overview.md
+    instructions: services-overview.md
 ```
 
 - `git` is an `https://` or `ssh://` URL, or `user@host:path`. Other transports and local paths are errors.
@@ -107,7 +123,7 @@ added ctxtra://team-ctx/bindings/billing.yaml
 - A binding file in a pinned source may only reference files in the same source: relative paths, or
   `ctxtra://` with its own name. Absolute paths, `~`, `..` that leaves the source and other sources are
   errors, and the binding is skipped. A team repository can't add your files to a session, and can't
-  declare sources: only your config does.
+  declare sources or include other files: only your config does.
 - Files are read from ctxtra's store (below), never from a clone. Symlinks and submodules in the
   repository are left out.
 - ctxtra doesn't check for new commits by itself: sessions never fetch. Run `ctxtra sync` regularly.
@@ -116,13 +132,13 @@ added ctxtra://team-ctx/bindings/billing.yaml
 
 | Command | Does |
 |---|---|
-| `ctxtra add <git URL> [<binding file>] [--as NAME] [--branch B]` | Fetches the branch, adds the source with its current commit, and the binding file to `bindings`. The name defaults to the repository name. Without a binding file, it lists the binding files in the repository. |
-| `ctxtra add ctxtra://<source>/<binding file>` | Adds a binding file of a source you have, at its accepted commit. |
-| `ctxtra add <binding file> [--trust] [--as NAME]` | Adds a binding file on your disk. A file in a clone with a remote is imported as a `git` source (below); with `--trust`, the repository is added as a `trusted-path` source instead. |
+| `ctxtra add <git URL> [<binding file>] [--as NAME] [--branch B]` | Fetches the branch, adds the source with its current commit, and the binding file to `include`. The name defaults to the repository name. Without a binding file, it lists the binding files in the repository. |
+| `ctxtra add ctxtra://<source>/<binding file>` | Adds a binding file of a source you have to `include`, at its accepted commit. |
+| `ctxtra add <binding file> [--trust] [--as NAME]` | Adds a binding file on your disk to `include`. A file in a clone with a remote is imported as a `git` source (below); with `--trust`, the repository is added as a `trusted-path` source instead. |
 | `ctxtra add --trust <folder> [--as NAME]` | Adds a folder as a `trusted-path` source. |
-| `ctxtra add --pinned-path <clone> [--as NAME]` | Adds your clone as a `pinned-path` source (below). |
-| `ctxtra remove <source>` | Removes the source and its `bindings` entries, and lists the lines of your binding files that still use it. |
-| `ctxtra remove <bindings entry>` | Removes one entry from `bindings`. |
+| `ctxtra add --local-git <clone> [--as NAME]` | Adds your clone as a `local-git` source (below). |
+| `ctxtra remove <source>` | Removes the source and its `include` entries, and lists the lines of your config and binding files that still use it. |
+| `ctxtra remove <include entry>` | Removes one entry from `include`. |
 | `ctxtra sync [--full] [SOURCE]...` | For each pinned source: makes sure the accepted commit is in the store, fetches the branch, shows what changed (below), and on `y` writes the new commit to the config. |
 | `ctxtra sync --restore [SOURCE]...` | Fetches exactly the commits in the config, and changes nothing in it. Use it on a new laptop, or when the store is gone. It fails when a commit can't be fetched (removed by a force-push, or never pushed). |
 
@@ -163,11 +179,11 @@ added ctxtra://team-ctx/bindings/billing.yaml (pinned: changes apply after `ctxt
 ```yaml
 sources:
   team-ctx-dev:
-    pinned-path: ~/dev/team-ctx
+    local-git: ~/dev/team-ctx
     commit: '1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d'
 ```
 
-A `pinned-path` source is pinned like a `git` source, but `sync` follows the clone's committed `HEAD`
+A `local-git` source is pinned like a `git` source, but `sync` follows the clone's committed `HEAD`
 (detached works too) instead of a remote: for trying your commits before you push them. ctxtra fetches the
 commit from the clone; it never copies the clone's working tree, index, config or hooks. It adds no mapping:
 reference its files as `ctxtra://team-ctx-dev/<path>`.
@@ -188,13 +204,13 @@ Accept? [y/N]
 ```
 
 - Shown in full: the files your config uses from the source with the accepted commit or with the new one,
-  under any selector. That is the binding files in `bindings`, every file and skill they reference, the
+  under any `match`. That is the binding files in `include`, every file and skill they reference, the
   source's files and skills in your own bindings, and every file of a used skill. A reference that the new
   commit removes shows too.
 - Every other changed file is listed by name with the kind of change: added, removed, changed, or mode.
   `--full` shows them in full too.
-- A warning for every binding in the source's binding files whose selector changes, and for every new one:
-  the selector decides which sessions get the files.
+- A warning for every binding in the source's binding files whose `match` changes, and for every new one:
+  `match` decides which sessions get the files.
 - Errors in the source's binding files that the new commit brings, for example a path outside the source.
 - The new commit is written to the store before the review. A commit over the limits fails there.
 
@@ -205,7 +221,7 @@ When you answer `N`, ctxtra remembers the commit as dismissed. Sessions that use
 
 Sessions never fetch, so they can't know about new commits. When a session uses a pinned source that
 wasn't checked for 7 days, it says `team-ctx last checked 12 days ago; run ctxtra sync to check for
-changes` (Claude Code, Codex and Pi show it at session start, and `files` and `doctor` show it too). A
+changes` (Claude Code, Codex, Muse and Pi show it at session start, and `files` and `doctor` show it too). A
 check is a fetch of the branch that worked, by `add` or `sync`. A source that was never checked on this
 machine, for example after `sync --restore` on a new laptop, says so.
 
@@ -243,7 +259,7 @@ config while `sync` waited for your answer, nothing is accepted.
 - It runs your `git`, so ssh keys, the ssh agent and credential helpers work. Only `add` and `sync` run
   git, and they may prompt. Sessions never fetch.
 - Only the https and ssh transports, and the file transport only to fetch from a clone you named (an
-  imported clone, a `pinned-path` source). No hooks, no submodules, no automatic maintenance. Nothing is checked
+  imported clone, a `local-git` source). No hooks, no submodules, no automatic maintenance. Nothing is checked
   out, so `.gitattributes` filters (git-lfs, smudge) never run. Diffs use no external diff and no textconv.
 - Environment variables that point git at another repository or config are cleared.
 - Every file path in a commit is checked before anything is written: no `..`, no `.git`, no control
@@ -256,43 +272,41 @@ config while `sync` waited for your answer, nothing is accepted.
 ## Binding file
 
 ```yaml
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: soul                          # unique in this file
-spec:
-  selector:
-    global: true                      # every session
-  files:
-    - ~/notes/agents/me.md
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata:
-  name: work
-spec:
-  selector:                           # matches if ANY entry matches
-    dirs:
-      - ~/dev/work/**
-    gitRepos:
-      - remote: github.com/acme/mono
-        subpath: services/billing/**  # remote AND subpath
-      - remote: github.com/acme/**
-  files:
-    - ../notes/work.md                # relative to this binding file's folder
-  skills:
-    - ~/skills/deploy                 # a folder with a SKILL.md
+schema: ctxtra/v1
+bindings:
+  - name: soul                        # unique in this file
+    match:
+      global: true                    # every session
+    instructions:
+      - ~/notes/agents/me.md
+  - name: work
+    match:                            # matches if ANY entry matches
+      dirs:
+        - ~/dev/work/**
+      repos:
+        - github.com/acme/**          # a remote pattern
+        - remote: github.com/acme/mono
+          subpath: services/billing/** # remote AND subpath
+    instructions:
+      - ../notes/work.md              # relative to this binding file's folder
+    skills:
+      - ~/skills/deploy               # a folder with a SKILL.md
 ```
 
-## Selector
+A binding file has only `schema` and `bindings`. `sources`, `include` and `budget` work only in the
+config: in a binding file they are errors, and the whole file is skipped. Bindings in the config itself
+have the same keys.
 
-A selector needs at least one key. The binding applies if **any** entry of **any** key matches.
+## Match
+
+`match` needs at least one key. The binding applies if **any** entry of **any** key matches. There is no
+default: a binding without `match` is an error, so a missing key never makes it apply to every session.
 
 | Key | Matches when |
 |---|---|
 | `global: true` | Always. `false` is an error: remove the key instead. |
 | `dirs` | A pattern matches the session folder, or, inside git, the repository's main checkout. The second case makes worktrees match wherever they are on disk. Each pattern is absolute or starts with `~`. Symlinks in the fixed part of a pattern are resolved. |
-| `gitRepos` | The session is in a git repository with a remote that matches `remote`, and, if `subpath` is set, the session folder relative to the worktree top matches `subpath` (`.` at the top). |
+| `repos` | The session is in a git repository with a remote that matches the entry. An entry is a remote pattern, or a map with `remote` and `subpath`: then, also, the session folder relative to the worktree top must match `subpath` (`.` at the top). |
 
 Patterns use [doublestar](https://github.com/bmatcuk/doublestar) globs: `*` stays inside one path segment,
 `**` matches any number of segments, `x/**` also matches `x`, and `{a,b}` works. A pattern without `/**`
@@ -302,32 +316,33 @@ For a submodule, the main checkout is the submodule's folder. For a repository m
 `git init --separate-git-dir`, git doesn't record where the main checkout is, so `dirs` matches only the
 session folder there.
 
-If git doesn't answer within 3 seconds, the session counts as outside git: `gitRepos` don't match, and every
+If git doesn't answer within 3 seconds, the session counts as outside git: `repos` don't match, and every
 other binding still applies.
 
 Remotes are compared in a short, lower-case form: `git@github.com:Acme/Svc.git` and
 `https://github.com/acme/svc` are both `github.com/acme/svc`. A repository with several remotes matches if
 any of them matches.
 
-## Files and skills
+## Instructions and skills
 
-- `files` and `skills` are lists. A binding needs at least one of them.
-- Each path is absolute, starts with `~`, is relative to the binding file's folder, or is a
-  `ctxtra://<source>/<path>` reference.
+- `instructions` and `skills` are lists. A binding needs at least one of them.
+- Each path is absolute, starts with `~`, is relative to the folder of the file the binding is in (the
+  config or a binding file), or is a `ctxtra://<source>/<path>` reference.
 - Globs are not supported: list each file and skill folder by name.
 - Each file is added once per session, at its first position, and the same for each skill. Two skills with
   the same `name`: the first is used, the other is reported.
 - `SKILL.md` must start with YAML frontmatter that has a `description`. `name` is optional (default: the
   folder name). Other keys are ignored.
-- Claude Code, Codex and Cursor get the file contents and a list of the skills (name, description, path),
-  and read a `SKILL.md` when a task needs it. Pi gets files as context files and skills as native skills.
-  OpenCode gets files in the system prompt and skills as native skills, which its `skill` tool loads.
+- Claude Code, Codex, Muse, Cursor, Copilot, Antigravity, Hermes, DSH and Devin get the file contents and a list of the skills (name, description, path),
+  and read a `SKILL.md` when a task needs it. Pi gets instruction files as context files and skills as native skills.
+  OpenCode gets instruction files in the system prompt and skills as native skills, which its `skill` tool loads.
 
 ## Order and budget
 
-Bindings apply in config order: the `bindings` list, then the documents of each file in order.
+Bindings apply in config order: the config's own `bindings`, then the bindings of each file in `include`,
+in order.
 
-With `budget.maxChars`, whole files are dropped from the end until the added text fits. The budget counts
+With `budget.max-chars`, whole files are dropped from the end until the added text fits. The budget counts
 characters (Unicode code points), not bytes, and covers the whole added text, headers included. The skill
 list is never dropped. `ctxtra explain` shows what was dropped.
 
@@ -335,11 +350,12 @@ list is never dropped. `ctxtra explain` shows what was dropped.
 
 Problems never make ctxtra add more than the config says:
 
-- A config with a wrong `apiVersion` or `kind`, an invalid `budget` or source, or broken YAML, is ignored as
-  a whole.
-- A broken binding is skipped. The other bindings in the same file still apply. This includes a document
-  that isn't a map or uses anchors. A YAML syntax error skips the whole file, because the parser can't tell
-  where the next document starts.
+- A config with a wrong `schema`, an invalid `budget`, source or `include`, or broken YAML, is ignored as a
+  whole.
+- A broken binding is skipped, in the config or in a binding file. The other bindings in the same file
+  still apply.
+- A binding file that can't be read as a whole is skipped as a whole: a wrong `schema`, a key other than
+  `schema` and `bindings`, a YAML syntax error, more than one YAML document, or YAML anchors.
 - Unknown keys, duplicate keys, null values, empty lists, YAML anchors and aliases are errors.
 - A missing file is reported. The session still starts.
 - A file that isn't trusted (see [Sources and trust](#sources-and-trust)) is skipped and reported.
@@ -356,30 +372,37 @@ Problems never make ctxtra add more than the config says:
 
 ## Reference
 
-**Config** (`kind: Config`)
+**Config**
 
 | Key | Required | Meaning |
 |---|---|---|
-| `apiVersion` | yes | `ctxtra/v1alpha1` |
-| `kind` | yes | `Config` |
+| `schema` | yes | `ctxtra/v1` |
 | `sources.<name>.trusted-path` | no | A folder of your own files. Absolute or starts with `~`. |
 | `sources.<name>.git` | no | A team repository: `https://`, `ssh://` or `user@host:path`. |
 | `sources.<name>.branch` | with `git` | The branch `sync` follows. |
-| `sources.<name>.pinned-path` | no | Your clone, pinned to its committed `HEAD`. Absolute or starts with `~`. |
-| `sources.<name>.commit` | no | With `git` or `pinned-path`: the accepted commit, a full ID in quotes. |
-| `bindings` | no | List of binding files. Relative to the config's folder; `~` and `ctxtra://` work. |
-| `budget.maxChars` | no | Integer ≥ 0, in characters. 0 or missing: no limit. |
+| `sources.<name>.local-git` | no | Your clone, pinned to its committed `HEAD`. Absolute or starts with `~`. |
+| `sources.<name>.commit` | no | With `git` or `local-git`: the accepted commit, a full ID in quotes. |
+| `bindings[]` | no | Your own bindings, see **Binding** below. Paths are relative to the config's folder. |
+| `include[]` | no | Binding files. Relative to the config's folder; `~` and `ctxtra://` work. |
+| `budget.max-chars` | no | Integer ≥ 0, in characters. 0 or missing: no limit. |
 
-**Binding** (`kind: Binding`)
+**Binding file**
 
 | Key | Required | Meaning |
 |---|---|---|
-| `apiVersion` | yes | `ctxtra/v1alpha1` |
-| `kind` | yes | `Binding` |
-| `metadata.name` | yes | Letters, digits, `.`, `_`, `-`. Unique in the file. |
-| `spec.selector` | yes | See [Selector](#selector). |
-| `spec.files` | `files` or `skills` | Instruction files. |
-| `spec.skills` | `files` or `skills` | Skill folders. |
+| `schema` | yes | `ctxtra/v1` |
+| `bindings[]` | yes | See **Binding** below. Paths are relative to the binding file's folder. |
+
+**Binding**
+
+| Key | Required | Meaning |
+|---|---|---|
+| `name` | yes | Letters, digits, `.`, `_`, `-`. Unique in the file. |
+| `match.global` | `match` needs one key | `true`: every session. |
+| `match.dirs[]` | `match` needs one key | Folder patterns. |
+| `match.repos[]` | `match` needs one key | A remote pattern, or `remote` with an optional `subpath`. See [Match](#match). |
+| `instructions[]` | `instructions` or `skills` | Instruction files. |
+| `skills[]` | `instructions` or `skills` | Skill folders. |
 
 **Environment**
 
@@ -388,5 +411,8 @@ Problems never make ctxtra add more than the config says:
 | `CTXTRA_CONFIG` | `~/.config/ctxtra/config.yaml` |
 | `CTXTRA_LOG` | `~/.ctxtra/log.jsonl` |
 
+Muse Code runs hooks with a cleared environment, so its sessions always use the defaults.
+
 The session folder is the `cwd` the agent sends to the hook. If it is empty: the first `workspace_roots`
-entry (Cursor), else the hook's working folder.
+entry (Cursor), else the first `workspacePaths` entry (Antigravity, which runs hooks in the hook file's
+folder), else the hook's working folder. DSH's home folder is `$DSH_HOME`, or `~/.dsh`.

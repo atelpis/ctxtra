@@ -31,16 +31,20 @@ Usage:
                           add a team repository as a pinned source; its files change
                           only when you accept a new commit with sync
   ctxtra add <binding file> [--trust] [--as NAME]
-                          add one of your binding files; --trust adds its repository
+                          include one of your binding files; --trust adds its repository
                           as a trusted source (read from disk, changes apply right away)
   ctxtra add --trust <folder>  add a folder of your own files as a trusted source
-  ctxtra add --pinned-path <clone> [--as NAME]
+  ctxtra add --local-git <clone> [--as NAME]
                           add your clone of a team repository as a pinned source that
                           follows its committed HEAD, to try changes before you push
-  ctxtra remove <source>|<bindings entry>
-                          remove a source with its bindings entries, or one entry
+  ctxtra bind NAME (--global | --dir PATTERN... | --repo REMOTE...) [--file FILE]... [--skill FOLDER]...
+               [--dry-run]
+                          add a binding to the config; it is written only when its
+                          files exist and are trusted; --dry-run only checks it
+  ctxtra remove <source>|<include entry>
+                          remove a source with its include entries, or one entry
   ctxtra add ctxtra://<source>/<binding file>
-                          add a binding file from a source you have
+                          include a binding file from a source you have
   ctxtra sync [--full] [SOURCE]...
                           fetch pinned sources, show what changed, and accept it;
                           --full shows changed files you don't use in full too
@@ -51,12 +55,17 @@ Usage:
   ctxtra show [DIR]       the exact text a session in DIR gets
   ctxtra explain [DIR]    why each binding matches or not
   ctxtra doctor [DIR]     config problems, setup state, Codex trust, recent hook runs
+  ctxtra skill [install]  show the ctxtra skill, which lets your agents set up and
+                          change ctxtra; install adds it to every session
+  ctxtra help [TOPIC]     this text, or a topic of the docs of this version
   ctxtra hook AGENT [EVENT]  hook entry point; reads the agent's hook JSON on stdin
   ctxtra version
 
 Agents: %s. Without --agent: every agent found on this machine.
-Config: $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml (see docs/spec.md).
-`, strings.Join(registry.Names(), ", "))
+Config: $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml.
+
+Help topics (ctxtra help TOPIC):
+%s`, strings.Join(registry.Names(), ", "), helpTopics())
 
 // Run runs one command and returns the exit code.
 func Run(args []string, stdio IO, version string) int {
@@ -72,9 +81,11 @@ func Run(args []string, stdio IO, version string) int {
 		stdio.Out, stdio.Err = term.Writer{W: stdio.Out}, term.Writer{W: stdio.Err}
 	}
 	switch cmd {
-	case "-h", "--help", "help":
+	case "-h", "--help":
 		fmt.Fprint(stdio.Out, usage)
 		return 0
+	case "help":
+		return runHelp(rest, stdio)
 	case "version":
 		fmt.Fprintln(stdio.Out, version)
 		return 0
@@ -94,8 +105,12 @@ func Run(args []string, stdio IO, version string) int {
 		return runAdd(rest, stdio)
 	case "sync":
 		return runSync(rest, stdio)
+	case "bind":
+		return runBind(rest, stdio)
 	case "remove":
 		return runRemove(rest, stdio)
+	case "skill":
+		return runSkill(rest, stdio)
 	case "files", "show", "explain", "doctor":
 		fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 		fs.SetOutput(stdio.Err)
@@ -147,7 +162,7 @@ func runSetup(args []string, stdio IO) int {
 	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
 	fs.SetOutput(stdio.Err)
 	var agents listFlag
-	fs.Var(&agents, "agent", "agent to change (repeatable): claude, codex, pi, opencode, cursor")
+	fs.Var(&agents, "agent", "agent to change (repeatable): claude, codex, pi, opencode, muse, hermes, dsh, cursor, copilot, antigravity, devin")
 	remove := fs.Bool("remove", false, "remove ctxtra's hooks")
 	dryRun := fs.Bool("dry-run", false, "show what would change")
 	if err := fs.Parse(args); err != nil {

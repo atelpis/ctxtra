@@ -17,19 +17,14 @@ func TestSkills(t *testing.T) {
 		repo := s.Repo("dev/svc", "https://github.com/acme/svc", nil)
 		deploy := s.Skill("skills/deploy", "deploy", "DEPLOYDESC", "DEPLOYBODY")
 		s.Skill("skills/other", "other", "OTHERDESC", "OTHERBODY")
-		s.Config(`apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata: {name: svc}
-spec:
-  selector: {gitRepos: [{remote: github.com/acme/svc}]}
-  skills: [~/skills/deploy]
----
-apiVersion: ctxtra/v1alpha1
-kind: Binding
-metadata: {name: other}
-spec:
-  selector: {gitRepos: [{remote: github.com/acme/other}]}
-  skills: [~/skills/other]
+		s.Config(`schema: ctxtra/v1
+bindings:
+  - name: svc
+    match: {repos: [{remote: github.com/acme/svc}]}
+    skills: [~/skills/deploy]
+  - name: other
+    match: {repos: [{remote: github.com/acme/other}]}
+    skills: [~/skills/other]
 `)
 		s.Setup()
 		path := filepath.Join(deploy, "SKILL.md")

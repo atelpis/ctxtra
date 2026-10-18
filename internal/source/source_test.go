@@ -293,7 +293,7 @@ func TestLargeCommit(t *testing.T) {
 	}
 }
 
-// A pinned-path source takes the clone's committed HEAD, detached too,
+// A local-git source takes the clone's committed HEAD, detached too,
 // never the working tree.
 func TestFetchHead(t *testing.T) {
 	h := testenv.Home(t)

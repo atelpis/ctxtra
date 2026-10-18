@@ -20,15 +20,19 @@ func TestSubagent(t *testing.T) {
 		r.First(mock.Main).Has("TEAM", "PERSONAL")
 		r.Last(mock.Main).Has("TEAM", "PERSONAL", "CODE")
 		r.First(mock.Subagent).Has("PERSONAL")
-		s.hookRan("SubagentStart", "subagent")
+		if a.Name() == "antigravity" { // a subagent is a session of its own
+			s.hookRanTimes(2, "SessionStart")
+		} else {
+			s.hookRan("SubagentStart", "subagent", "subagentStart")
+		}
 	})
 }
 
 // global is a binding file with one binding that adds files to every session.
 func global(name string, files ...string) string {
-	y := "apiVersion: ctxtra/v1alpha1\nkind: Binding\nmetadata: {name: " + name + "}\nspec:\n  selector: {global: true}\n  files:\n"
+	y := "schema: ctxtra/v1\nbindings:\n  - name: " + name + "\n    match: {global: true}\n    instructions:\n"
 	for _, f := range files {
-		y += "    - " + f + "\n"
+		y += "      - " + f + "\n"
 	}
 	return y
 }

@@ -58,5 +58,11 @@ func setupCmd(stdio IO, o setup.Options) int {
 	if len(r.Errors) > 0 {
 		return 1
 	}
+	if !o.Remove && !o.DryRun {
+		if err := offerSkill(stdio); err != nil {
+			fmt.Fprintf(stdio.Err, "ctxtra skill install: %v\n", err)
+			return 1
+		}
+	}
 	return 0
 }

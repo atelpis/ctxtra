@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/registry"
 	"github.com/atelpis/ctxtra/internal/config"
 	"github.com/atelpis/ctxtra/internal/hook"
@@ -36,7 +37,7 @@ func (r report) files(dir string) int {
 		fmt.Fprintf(r.Err, "missing: %s\n", m)
 	}
 	for _, h := range res.Dropped {
-		fmt.Fprintf(r.Err, "dropped (over budget.maxChars): %s\n", h.Path)
+		fmt.Fprintf(r.Err, "dropped (over budget.max-chars): %s\n", h.Path)
 	}
 	for _, n := range res.Notices {
 		fmt.Fprintf(r.Err, "notice: %s\n", n)
@@ -63,7 +64,7 @@ func (r report) show(dir string) int {
 func (r report) session(res *resolve.Result) {
 	fmt.Fprintf(r.Out, "session folder: %s\n", res.Dir)
 	if res.Repo == nil {
-		fmt.Fprintln(r.Out, "  not in a git repository: gitRepos selectors don't match")
+		fmt.Fprintln(r.Out, "  not in a git repository: repos in match blocks don't match")
 		return
 	}
 	remotes := strings.Join(res.Repo.Remotes, ", ")
@@ -102,7 +103,7 @@ func (r report) explain(dir string) int {
 		for _, f := range t.Files {
 			switch {
 			case dropped[f] == t.Origin:
-				fmt.Fprintf(r.Out, "    dropped  %s (over budget.maxChars)\n", f)
+				fmt.Fprintf(r.Out, "    dropped  %s (over budget.max-chars)\n", f)
 			case files[f].Origin == t.Origin:
 				fmt.Fprintf(r.Out, "    file     %s (%d chars)\n", f, resolve.Chars(files[f].Content))
 			case files[f].Origin != "" || dropped[f] != "":
@@ -128,20 +129,26 @@ func (r report) explain(dir string) int {
 			fmt.Fprintf(r.Out, "  %s\n", p)
 		}
 	}
-	total := resolve.Chars(res.Render())
+	text := res.Render()
+	total := resolve.Chars(text)
 	fmt.Fprintf(r.Out, "\ntotal: %d files, %d skills, %d chars (about %d tokens)", len(res.Files), len(res.Skills), total, total/4)
 	if res.MaxChars > 0 {
-		fmt.Fprintf(r.Out, ", budget.maxChars %d", res.MaxChars)
+		fmt.Fprintf(r.Out, ", budget.max-chars %d", res.MaxChars)
 	}
 	fmt.Fprintln(r.Out)
-	r.sizeWarnings(total, "")
+	r.sizeWarnings(text, "")
 	return 0
 }
 
-func (r report) sizeWarnings(total int, indent string) {
+// sizeWarnings warns about each agent whose limit text is over.
+func (r report) sizeWarnings(text, indent string) {
+	chars := resolve.Chars(text)
 	for _, a := range registry.All() {
-		if l := a.PreviewLimit(); l > 0 && total > l {
-			fmt.Fprintf(r.Out, "%sWARNING: %d chars; over about %d, %s shows the model only a preview\n", indent, total, l, a.Name())
+		if l := a.PreviewLimit(); l > 0 && chars > l {
+			fmt.Fprintf(r.Out, "%sWARNING: %d chars; over about %d, %s shows the model only a preview\n", indent, chars, l, a.Name())
+		}
+		if b, ok := a.(agent.ByteLimiter); ok && b.ByteLimit() > 0 && len(text) > b.ByteLimit() {
+			fmt.Fprintf(r.Out, "%sWARNING: %d bytes; over about %d, %s drops the rest\n", indent, len(text), b.ByteLimit(), a.Name())
 		}
 	}
 }
@@ -151,7 +158,7 @@ func (r report) doctor(dir string) int {
 	res, cfg := r.resolve(dir)
 	fmt.Fprintf(r.Out, "config: %s\n", cfg.File)
 	if _, err := os.Stat(cfg.File); err != nil {
-		fmt.Fprintln(r.Out, "  not found: nothing is added (see docs/spec.md)")
+		fmt.Fprintln(r.Out, "  not found: nothing is added (the format: ctxtra help config)")
 	}
 	fmt.Fprintf(r.Out, "  binding files: %d, bindings: %d\n", len(cfg.BindingFiles), len(cfg.Bindings))
 	for _, src := range cfg.Sources {
@@ -177,12 +184,12 @@ func (r report) doctor(dir string) int {
 		fmt.Fprintf(r.Out, "  MISSING: %s\n", m)
 	}
 	for _, h := range res.Dropped {
-		fmt.Fprintf(r.Out, "  DROPPED (over budget.maxChars): %s\n", h.Path)
+		fmt.Fprintf(r.Out, "  DROPPED (over budget.max-chars): %s\n", h.Path)
 	}
 	for _, n := range res.Notices {
 		fmt.Fprintf(r.Out, "  NOTICE: %s\n", n)
 	}
-	r.sizeWarnings(resolve.Chars(res.Render()), "  ")
+	r.sizeWarnings(res.Render(), "  ")
 
 	fmt.Fprintln(r.Out, "\nhooks:")
 	for _, a := range registry.All() {
@@ -207,6 +214,9 @@ func (r report) doctor(dir string) int {
 		status := fmt.Sprintf("files=%d skills=%d missing=%d", len(e.Files), len(e.Skills), len(e.Missing))
 		if e.Error != "" {
 			status = "error: " + e.Error
+		}
+		if e.Skipped != "" {
+			status = "skipped: " + e.Skipped
 		}
 		fmt.Fprintf(r.Out, "  %s %s: %s %s\n", e.Harness, e.Event, e.Ts, status)
 	}
@@ -233,11 +243,11 @@ func describeSource(s config.Source) string {
 		if _, err := os.Stat(s.TrustedPath); err != nil {
 			state = " (not found)"
 		}
-		return "trusted-path " + paths.Tilde(s.TrustedPath) + state
+		return "trusted-path " + paths.Tilde(s.TrustedPath) + state + ": read from disk, changes apply without review"
 	}
 	d := fmt.Sprintf("git %s, branch %s, ", s.Git, s.Branch)
-	if s.PinnedPath != "" {
-		d = "pinned-path " + paths.Tilde(s.PinnedPath) + ", follows its committed HEAD, "
+	if s.LocalGit != "" {
+		d = "local-git " + paths.Tilde(s.LocalGit) + ", follows its committed HEAD, "
 	}
 	switch {
 	case s.Commit == "":
@@ -245,7 +255,7 @@ func describeSource(s config.Source) string {
 	case !source.Has(s.Remote(), s.Commit):
 		return d + "pinned to " + source.Short(s.Commit) + ", NOT IN THE STORE (run: ctxtra sync --restore)"
 	}
-	d += "pinned to " + source.Short(s.Commit)
+	d += "pinned to " + source.Short(s.Commit) + " (new commits apply after you accept them in ctxtra sync)"
 	e := state.Load().Get(source.ID(s.Remote()), s.Remote(), s.Branch)
 	if e.LastCheck.IsZero() {
 		d += ", not checked for new commits on this machine yet"
