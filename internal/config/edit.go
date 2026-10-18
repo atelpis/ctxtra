@@ -211,39 +211,39 @@ func AddInclude(data []byte, ref string) ([]byte, error) {
 	})
 }
 
-// AddGlobalSkill appends a binding name to the config's own bindings that
-// adds the skill folder to every session.
-func AddGlobalSkill(data []byte, name, skill string) ([]byte, error) {
+// NewBinding is a binding for AddBinding, with its values as they are
+// written in the config.
+type NewBinding struct {
+	Name                 string
+	Global               bool
+	Dirs, Repos          []string // match
+	Instructions, Skills []string
+}
+
+// AddBinding appends b to the config's own bindings. It doesn't check b:
+// the config's bindings are checked one by one when it is loaded.
+func AddBinding(data []byte, b NewBinding) ([]byte, error) {
 	doc, err := root(data)
 	if err != nil {
 		return nil, err
 	}
 	want := func(m map[string]any) {
 		l, _ := m["bindings"].([]any)
-		m["bindings"] = append(l, map[string]any{
-			"name":   name,
-			"match":  map[string]any{"global": true},
-			"skills": []any{skill},
-		})
+		m["bindings"] = append(l, b.data())
 	}
 	list := get(doc, "bindings")
 	if list != nil && list.Kind == yaml.SequenceNode {
-		for _, b := range list.Content {
-			if n := get(b, "name"); n != nil && n.Value == name {
-				return nil, fmt.Errorf("a binding named %s already exists", name)
+		for _, n := range list.Content {
+			if v := get(n, "name"); v != nil && v.Value == b.Name {
+				return nil, fmt.Errorf("a binding named %s already exists", b.Name)
 			}
 		}
-	}
-	entry := func(first, indent string) string {
-		return first + "name: " + scalar(name) + "\n" +
-			indent + "match:\n" + indent + "  global: true\n" +
-			indent + "skills:\n" + indent + "  - " + scalar(skill) + "\n"
 	}
 	var out []byte
 	ok := false
 	switch {
 	case list == nil:
-		out, ok = appendText(data, "bindings:\n"+entry("  - ", "    ")), true
+		out, ok = appendText(data, "bindings:\n"+b.text("  - ", "    ")), true
 	case list.Kind == yaml.SequenceNode && len(list.Content) > 0:
 		// The new entry starts like the last one: "  - name: ...". A flow
 		// value or block scalar that ends below its last node's line puts
@@ -254,7 +254,7 @@ func AddGlobalSkill(data []byte, name, skill string) ([]byte, error) {
 		if last.Line >= 1 && last.Line <= len(ls) {
 			prefix := ls[last.Line-1][:min(last.Column-1, len(ls[last.Line-1]))]
 			if strings.TrimSpace(prefix) == "-" {
-				out, ok = insertAfter(data, lastLine(list), entry(prefix, strings.Repeat(" ", len(prefix)))), true
+				out, ok = insertAfter(data, lastLine(list), b.text(prefix, strings.Repeat(" ", len(prefix)))), true
 			}
 		}
 	}
@@ -266,15 +266,96 @@ func AddGlobalSkill(data []byte, name, skill string) ([]byte, error) {
 			list = &yaml.Node{Kind: yaml.SequenceNode}
 			set(doc, "bindings", list)
 		}
-		str := func(v string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Value: v} }
-		match := &yaml.Node{Kind: yaml.MappingNode}
-		set(match, "global", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: "true"})
-		b := &yaml.Node{Kind: yaml.MappingNode}
-		set(b, "name", str(name))
-		set(b, "match", match)
-		set(b, "skills", &yaml.Node{Kind: yaml.SequenceNode, Content: []*yaml.Node{str(skill)}})
-		list.Content = append(list.Content, b)
+		list.Content = append(list.Content, b.node())
 	})
+}
+
+// bindingList is one of a binding's lists.
+type bindingList struct {
+	key   string
+	vals  []string
+	match bool // in the match block
+}
+
+// lists are b's lists, in the order they are written. Empty ones are left
+// out.
+func (b NewBinding) lists() []bindingList {
+	var out []bindingList
+	for _, l := range []bindingList{
+		{"dirs", b.Dirs, true}, {"repos", b.Repos, true},
+		{"instructions", b.Instructions, false}, {"skills", b.Skills, false},
+	} {
+		if len(l.vals) > 0 {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// text is b as YAML lines; the first starts with first, the others with
+// indent.
+func (b NewBinding) text(first, indent string) string {
+	var s strings.Builder
+	s.WriteString(first + "name: " + scalar(b.Name) + "\n" + indent + "match:\n")
+	if b.Global {
+		s.WriteString(indent + "  global: true\n")
+	}
+	for _, l := range b.lists() {
+		in := indent
+		if l.match {
+			in += "  "
+		}
+		s.WriteString(in + l.key + ":\n")
+		for _, v := range l.vals {
+			s.WriteString(in + "  - " + scalar(v) + "\n")
+		}
+	}
+	return s.String()
+}
+
+// data is b as yaml.Unmarshal reads it.
+func (b NewBinding) data() map[string]any {
+	match := map[string]any{}
+	if b.Global {
+		match["global"] = true
+	}
+	m := map[string]any{"name": b.Name, "match": match}
+	for _, l := range b.lists() {
+		vals := make([]any, len(l.vals))
+		for i, v := range l.vals {
+			vals[i] = v
+		}
+		if l.match {
+			match[l.key] = vals
+		} else {
+			m[l.key] = vals
+		}
+	}
+	return m
+}
+
+// node is b as a YAML node.
+func (b NewBinding) node() *yaml.Node {
+	str := func(v string) *yaml.Node { return &yaml.Node{Kind: yaml.ScalarNode, Value: v} }
+	match := &yaml.Node{Kind: yaml.MappingNode}
+	if b.Global {
+		set(match, "global", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!bool", Value: "true"})
+	}
+	n := &yaml.Node{Kind: yaml.MappingNode}
+	set(n, "name", str(b.Name))
+	set(n, "match", match)
+	for _, l := range b.lists() {
+		seq := &yaml.Node{Kind: yaml.SequenceNode}
+		for _, v := range l.vals {
+			seq.Content = append(seq.Content, str(v))
+		}
+		if l.match {
+			set(match, l.key, seq)
+		} else {
+			set(n, l.key, seq)
+		}
+	}
+	return n
 }
 
 // root parses data and returns the top-level map. Empty data is a new

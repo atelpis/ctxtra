@@ -1,0 +1,119 @@
+# bind adds a binding to the config and keeps the rest of it as written. It
+# writes only a binding that sessions would get as asked: its files exist and
+# are trusted.
+
+gitrepo dev/team git@github.com:acme/team.git
+
+# Relative paths are relative to the current folder, and written from ~.
+cd notes
+exec ctxtra bind work --dir '~/dev/work/**' --repo 'github.com/acme/**' --file work.md --skill ../skills/deploy
+stdout '^added binding work to ~/.config/ctxtra/config.yaml: for ~/dev/work/\*\*, github.com/acme/\*\*$'
+stdout '^  instructions: ~/notes/work.md$'
+stdout '^  skills: ~/skills/deploy$'
+stdout '^new sessions get it'
+cd $HOME
+cmp .config/ctxtra/config.yaml want.yaml
+exec ctxtra files dev/work/svc
+stdout '/notes/work.md$'
+stdout '/skills/deploy/SKILL.md$'
+
+# Flags may come first.
+exec ctxtra bind --global --file notes/me.md me2
+stdout '^added binding me2 to ~/.config/ctxtra/config.yaml: for every session$'
+exec ctxtra files elsewhere
+stdout '/notes/me.md$'
+cp want.yaml .config/ctxtra/config.yaml
+
+# Nothing is written for a binding that wouldn't work.
+! exec ctxtra bind me --global --file notes/me.md
+stderr 'a binding named me already exists'
+! exec ctxtra bind x --global --file notes/nope.md
+stderr 'nothing changed'
+stderr '^  missing: ~/notes/nope.md$'
+! exec ctxtra bind x --global --skill notes
+stderr '^  missing: ~/notes/SKILL.md$'
+! exec ctxtra bind x --dir '/a/[' --file notes/me.md
+stderr 'dirs entry "/a/\[" is not a valid pattern'
+! stderr 'line \d'
+! exec ctxtra bind x --global --file ctxtra://nope/a.md
+stderr 'unknown source "nope"'
+! exec ctxtra bind x --global --file dev/team/team.md
+stderr 'not a trusted source; skipped. If only you push to the repository: ctxtra add --trust ~/dev/team'
+cmp .config/ctxtra/config.yaml want.yaml
+
+# --dry-run checks and changes nothing, also where nothing can be written,
+# as in an agent's sandbox.
+chmod 0555 .config/ctxtra
+chmod 0555 .ctxtra
+exec ctxtra bind x --global --file notes/me.md --dry-run
+stdout '^would add binding x to ~/.config/ctxtra/config.yaml: for every session$'
+stdout '^nothing changed \(--dry-run\)$'
+! exec ctxtra bind x --global --file notes/nope.md --dry-run
+stderr '^  missing: ~/notes/nope.md$'
+! exec ctxtra bind x --global --file notes/me.md
+stderr 'permission denied'
+chmod 0755 .config/ctxtra
+chmod 0755 .ctxtra
+cmp .config/ctxtra/config.yaml want.yaml
+
+# Once the repository is a source, its files can be bound.
+exec ctxtra add --trust dev/team
+exec ctxtra bind team --global --file ctxtra://team/team.md --file dev/team/team.md
+stdout '^  instructions: ctxtra://team/team.md, ~/dev/team/team.md$'
+grep '^      - ctxtra://team/team.md$' .config/ctxtra/config.yaml
+grep '^      - ~/dev/team/team.md$' .config/ctxtra/config.yaml
+
+# Usage errors.
+! exec ctxtra bind x --file notes/me.md
+stderr 'say which sessions get it: --global, --dir or --repo'
+! exec ctxtra bind x --global --dir /a --file notes/me.md
+stderr '--global already matches every session'
+! exec ctxtra bind x --global
+stderr 'add at least one --file or --skill'
+! exec ctxtra bind 'a b' --global --file notes/me.md
+stderr 'may only contain letters'
+! exec ctxtra bind --global --file notes/me.md
+stderr 'expected one binding name'
+
+-- .config/ctxtra/config.yaml --
+schema: ctxtra/v1
+
+bindings:           # mine
+  - name: me
+    match: {global: true}
+    instructions: [../../notes/me.md]
+
+budget:
+  max-chars: 40000  # enough
+-- want.yaml --
+schema: ctxtra/v1
+
+bindings:           # mine
+  - name: me
+    match: {global: true}
+    instructions: [../../notes/me.md]
+  - name: work
+    match:
+      dirs:
+        - ~/dev/work/**
+      repos:
+        - github.com/acme/**
+    instructions:
+      - ~/notes/work.md
+    skills:
+      - ~/skills/deploy
+
+budget:
+  max-chars: 40000  # enough
+-- notes/me.md --
+CTXMARK-ME
+-- notes/work.md --
+CTXMARK-WORK
+-- skills/deploy/SKILL.md --
+---
+description: Deploy the service.
+---
+-- dev/team/team.md --
+CTXMARK-TEAM
+-- dev/work/svc/.keep --
+-- elsewhere/.keep --

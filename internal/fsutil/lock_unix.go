@@ -32,12 +32,17 @@ func Lock(path string) (unlock func(), err error) {
 var ErrLockTimeout = errors.New("timed out waiting for a lock")
 
 // LockShared takes a shared lock on the file path: many holders, but none
-// while someone holds Lock. It waits at most timeout.
+// while someone holds Lock. It waits at most timeout. Where the file can't
+// be written, for example in an agent's sandbox, an existing one is locked
+// read-only: flock doesn't need write access.
 func LockShared(path string, timeout time.Duration) (unlock func(), err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	if errors.Is(err, os.ErrPermission) {
+		f, err = os.Open(path)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -86,6 +86,13 @@ bindings:
       - ~/notes/skills/deploy
 ```
 
+Or add a binding with a command. It keeps the rest of the config as you wrote it, and writes the binding
+only when its files exist and are trusted:
+
+```bash
+ctxtra bind work --repo 'github.com/acme/**' --file ~/notes/agents/work.md --skill ~/notes/skills/deploy
+```
+
 Bindings can also live in their own files, which the config includes: your dotfiles, or a team repository.
 
 Files in a git repository that has a remote are read only if you declare the repository as a source of

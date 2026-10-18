@@ -126,7 +126,7 @@ func installSkill(stdio IO) error {
 		return nil
 	}
 	err = s.edit(func(old []byte) ([]byte, error) {
-		return config.AddGlobalSkill(old, skillBinding, dir)
+		return config.AddBinding(old, config.NewBinding{Name: skillBinding, Global: true, Skills: []string{dir}})
 	})
 	if err != nil {
 		return err

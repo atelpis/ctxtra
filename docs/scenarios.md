@@ -30,8 +30,14 @@ You keep notes in `~/notes/agents/`, which is not a git repository.
 
 ```text
 $ ctxtra setup
-$ $EDITOR ~/.config/ctxtra/config.yaml
+$ ctxtra bind me --global --file ~/notes/agents/me.md
+created ~/.config/ctxtra/config.yaml
+added binding me to ~/.config/ctxtra/config.yaml: for every session
+  instructions: ~/notes/agents/me.md
+new sessions get it; a running session keeps what it got at its start
 ```
+
+The config now has the binding. You can also write it by hand:
 
 ```yaml
 schema: ctxtra/v1
