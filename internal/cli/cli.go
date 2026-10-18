@@ -37,6 +37,10 @@ Usage:
   ctxtra add --local-git <clone> [--as NAME]
                           add your clone of a team repository as a pinned source that
                           follows its committed HEAD, to try changes before you push
+  ctxtra bind NAME (--global | --dir PATTERN... | --repo REMOTE...) [--file FILE]... [--skill FOLDER]...
+               [--dry-run]
+                          add a binding to the config; it is written only when its
+                          files exist and are trusted; --dry-run only checks it
   ctxtra remove <source>|<include entry>
                           remove a source with its include entries, or one entry
   ctxtra add ctxtra://<source>/<binding file>
@@ -101,6 +105,8 @@ func Run(args []string, stdio IO, version string) int {
 		return runAdd(rest, stdio)
 	case "sync":
 		return runSync(rest, stdio)
+	case "bind":
+		return runBind(rest, stdio)
 	case "remove":
 		return runRemove(rest, stdio)
 	case "skill":

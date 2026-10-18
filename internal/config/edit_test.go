@@ -52,13 +52,13 @@ func TestTextEdits(t *testing.T) {
 	if _, err := AddSource([]byte(commented), "dotfiles", [][2]string{{"trusted-path", "/x"}}); err == nil {
 		t.Error("AddSource: an existing name was accepted")
 	}
-	out, err = AddGlobalSkill([]byte(commented), "ctxtra", "~/.ctxtra/skills/ctxtra")
+	out, err = AddBinding([]byte(commented), NewBinding{Name: "ctxtra", Global: true, Skills: []string{"~/.ctxtra/skills/ctxtra"}})
 	want = strings.Replace(commented, "[me.md]\n", "[me.md]\n  - name: ctxtra\n    match:\n      global: true\n    skills:\n      - ~/.ctxtra/skills/ctxtra\n", 1)
 	if err != nil || string(out) != want {
-		t.Errorf("AddGlobalSkill %v:\n%s", err, out)
+		t.Errorf("AddBinding %v:\n%s", err, out)
 	}
-	if _, err := AddGlobalSkill([]byte(commented), "me", "/x"); err == nil {
-		t.Error("AddGlobalSkill: an existing name was accepted")
+	if _, err := AddBinding([]byte(commented), NewBinding{Name: "me", Global: true, Skills: []string{"/x"}}); err == nil {
+		t.Error("AddBinding: an existing name was accepted")
 	}
 }
 
@@ -82,10 +82,27 @@ func TestEditsOnOtherShapes(t *testing.T) {
 			func(d []byte) ([]byte, error) { return SetCommit(d, "t", commitB) }},
 		{"first binding", "schema: ctxtra/v1\ninclude: [a.yaml]\n",
 			"schema: ctxtra/v1\ninclude: [a.yaml]\nbindings:\n  - name: s\n    match:\n      global: true\n    skills:\n      - ~/s\n",
-			func(d []byte) ([]byte, error) { return AddGlobalSkill(d, "s", "~/s") }},
+			func(d []byte) ([]byte, error) {
+				return AddBinding(d, NewBinding{Name: "s", Global: true, Skills: []string{"~/s"}})
+			}},
 		{"binding after an unindented list", "schema: ctxtra/v1\nbindings:\n- name: me\n  match:\n    global: true\n  instructions: [me.md]\n",
 			"schema: ctxtra/v1\nbindings:\n- name: me\n  match:\n    global: true\n  instructions: [me.md]\n- name: s\n  match:\n    global: true\n  skills:\n    - ~/s\n",
-			func(d []byte) ([]byte, error) { return AddGlobalSkill(d, "s", "~/s") }},
+			func(d []byte) ([]byte, error) {
+				return AddBinding(d, NewBinding{Name: "s", Global: true, Skills: []string{"~/s"}})
+			}},
+		{"binding with every list", "schema: ctxtra/v1\nbindings:\n  - name: me\n    match:\n      global: true\n    instructions: [me.md]\n",
+			"schema: ctxtra/v1\nbindings:\n  - name: me\n    match:\n      global: true\n    instructions: [me.md]\n" +
+				"  - name: work\n    match:\n      dirs:\n        - ~/dev/work/**\n      repos:\n        - github.com/acme/*\n" +
+				"    instructions:\n      - ~/notes/work.md\n      - '~/notes/#2.md'\n    skills:\n      - ~/skills/deploy\n",
+			func(d []byte) ([]byte, error) {
+				return AddBinding(d, NewBinding{Name: "work", Dirs: []string{"~/dev/work/**"}, Repos: []string{"github.com/acme/*"},
+					Instructions: []string{"~/notes/work.md", "~/notes/#2.md"}, Skills: []string{"~/skills/deploy"}})
+			}},
+		{"binding into a flow list", "schema: ctxtra/v1\nbindings: [{name: me, match: {global: true}, instructions: [me.md]}]\n",
+			"schema: ctxtra/v1\nbindings: [{name: me, match: {global: true}, instructions: [me.md]}, {name: x, match: {dirs: [/x]}, instructions: [x.md]}]\n",
+			func(d []byte) ([]byte, error) {
+				return AddBinding(d, NewBinding{Name: "x", Dirs: []string{"/x"}, Instructions: []string{"x.md"}})
+			}},
 		// Flow maps are encoded again: the comment stays, the layout doesn't.
 		{"flow map", "schema: ctxtra/v1\nsources: {t: {git: 'https://h/t', branch: main}}  # c\n",
 			"schema: ctxtra/v1\nsources: {t: {git: 'https://h/t', branch: main, commit: '" + commitB + "'}} # c\n",

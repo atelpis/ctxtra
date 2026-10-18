@@ -40,3 +40,19 @@ func TestRefresh(t *testing.T) {
 		t.Errorf("after Refresh:\n%s", got)
 	}
 }
+
+// Codex reads a skill file with a shell command and shows the model at most
+// 10,000 bytes of its output: the middle of a longer file is cut. Every file
+// stays under that, with room to spare.
+func TestFileSizes(t *testing.T) {
+	const max = 9000
+	fs.WalkDir(ctxtra.Skill(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if b, _ := fs.ReadFile(ctxtra.Skill(), p); len(b) > max {
+			t.Errorf("%s is %d bytes; keep each skill file under %d, and move details to references/", p, len(b), max)
+		}
+		return nil
+	})
+}

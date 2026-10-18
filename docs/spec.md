@@ -53,6 +53,13 @@ budget:
 Every key except `schema` is optional. A config with only `schema` and `bindings` is enough for your own
 files.
 
+`ctxtra bind NAME (--global | --dir PATTERN... | --repo REMOTE...) [--file FILE]... [--skill FOLDER]... [--dry-run]`
+adds a binding to the config's own `bindings`, after the others. Paths are relative to the current folder
+and are written from `~` when they are under it; `ctxtra://` references are written as they are. The config
+is changed only when a session that the binding matches would get every file and skill in it: none is
+missing, each is trusted, and no other problem is new. `--dry-run` does the same checks and changes
+nothing. A binding in a binding file, and a change to an existing binding, are edits by hand.
+
 ## Sources and trust
 
 ctxtra reads a file from disk only if the file is yours. A file counts as yours when it is:
