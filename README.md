@@ -52,7 +52,7 @@ risks of team repositories. `ctxtra setup` asks whether to install it; without a
 an agent runs setup, it doesn't ask. To install it at any time:
 
 ```bash
-ctxtra skill           # the skill, exactly as the agents get it
+ctxtra skill           # the skill's files, exactly as the agents get them
 ctxtra skill install   # writes it to ~/.ctxtra/skills/ctxtra, and adds a binding for it to your config
 ```
 

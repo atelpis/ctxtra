@@ -89,12 +89,10 @@ const skillBinding = "ctxtra"
 func runSkill(args []string, stdio IO) int {
 	switch {
 	case len(args) == 0:
-		b, err := fs.ReadFile(ctxtra.Skill(), "SKILL.md")
-		if err != nil {
+		if err := printSkill(stdio.Out); err != nil {
 			fmt.Fprintf(stdio.Err, "ctxtra skill: %v\n", err)
 			return 1
 		}
-		stdio.Out.Write(b)
 		return 0
 	case len(args) == 1 && args[0] == "install":
 		if err := installSkill(stdio); err != nil {
@@ -105,6 +103,29 @@ func runSkill(args []string, stdio IO) int {
 	}
 	fmt.Fprintln(stdio.Err, "usage: ctxtra skill [install]")
 	return 2
+}
+
+// printSkill writes SKILL.md, then each other file of the skill after a
+// line that names it, so that the output pasted into an agent is the whole
+// skill.
+func printSkill(w io.Writer) error {
+	b, err := fs.ReadFile(ctxtra.Skill(), "SKILL.md")
+	if err != nil {
+		return err
+	}
+	w.Write(b)
+	return fs.WalkDir(ctxtra.Skill(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || p == "SKILL.md" {
+			return err
+		}
+		b, err := fs.ReadFile(ctxtra.Skill(), p)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(w, "\n<!-- ctxtra skill file: %s -->\n\n", p)
+		w.Write(b)
+		return nil
+	})
 }
 
 // installSkill writes the skill to paths.SkillDir, and adds a binding that
