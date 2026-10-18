@@ -64,6 +64,9 @@ func Tilde(p string) string {
 // StateDir is ~/.ctxtra: backups of changed agent configs and the hook log.
 func StateDir() string { return filepath.Join(Home(), ".ctxtra") }
 
+// SkillDir is where ctxtra skill install writes the ctxtra skill.
+func SkillDir() string { return filepath.Join(StateDir(), "skills", "ctxtra") }
+
 // BackupDir is where setup keeps a copy of every agent config it changes.
 func BackupDir() string { return filepath.Join(StateDir(), "backups") }
 

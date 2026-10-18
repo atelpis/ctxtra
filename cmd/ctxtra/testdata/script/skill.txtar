@@ -1,0 +1,77 @@
+# help shows topics of the docs of this version; skill shows the ctxtra
+# skill, and skill install writes it and binds it to every session, once.
+# The hook keeps the installed skill at the version of its binary.
+
+exec ctxtra help
+stdout '^  config  *the config format'
+exec ctxtra help config
+stdout '^# Config spec: ctxtra/v1$'
+exec ctxtra help agents
+stdout '^## Limits$'
+! stdout '^## Development'
+! exec ctxtra help nope
+stderr 'no topic "nope"'
+stderr '^  scenarios'
+
+exec ctxtra skill
+stdout '^name: ctxtra$'
+
+# Without a terminal, setup doesn't ask.
+exec ctxtra setup --agent claude
+stdout '^to let your agents help you set up and change ctxtra: ctxtra skill install$'
+! exists .ctxtra/skills
+
+exec ctxtra skill install
+stdout '^wrote the ctxtra skill to ~/.ctxtra/skills/ctxtra$'
+stdout '^added binding ctxtra to ~/.config/ctxtra/config.yaml: every new session gets the skill$'
+cmp .config/ctxtra/config.yaml want.yaml
+exists .ctxtra/skills/ctxtra/SKILL.md
+
+exec ctxtra files notes
+stdout '/.ctxtra/skills/ctxtra/SKILL.md$'
+exec ctxtra setup --agent claude
+! stdout 'ctxtra skill install'
+
+# Again: nothing changes.
+exec ctxtra skill install
+stdout 'is up to date$'
+stdout '^binding ctxtra \(~/.config/ctxtra/config.yaml\) adds it to sessions$'
+cmp .config/ctxtra/config.yaml want.yaml
+
+# A skill from another version: the hook writes this binary's before it
+# lists the skill.
+cp old.md .ctxtra/skills/ctxtra/SKILL.md
+runhook claude SessionStart notes
+stdout 'Set up and change ctxtra'
+! stdout 'An older ctxtra skill'
+exec ctxtra skill
+cmp stdout .ctxtra/skills/ctxtra/SKILL.md
+
+-- .config/ctxtra/config.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: me          # mine
+    match:
+      global: true
+    instructions:
+      - ~/ctx/me.md
+-- want.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: me          # mine
+    match:
+      global: true
+    instructions:
+      - ~/ctx/me.md
+  - name: ctxtra
+    match:
+      global: true
+    skills:
+      - ~/.ctxtra/skills/ctxtra
+-- old.md --
+---
+description: An older ctxtra skill.
+---
+-- ctx/me.md --
+CTXMARK-ME
+-- notes/.keep --

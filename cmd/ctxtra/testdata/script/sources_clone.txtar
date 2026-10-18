@@ -53,7 +53,7 @@ exec ctxtra sync team-ctx-dev
 stdout '^team-ctx-dev: [0-9a-f]{7} -> [0-9a-f]{7} \(local HEAD, ~/dev/team-ctx\)$'
 stdout 'accepted team-ctx-dev'
 exec ctxtra doctor notes
-stdout 'source team-ctx-dev: local-git ~/dev/team-ctx, follows its committed HEAD, pinned to [0-9a-f]{7}, last checked'
+stdout 'source team-ctx-dev: local-git ~/dev/team-ctx, follows its committed HEAD, pinned to [0-9a-f]{7} \(new commits apply after you accept them in ctxtra sync\), last checked'
 
 # Removing the source: its include entries go, your own references are
 # listed, and the clone's old paths are skipped, not read from disk.

@@ -52,6 +52,14 @@ func TestTextEdits(t *testing.T) {
 	if _, err := AddSource([]byte(commented), "dotfiles", [][2]string{{"trusted-path", "/x"}}); err == nil {
 		t.Error("AddSource: an existing name was accepted")
 	}
+	out, err = AddGlobalSkill([]byte(commented), "ctxtra", "~/.ctxtra/skills/ctxtra")
+	want = strings.Replace(commented, "[me.md]\n", "[me.md]\n  - name: ctxtra\n    match:\n      global: true\n    skills:\n      - ~/.ctxtra/skills/ctxtra\n", 1)
+	if err != nil || string(out) != want {
+		t.Errorf("AddGlobalSkill %v:\n%s", err, out)
+	}
+	if _, err := AddGlobalSkill([]byte(commented), "me", "/x"); err == nil {
+		t.Error("AddGlobalSkill: an existing name was accepted")
+	}
 }
 
 func TestEditsOnOtherShapes(t *testing.T) {
@@ -72,6 +80,12 @@ func TestEditsOnOtherShapes(t *testing.T) {
 		{"commit of a handwritten source", "schema: ctxtra/v1\nsources:\n  t:\n      git: https://h/t\n      branch: main\n",
 			"schema: ctxtra/v1\nsources:\n  t:\n      git: https://h/t\n      branch: main\n      commit: '" + commitB + "'\n",
 			func(d []byte) ([]byte, error) { return SetCommit(d, "t", commitB) }},
+		{"first binding", "schema: ctxtra/v1\ninclude: [a.yaml]\n",
+			"schema: ctxtra/v1\ninclude: [a.yaml]\nbindings:\n  - name: s\n    match:\n      global: true\n    skills:\n      - ~/s\n",
+			func(d []byte) ([]byte, error) { return AddGlobalSkill(d, "s", "~/s") }},
+		{"binding after an unindented list", "schema: ctxtra/v1\nbindings:\n- name: me\n  match:\n    global: true\n  instructions: [me.md]\n",
+			"schema: ctxtra/v1\nbindings:\n- name: me\n  match:\n    global: true\n  instructions: [me.md]\n- name: s\n  match:\n    global: true\n  skills:\n    - ~/s\n",
+			func(d []byte) ([]byte, error) { return AddGlobalSkill(d, "s", "~/s") }},
 		// Flow maps are encoded again: the comment stays, the layout doesn't.
 		{"flow map", "schema: ctxtra/v1\nsources: {t: {git: 'https://h/t', branch: main}}  # c\n",
 			"schema: ctxtra/v1\nsources: {t: {git: 'https://h/t', branch: main, commit: '" + commitB + "'}} # c\n",

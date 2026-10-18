@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -15,6 +16,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
+	"github.com/atelpis/ctxtra/internal/skill"
 )
 
 const maxInput = 10 << 20
@@ -71,8 +73,13 @@ func Run(harness, event string, in io.Reader, out, errOut io.Writer) (code int) 
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
+	// Before resolving: the session lists the skill as it is on disk.
+	skillErr := skill.Refresh()
 	res, _ := resolve.Session(dir, paths.ConfigPath())
 	e := newEntry(ts, harness, event, p, res, resolve.Chars(res.Render()))
+	if skillErr != nil {
+		e.Problems = append(slices.Clip(e.Problems), "can't update the ctxtra skill: "+skillErr.Error())
+	}
 	if s, ok := a.(agent.Skipper); ok {
 		if e.Skipped = s.Skip(); e.Skipped != "" {
 			e.Chars = 0
