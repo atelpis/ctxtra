@@ -49,4 +49,7 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 	return map[string]any{"additional_context": text}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: not measured; Cursor may cut large hook output.
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Cursor", Capacity: 1_000_000}
+}

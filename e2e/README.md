@@ -64,6 +64,11 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestUserMessage` | Claude and Muse get the one-line message for the user from the hook |
 | `TestOutsideGit` | Outside git, only `global` and `dirs` bindings apply |
 | `TestResume` | Copilot and Muse: a resumed session has the current version of the files, once |
+| `TestCapacity` | About 305K characters of bound files (half for Copilot), Unicode and emoji included, reach the model at session start: every line once, in config order. Agents that get the text from several hooks resolve the files once |
+| `TestCapacitySubagent` | The same text reaches a subagent in full, and the main agent still has it once after tool calls |
+| `TestOverCapacity` | Above the agent's capacity (see `capacity` in [capacity_test.go](capacity_test.go)), whole files are dropped from the end: the files before them arrive in full, the dropped one not at all; the log and the user message name it |
+| `TestCopilotCompactionDropsText` | Documents a known Copilot limit: after Copilot compacts a long conversation, the hook's text is gone and the hook doesn't run again. Fails when Copilot changes that |
+| `TestCodexTrustTUI` | Interactive Codex in tmux: one "Trust all and continue" in the hook review trusts ctxtra's hooks, which set a finite `additionalContextLimit`; the session gets the text in full; `setup` run again asks for no new trust. Needs tmux |
 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped
 with the reason for the others. A declared capability that stops working fails the test.
@@ -72,8 +77,8 @@ Not covered here, and checked by hand before a release:
 
 - What the interactive TUI shows (the session-start message on screen), `/clear`, `/compact`, and resume in
   Claude, Codex, Pi and OpenCode. These need a pseudo-terminal runner.
-- Codex hook trust through `/hooks`. These tests run Codex with `--dangerously-bypass-hook-trust`, which
-  checks delivery only.
+- Codex hook trust through `/hooks`. The other tests run Codex with `--dangerously-bypass-hook-trust`;
+  `TestCodexTrustTUI` covers the startup hook review only.
 - Cursor Agent CLI: its model protocol can't be mocked.
 - The Antigravity App and IDE. They read the same hook file as the CLI.
 - Hermes with `plugins.isolation: host`.

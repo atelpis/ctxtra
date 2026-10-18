@@ -10,6 +10,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/devin"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
+	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -17,7 +18,10 @@ import (
 // Agent is Claude Code.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent   = Agent{}
+	_ agent.Slotted = Agent{}
+)
 
 // events are not registered for resume: the resumed transcript already
 // contains the injected text.
@@ -43,7 +47,7 @@ func (Agent) Detect() bool {
 }
 
 func (a Agent) hooks() hookjson.Config {
-	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events}
+	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events, Slots: a.Delivery().Slots}
 }
 
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
@@ -59,9 +63,19 @@ func (Agent) Skip() string {
 	return ""
 }
 
+// Answer is the whole text in one hook, for a hook without a slot, set up
+// by an older version.
 func (Agent) Answer(event string, res *resolve.Result) any {
 	return agent.AdditionalContext(event, res)
 }
 
-// PreviewLimit: Claude shows the model only a preview of larger hook output.
-func (Agent) PreviewLimit() int { return 10000 }
+func (Agent) SlotAnswer(event, text, summary string) any {
+	return agent.ContextAnswer(event, text, summary)
+}
+
+// Delivery: Claude shows the model only a preview of a hook's text over
+// 10,000 UTF-16 units, but gets the text of every hook of an event: 40 hooks
+// of up to 9,000 each (measured with Claude Code 2.1.300).
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Claude Code", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 9000, Slots: 40}
+}

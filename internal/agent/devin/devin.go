@@ -75,7 +75,10 @@ func (Agent) Answer(event string, res *resolve.Result) any {
 	return agent.AdditionalContext(event, res)
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: not measured; Devin may cut large hook output.
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Devin", Capacity: 1_000_000}
+}
 
 // UnderDevin reports whether this hook process was started by Devin and
 // ctxtra's Devin hook is set up, so that Devin's hook adds the files for

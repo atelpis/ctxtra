@@ -19,6 +19,7 @@ import (
 
 	"github.com/rogpeppe/go-internal/testscript"
 
+	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
@@ -37,6 +38,7 @@ func TestScript(t *testing.T) {
 			"gitrepo":   gitRepo,
 			"gitcommit": gitCommit,
 			"expand":    expandFile,
+			"slots":     collapseSlots,
 		},
 	})
 }
@@ -213,9 +215,70 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	}
 }
 
+// slots FILE: rewrites a Claude or Muse hook file so that each run of
+// entries that differ only in their slot, 0 to N-1 in order, is one entry
+// with "--slot 0..N-1", for cmp. It fails on slots out of order.
+func collapseSlots(ts *testscript.TestScript, neg bool, args []string) {
+	if neg || len(args) != 1 {
+		ts.Fatalf("usage: slots FILE")
+	}
+	path := ts.MkAbs(args[0])
+	data, err := jsonorder.ReadFile(path)
+	ts.Check(err)
+	re := regexp.MustCompile(` --slot (\d+);`)
+	hv, _ := data.Get("hooks")
+	hooks, ok := hv.(*jsonorder.Map)
+	if !ok {
+		ts.Fatalf("%s: no hooks", path)
+	}
+	for _, ev := range hooks.Keys {
+		v, _ := hooks.Get(ev)
+		list, _ := v.([]any)
+		var kept []any
+		var runStart, prev string
+		n := 0
+		flush := func() {
+			if n > 0 {
+				e, err := jsonorder.Decode([]byte(strings.Replace(runStart, " --slot N;", fmt.Sprintf(" --slot 0..%d;", n-1), 1)))
+				ts.Check(err)
+				kept = append(kept, e)
+			}
+			n = 0
+		}
+		for _, e := range list {
+			b, err := jsonorder.Marshal(e)
+			ts.Check(err)
+			m := re.FindStringSubmatch(string(b))
+			if m == nil {
+				flush()
+				kept = append(kept, e)
+				continue
+			}
+			norm := re.ReplaceAllString(string(b), " --slot N;")
+			if n > 0 && norm != prev {
+				flush()
+			}
+			if m[1] != fmt.Sprint(n) {
+				ts.Fatalf("%s: %s: slot %s where %d belongs", path, ev, m[1], n)
+			}
+			if n == 0 {
+				runStart = norm
+			}
+			prev = norm
+			n++
+		}
+		flush()
+		hooks.Set(ev, kept)
+	}
+	out, err := jsonorder.MarshalIndent(data)
+	ts.Check(err)
+	ts.Check(os.WriteFile(path, out, 0o644))
+}
+
 // hookCommand is the one ctxtra command among the hooks for event in a
 // Claude, Codex, Muse or Devin hook file, or a flat one (Copilot) where each
-// entry is a handler.
+// entry is a handler. Of slot commands (Claude, Muse), it is slot 0's: it
+// adds all of a short text.
 func hookCommand(ts *testscript.TestScript, path, event string) string {
 	type handler struct{ Command string }
 	var cfg struct {
@@ -228,7 +291,8 @@ func hookCommand(ts *testscript.TestScript, path, event string) string {
 	var found []string
 	for _, g := range cfg.Hooks[event] {
 		for _, h := range append(g.Hooks, g.handler) {
-			if strings.Contains(h.Command, " hook ") && strings.Contains(h.Command, "ctxtra") {
+			if strings.Contains(h.Command, " hook ") && strings.Contains(h.Command, "ctxtra") &&
+				(!strings.Contains(h.Command, " --slot ") || strings.Contains(h.Command, " --slot 0;")) {
 				found = append(found, h.Command)
 			}
 		}

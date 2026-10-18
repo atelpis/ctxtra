@@ -4,7 +4,9 @@
 
 exec ctxtra setup --agent muse
 stdout '^ctxtra setup \(muse\): changed$'
-cmpenv .config/muse/settings.json new.json
+cp .config/muse/settings.json got.json
+slots got.json
+cmpenv got.json new.json
 
 exec ctxtra doctor
 stdout 'muse: set up for \[SessionStart SubagentStart\], runs .*/ctxtra \(ok\)'
@@ -15,7 +17,9 @@ cmp .config/muse/settings.json schema-only.json
 # An existing file keeps its keys, and ours come after the other tool's.
 cp original.json .config/muse/settings.json
 exec ctxtra setup --agent muse
-cmpenv .config/muse/settings.json want.json
+cp .config/muse/settings.json got.json
+slots got.json
+cmpenv got.json want.json
 
 exec ctxtra setup --agent muse
 stdout 'nothing to change'
@@ -37,7 +41,7 @@ exists xdg/muse/settings.json
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart --slot 0..39; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]
@@ -48,7 +52,7 @@ exists xdg/muse/settings.json
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SubagentStart --slot 0..39; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]
@@ -95,7 +99,7 @@ exists xdg/muse/settings.json
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart --slot 0..39; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]
@@ -106,7 +110,7 @@ exists xdg/muse/settings.json
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SubagentStart --slot 0..39; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]

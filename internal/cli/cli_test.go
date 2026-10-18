@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,25 +68,33 @@ bindings:
 	}
 }
 
-// Antigravity's limit is in bytes: the same number of characters warns for
-// it when they take three bytes each, not when they take one.
+// explain warns about each agent whose sessions wouldn't get every file,
+// by that agent's limit: Codex and Antigravity count bytes, Copilot
+// estimated tokens, the others characters.
 func TestSizeWarnings(t *testing.T) {
 	h := testenv.Home(t)
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
-		"schema: ctxtra/v1\nbindings:\n  - {name: me, match: {global: true}, instructions: [~/a.md]}\n")
+		"schema: ctxtra/v1\nbindings:\n  - {name: me, match: {global: true}, instructions: [~/a.md, ~/b.md]}\n")
 	testenv.Config(t, h, "schema: ctxtra/v1\ninclude: [b.yaml]\n")
+	testenv.Write(t, filepath.Join(h, "a.md"), "small")
 	for _, tc := range []struct {
-		content     string
-		antigravity bool
+		content string
+		warn    []string
 	}{
-		{strings.Repeat("a", 17000), false},
-		{strings.Repeat("界", 17000), true}, // 51,000 bytes
+		{"short", nil},
+		{strings.Repeat("a\n", 200_000), []string{"claude", "muse", "copilot"}},
+		{strings.Repeat("界\n", 300_000), []string{"claude", "muse", "codex", "antigravity", "copilot"}}, // 1,200,000 bytes
 	} {
-		testenv.Write(t, filepath.Join(h, "a.md"), tc.content)
+		testenv.Write(t, filepath.Join(h, "b.md"), tc.content)
 		_, out, _ := run("explain", h)
-		if !strings.Contains(out, "claude shows the model only a preview") ||
-			strings.Contains(out, "antigravity drops the rest") != tc.antigravity {
-			t.Errorf("%d bytes: warnings:\n%s", len(tc.content), out)
+		for _, a := range []string{"claude", "muse", "codex", "antigravity", "copilot", "pi", "hermes"} {
+			warned := strings.Contains(out, ", "+a+" sessions don't get b.md\n")
+			if warned != slices.Contains(tc.warn, a) {
+				t.Errorf("%d bytes: %s warned %v:\n%s", len(tc.content), a, warned, out)
+			}
+		}
+		if tc.warn != nil && !strings.Contains(out, "WARNING: over Claude Code's limit of 360,000 characters, claude sessions don't get b.md\n") {
+			t.Errorf("warning:\n%s", out)
 		}
 	}
 }

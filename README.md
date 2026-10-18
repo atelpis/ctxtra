@@ -38,7 +38,8 @@ ctxtra setup                 # every agent found on this machine, or --agent cla
 
 `setup` adds hooks that run the binary you started it from, by its full path: agents started from the Dock
 often don't have `~/go/bin` in their `PATH`. It changes only its own hook entries and backs up each file it
-changes to `~/.ctxtra/backups`. Codex runs the hooks only after you trust them once (`/hooks` in Codex).
+changes to `~/.ctxtra/backups`. Codex runs the hooks only after you trust them once (`/hooks` in Codex), and
+asks once more after a hook changed, for example after an upgrade that changes the hooks.
 Hermes loads the plugin only after you enable it once (`hermes plugins enable ctxtra`).
 `ctxtra setup --remove` removes them.
 
@@ -134,11 +135,21 @@ nothing and logs the error.
 
 ## Limits
 
-- Claude, Hermes, and Codex by default, show the model only a preview of large hook output (about 10,000
-  characters); Antigravity drops all after about 48,000 bytes. `explain` and `doctor` warn above that.
+- Each agent gets a limited amount of text in full: 360,000 characters in Claude Code and Muse, 1,000,000
+  bytes in Codex, 650,000 bytes in Antigravity, about 100,000 tokens in Copilot (400,000 characters of
+  English), 1,000,000 characters in the others (not measured in Cursor and Devin). Non-Latin text counts
+  more in Codex, Antigravity and Copilot: a CJK character is 3 bytes, and about a token; an emoji counts 2
+characters in Claude Code and Muse, and Muse's hooks count bytes, so Muse fits less non-ASCII text. Above the limit,
+  whole files are dropped from the end, as with `budget.max-chars`; the message at session start, the log,
+  `explain` and `doctor` name them. Several agents cut or drop a large hook output, so ctxtra splits the
+  text into labeled parts there: 40 hooks per event in Claude Code and Muse, a plugin callback per part in
+  Hermes, an injected step per part in Antigravity. See [the spec](docs/spec.md#capacity).
+- Codex gets the text in full only from version 0.145.0, which reads the hook's `additionalContextLimit`;
+  older versions show the model about 10,000 characters, and `doctor` warns.
 - Resumed sessions don't get the text again, because the transcript already has it. `/compact` and
   `/clear` add it again in Claude and Codex. Copilot is different: it doesn't keep the text in the session,
-  so its hook adds it again on resume. Muse and OpenCode differ too, see below.
+  so its hook adds it again on resume. When Copilot compacts a long conversation, the text is gone for the
+  rest of the session: Copilot doesn't run the hook again. Muse and OpenCode differ too, see below.
 - A subagent gets the files when it starts, so it can see a newer version than its parent.
 - Codex asks you to trust a hook again after every change to it, for example after the binary moved.
   `doctor` shows whether a trust record exists, but can't tell whether it is for the current hook.
@@ -186,6 +197,7 @@ Layout:
   `ctxtra help`).
 - `internal/config`: loads and validates the config and binding files, and matches `match` blocks.
 - `internal/resolve`: decides what a session gets and renders the text.
+- `internal/chunk`: splits the text into labeled parts for agents that cut a large hook output.
 - `internal/agent`: the `Agent` interface. One package per agent (`antigravity`, `claude`, `codex`, `copilot`,
   `cursor`, `devin`, `dsh`, `hermes`, `muse`, `opencode`, `pi`) with its hook setup and answer format; `hookjson`
   edits the JSON hook files they share; `extfile` writes the extension files of Pi, OpenCode, Hermes and DSH;

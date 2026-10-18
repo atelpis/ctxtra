@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 	"unicode/utf8"
 
@@ -26,6 +27,9 @@ type Hit struct {
 	Global  bool   // from a binding with `global: true`
 	// Skills only.
 	Name, Description string
+	// Dropped files only: the limit the text was over, for example
+	// "budget.max-chars".
+	Over string
 }
 
 // Trace explains one binding, for `explain`.
@@ -45,7 +49,7 @@ type Result struct {
 	Repo     *gitrepo.Repo // nil outside git
 	Files    []Hit
 	Skills   []Hit
-	Dropped  []Hit // over budget.max-chars
+	Dropped  []Hit // over budget.max-chars or the agent's capacity, see Hit.Over
 	Missing  []string
 	Problems []string
 	Notices  []string // about the pinned sources the session uses
@@ -220,15 +224,32 @@ func Chars(s string) int { return utf8.RuneCountInString(s) }
 // applyBudget drops whole files from the end until the text fits
 // budget.max-chars. The skill list is never dropped.
 func (r *Result) applyBudget() {
-	total := Chars(r.Render())
-	if r.MaxChars <= 0 || total <= r.MaxChars {
+	if r.MaxChars > 0 {
+		r.Fit(func(r *Result) bool { return Chars(r.Render()) <= r.MaxChars }, "budget.max-chars")
+	}
+}
+
+// Fit drops whole files from the end until fits accepts the result, and
+// marks them as over the limit over. Files dropped before stay after them:
+// they came later. The skill list is never dropped, so the result may still
+// not fit. fits must accept every result with fewer files than one it
+// accepts.
+func (r *Result) Fit(fits func(*Result) bool, over string) {
+	if fits(r) {
 		return
 	}
-	n := len(r.Files)
-	for n > 0 && total > r.MaxChars {
-		n--
-		total -= Chars(r.block(r.Files[n])) + Chars(blockSep)
+	files := r.Files
+	c := *r
+	// The most files that fit; at most len(files)-1 here.
+	n := sort.Search(len(files), func(n int) bool {
+		c.Files = files[:n+1]
+		return !fits(&c)
+	})
+	var dropped []Hit
+	for _, h := range files[n:] {
+		h.Over = over
+		dropped = append(dropped, h)
 	}
-	r.Dropped = append(r.Dropped, r.Files[n:]...)
-	r.Files = r.Files[:n]
+	r.Files = files[:n:n]
+	r.Dropped = append(dropped, r.Dropped...)
 }

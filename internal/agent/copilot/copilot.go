@@ -10,6 +10,7 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
+	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -59,4 +60,13 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 	return map[string]any{"additionalContext": text}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: Copilot drops all hook text, without a word, when it doesn't fit
+// the model's context window; several hooks count together. With Copilot
+// 1.0.98 and an unknown model, 600,000 ASCII characters of plain prose pass
+// but only about 570,000 of text with IDs and numbers, and 150,000 CJK
+// characters. Its tokenizer counts more than the estimate for such text, so
+// the capacity keeps about a third of the window free, which also leaves room
+// for the conversation before Copilot compacts it.
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Copilot", Capacity: 100_000, Unit: chunk.Tokens}
+}

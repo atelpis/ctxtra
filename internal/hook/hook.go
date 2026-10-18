@@ -28,11 +28,19 @@ type payload struct {
 	WorkspacePaths []string `json:"workspacePaths"`  // Antigravity
 	Source         string   `json:"source"`
 	AgentType      string   `json:"agent_type"`
+	SessionID      string   `json:"session_id"`
+	AgentID        string   `json:"agent_id"` // a Claude subagent, whose session_id is its parent's
 }
 
 // Run reads the hook input from in and writes the agent's answer to out. It
 // always returns 0. An unknown agent gets "{}".
-func Run(harness, event string, in io.Reader, out, errOut io.Writer) (code int) {
+func Run(harness, event string, in io.Reader, out, errOut io.Writer) int {
+	return RunSlot(harness, event, -1, in, out, errOut)
+}
+
+// RunSlot is Run for hook slot of an agent.Slotted, or for no slot when it
+// is below 0. Other agents ignore the slot.
+func RunSlot(harness, event string, slot int, in io.Reader, out, errOut io.Writer) (code int) {
 	a, ok := registry.Get(harness)
 	empty := "{}"
 	if ok {
@@ -73,29 +81,47 @@ func Run(harness, event string, in io.Reader, out, errOut io.Writer) (code int) 
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
+	if sl, ok := a.(agent.Slotted); ok && slot >= 0 {
+		runSlot(a, sl, slot, ts, event, p, dir, out, errOut)
+		return 0
+	}
+	res, e := session(a, ts, event, p, dir)
+	logEntry(e)
+	if e.Skipped != "" {
+		fmt.Fprintln(out, empty)
+		return 0
+	}
+	for _, m := range res.Missing {
+		fmt.Fprintf(errOut, "ctxtra: bound file not found: %s\n", m)
+	}
+	write(out, a.Answer(event, res))
+	return 0
+}
+
+// session resolves what a session in dir gets, with the files that the
+// agent wouldn't get in full dropped, and its log entry. The entry says why
+// when the session gets nothing.
+func session(a agent.Agent, ts, event string, p payload, dir string) (*resolve.Result, Entry) {
 	// Before resolving: the session lists the skill as it is on disk.
 	skillErr := skill.Refresh()
 	res, _ := resolve.Session(dir, paths.ConfigPath())
-	e := newEntry(ts, harness, event, p, res, resolve.Chars(res.Render()))
+	a.Delivery().Fit(res)
+	e := newEntry(ts, a.Name(), event, p, res, resolve.Chars(res.Render()))
 	if skillErr != nil {
 		e.Problems = append(slices.Clip(e.Problems), "can't update the ctxtra skill: "+skillErr.Error())
 	}
 	if s, ok := a.(agent.Skipper); ok {
 		if e.Skipped = s.Skip(); e.Skipped != "" {
 			e.Chars = 0
-			logEntry(e)
-			fmt.Fprintln(out, empty)
-			return 0
 		}
 	}
-	logEntry(e)
-	for _, m := range res.Missing {
-		fmt.Fprintf(errOut, "ctxtra: bound file not found: %s\n", m)
-	}
-	b, err := jsonorder.Marshal(a.Answer(event, res))
+	return res, e
+}
+
+func write(out io.Writer, answer any) {
+	b, err := jsonorder.Marshal(answer)
 	if err != nil {
 		panic(err)
 	}
 	fmt.Fprintln(out, string(b))
-	return 0
 }

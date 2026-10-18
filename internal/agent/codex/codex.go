@@ -5,16 +5,20 @@ package codex
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
+	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -30,7 +34,16 @@ var _ agent.Agent = Agent{}
 var events = []hookjson.Event{{Name: "SessionStart", Matcher: "startup|clear|compact"}, {Name: "SubagentStart"}}
 
 // trustNote tells the user how to trust the hooks.
-const trustNote = "codex: hooks run only after you trust them: start `codex`, run /hooks, and trust the ctxtra entries. Codex asks again after every change to a hook."
+const trustNote = "codex: Codex runs a new or changed hook only after you trust it, and asks once at its next start: " +
+	"choose \"Trust all and continue\", or trust the ctxtra entries in /hooks."
+
+// contextLimit is the hooks' additionalContextLimit, in tokens: Codex counts
+// 4 bytes as a token, so 250,000 tokens are 1,000,000 bytes.
+const contextLimit = 250_000
+
+// minVersion is the first Codex version with additionalContextLimit. Older
+// ones show the model only a preview of about 2,500 tokens.
+const minVersion = "0.145.0"
 
 func (Agent) Name() string { return "codex" }
 
@@ -54,7 +67,7 @@ func (Agent) Detect() bool {
 func (a Agent) hooks() hookjson.Config {
 	// The status message names the hook in Codex's /hooks review.
 	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events,
-		StatusMessage: "ctxtra: personal instructions"}
+		StatusMessage: "ctxtra: personal instructions", ContextLimit: contextLimit}
 }
 
 // Setup also asks the user to review the hooks whenever it changed them:
@@ -71,8 +84,12 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 // Status lists a trust record per hook. Codex keys trust by position and
 // stores a hash whose format isn't documented, so a record shows that the
 // user trusted a hook at that position once, not that it is still current.
+// It also warns about a Codex too old for additionalContextLimit.
 func (a Agent) Status() agent.Status {
 	s := a.hooks().Status()
+	if v := version(); v != "" && older(v, minVersion) {
+		s.Details = append(s.Details, fmt.Sprintf("WARNING: codex %s shows the model only about 10,000 characters of the text; update to %s or later", v, minVersion))
+	}
 	cmds, _ := a.hooks().Commands()
 	records := trustRecords(filepath.Join(dir(), "config.toml"))
 	for _, ev := range events {
@@ -93,9 +110,46 @@ func (Agent) Answer(event string, res *resolve.Result) any {
 	return agent.AdditionalContext(event, res)
 }
 
-// PreviewLimit: about 2,500 tokens per Codex docs, at about 4 characters per
-// token.
-func (Agent) PreviewLimit() int { return 10000 }
+// Delivery: Codex gets the text in full up to the hook's
+// additionalContextLimit, which it counts in bytes (measured with Codex
+// 0.162.1).
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Codex", Capacity: contextLimit * 4, Unit: chunk.Bytes}
+}
+
+var reVersion = regexp.MustCompile(`\b(\d+)\.(\d+)\.(\d+)\b`)
+
+// version is the version of the codex on PATH, or "" when there is none or
+// it doesn't say. A variable for tests.
+var version = func() string {
+	bin, err := exec.LookPath("codex")
+	if err != nil {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, bin, "--version").Output()
+	if err != nil {
+		return ""
+	}
+	return reVersion.FindString(string(out))
+}
+
+// older reports whether version a is older than b; both are X.Y.Z.
+func older(a, b string) bool {
+	x, y := reVersion.FindStringSubmatch(a), reVersion.FindStringSubmatch(b)
+	if x == nil || y == nil {
+		return false
+	}
+	for i := 1; i <= 3; i++ {
+		m, _ := strconv.Atoi(x[i])
+		n, _ := strconv.Atoi(y[i])
+		if m != n {
+			return m < n
+		}
+	}
+	return false
+}
 
 var reUpper = regexp.MustCompile(`([a-z0-9])([A-Z])`)
 

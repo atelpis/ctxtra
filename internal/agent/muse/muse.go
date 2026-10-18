@@ -10,6 +10,7 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
+	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -17,7 +18,10 @@ import (
 // Agent is Muse Code.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent   = Agent{}
+	_ agent.Slotted = Agent{}
+)
 
 // events: SessionStart also runs on resume, without a matcher. Muse replaces
 // the text a hook added before, so a resumed session gets the current files
@@ -53,16 +57,28 @@ func (Agent) Detect() bool {
 // "schema_version": 1.
 func (a Agent) hooks() hookjson.Config {
 	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events,
-		Version: 1, VersionKey: "schema_version"}
+		Version: 1, VersionKey: "schema_version", Slots: a.Delivery().Slots}
 }
 
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
 
 func (a Agent) Status() agent.Status { return a.hooks().Status() }
 
+// Answer is the whole text in one hook, for a hook without a slot, set up
+// by an older version.
 func (Agent) Answer(event string, res *resolve.Result) any {
 	return agent.AdditionalContext(event, res)
 }
 
-// PreviewLimit: Muse gives the model the whole hook text.
-func (Agent) PreviewLimit() int { return 0 }
+func (Agent) SlotAnswer(event, text, summary string) any {
+	return agent.ContextAnswer(event, text, summary)
+}
+
+// Delivery: Muse drops all of a hook's text, without a word, above 15,040
+// to 16,256 bytes, but gets the text of every hook of an event (measured
+// with Muse 1.4.10): 40 hooks of up to 13,000 bytes each, which leaves room
+// for JSON escapes. Text that isn't ASCII needs more parts, and fewer files
+// fit then.
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Muse", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 13_000, ChunkBytes: true, Slots: 40}
+}

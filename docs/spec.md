@@ -346,6 +346,45 @@ With `budget.max-chars`, whole files are dropped from the end until the added te
 characters (Unicode code points), not bytes, and covers the whole added text, headers included. The skill
 list is never dropped. `ctxtra explain` shows what was dropped.
 
+## Capacity
+
+Each agent gets a limited amount of text in full, its capacity. Above it, whole files are dropped from the
+end, the same way as with `budget.max-chars`; with both, the lower limit applies. The skill list is never
+dropped. The message at session start (in the agents that show one), the log, `explain` and `doctor` name
+the dropped files.
+
+| Agent | Capacity | How the text gets there |
+|---|---|---|
+| Claude Code | 360,000 characters, counted in UTF-16 | 40 hooks per event, a part of up to 9,000 each |
+| Muse | 360,000 characters, counted in UTF-16 | 40 hooks per event, a part of up to 13,000 bytes each; text that isn't ASCII needs more parts, so fewer files fit |
+| Codex | 1,000,000 bytes | one hook with `additionalContextLimit` (250,000 tokens of 4 bytes); Codex 0.145.0 or later |
+| Hermes | 1,000,000 characters | a plugin callback per part of up to 9,000 characters, or `hooks.output_spill.max_chars` if lower; the capacity shrinks with it |
+| Antigravity | 650,000 bytes | one hook, an injected step per part of up to 40,000 bytes |
+| Copilot | about 100,000 tokens | one hook |
+| Pi, OpenCode, DSH | 1,000,000 characters | one plugin |
+| Cursor, Devin | 1,000,000 characters | one hook; not measured |
+
+Characters are Unicode code points; Claude Code and Muse count UTF-16 units, where an emoji or another
+character outside the Basic Multilingual Plane counts 2. Copilot counts tokens, which ctxtra estimates: four ASCII characters
+are a token, an emoji or another character outside the Basic Multilingual Plane three, and every other
+character one. Non-Latin text counts more in the agents that count bytes or
+tokens: a CJK character is 3 bytes in Codex and Antigravity, and a token in Copilot. Copilot drops all of
+the text, without a word, when it doesn't fit the model's context window; ctxtra drops files before that.
+When Copilot compacts a long conversation, ctxtra's text is gone for the rest of the session: Copilot
+doesn't run the hook again.
+
+Text that fits one part is given as it is. Otherwise each part starts with a label, `[ctxtra part 3 of 12]`,
+and the first one says that the parts are one text, in part order. A file that continues from the part
+before starts with `Contents of PATH, continued (part 2 of 4):`. A part ends before a file when little room
+is left, else at a line end; a line longer than a part is split between characters.
+
+Claude Code and Muse run the hooks of an event at once. The first one resolves the session and writes the
+parts to `~/.ctxtra/slots/`, readable by you only; the others read them there, so the session is resolved
+and logged once. The file is deleted when every hook has read it, else by a session start a minute later.
+When the folder can't be written, for example in a sandbox, each hook resolves the session on its own.
+Claude Code orders the texts by when the hooks end, so each hook waits for the one before it, up to 2
+seconds; the labels keep the text correct in any order.
+
 ## Validation
 
 Problems never make ctxtra add more than the config says:
@@ -366,8 +405,9 @@ Problems never make ctxtra add more than the config says:
 
 | Limit | Value |
 |---|---|
-| Any one file (config, binding file, instruction file, `SKILL.md`) | 1 MiB |
-| Everything read for one session, the config and binding files included | 4 MiB |
+| Any one file (config, binding file, instruction file, `SKILL.md`) | 4 MiB |
+| Everything read for one session, the config and binding files included | 16 MiB |
+| Text an agent gets in full | its capacity, see [Capacity](#capacity) |
 | Skill description | 1024 bytes, longer ones are cut and end with `…` |
 
 ## Reference

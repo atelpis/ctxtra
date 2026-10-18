@@ -59,6 +59,13 @@ func TestSetup(t *testing.T) {
 	if st := a.Status(); st.OK || !strings.HasPrefix(st.Details[0], "plugin state unknown: ~/.hermes/config.yaml: ") {
 		t.Errorf("broken config: %+v", st)
 	}
+	// A plugin of an older version.
+	old, _ := os.ReadFile(a.ConfigPath())
+	testenv.Write(t, a.ConfigPath(), strings.Replace(string(old), "SLOTS = ", "SLOTS = 1 + ", 1))
+	if st := a.Status(); st.OK || st.Details[0] != "~/.hermes/plugins/ctxtra/__init__.py: written by another version of ctxtra (run ctxtra setup)" {
+		t.Errorf("old plugin: %+v", st)
+	}
+	testenv.Write(t, a.ConfigPath(), string(old))
 	os.Remove(manifestPath())
 	if st := a.Status(); st.OK || st.Details[0] != "~/.hermes/plugins/ctxtra/plugin.yaml: MISSING (run ctxtra setup)" {
 		t.Errorf("no plugin.yaml: %+v", st)
@@ -107,14 +114,14 @@ func TestPluginRuns(t *testing.T) {
 	}
 	calls := filepath.Join(dir, "calls")
 	bin := filepath.Join(dir, "bin", "ctxtra")
-	const size = 2 << 20
+	// Three parts of 1 MiB each, and the whole text for older plugins.
+	const size = 1 << 20
 	testenv.Write(t, bin, `#!/bin/sh
 printf '%s %s ' "$1 $2" "$3" >>`+calls+`
 cat >>`+calls+`
 echo >>`+calls+`
-printf '{"context":"'
-head -c `+itoa(size)+` /dev/zero | tr '\0' x
-printf '"}'
+part() { printf '"%s' "$1"; head -c `+itoa(size)+` /dev/zero | tr '\0' x; printf '"'; }
+printf '{"chunks":['; part a; printf ,; part b; printf ,; part c; printf '],"context":"whole"}'
 `)
 	if err := os.Chmod(bin, 0o755); err != nil {
 		t.Fatal(err)
@@ -132,21 +139,27 @@ def resolve_agent_cwd():
 	testenv.Write(t, filepath.Join(dir, "main.py"), `
 import importlib, json
 plugin = importlib.import_module("ctxtra")
-hooks = {}
+hooks = []
 class Ctx:
     def register_hook(self, name, fn):
-        hooks[name] = fn
+        assert name == "pre_llm_call"
+        hooks.append(fn)
 plugin.register(Ctx())
-call = hooks["pre_llm_call"]
-def size(r):
-    return len(r["context"]) if r else 0
+# Like Hermes: every callback in order, the results that aren't None.
+def call(**kwargs):
+    return [r["context"][0] + str(len(r["context"])) for r in (fn(**kwargs) for fn in hooks) if r is not None]
 print(json.dumps({
-    "first": size(call(session_id="s", is_first_turn=True, model="m", platform="cli", parent_session_id="")),
-    "later": size(call(session_id="s", is_first_turn=False, model="m", platform="cli")),
-    "subagent": size(call(session_id="c", is_first_turn=True, parent_session_id="s")),
+    "first": call(session_id="s", is_first_turn=True, model="m", platform="cli", parent_session_id=""),
+    "later": call(session_id="s", is_first_turn=False, model="m", platform="cli"),
+    "subagent": call(session_id="c", is_first_turn=True, parent_session_id="s"),
+    "callbacks": len(hooks),
+    "kept": len(plugin._parts),
 }))
 `)
-	type result struct{ First, Later, Subagent int }
+	type result struct {
+		First, Later, Subagent []string
+		Callbacks, Kept        int
+	}
 	run := func(bin string, env ...string) result {
 		t.Helper()
 		testenv.Write(t, filepath.Join(dir, "ctxtra", "__init__.py"), Plugin(bin))
@@ -163,13 +176,15 @@ print(json.dumps({
 		}
 		return r
 	}
-	if r := run(bin); r != (result{size, 0, size}) {
+	parts := []string{"a" + itoa(size+1), "b" + itoa(size+1), "c" + itoa(size+1)}
+	if r := run(bin); !slices.Equal(r.First, parts) || len(r.Later) != 0 || !slices.Equal(r.Subagent, parts) ||
+		r.Callbacks != slots || r.Kept != 0 {
 		t.Errorf("answers: %+v", r)
 	}
-	if r := run(bin, "NO_CWD=1"); r != (result{}) {
+	if r := run(bin, "NO_CWD=1"); len(r.First)+len(r.Subagent) != 0 || r.Kept != 0 {
 		t.Errorf("without a session folder: %+v", r)
 	}
-	if r := run(filepath.Join(dir, "missing")); r != (result{}) {
+	if r := run(filepath.Join(dir, "missing")); len(r.First)+len(r.Subagent) != 0 || r.Kept != 0 {
 		t.Errorf("missing binary: %+v", r)
 	}
 	got, _ := os.ReadFile(calls)
@@ -180,3 +195,25 @@ print(json.dumps({
 }
 
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
+
+// The parts stay below a lowered hooks.output_spill.max_chars, and the
+// capacity shrinks with them.
+func TestDelivery(t *testing.T) {
+	h := testenv.Home(t)
+	cfg := filepath.Join(h, ".hermes", "config.yaml")
+	for yaml, size := range map[string]int{
+		"": 9000,
+		"hooks: {output_spill: {max_chars: 5000}}\n":               5000,
+		"hooks: {output_spill: {max_chars: '4000'}}\n":             4000,
+		"hooks: {output_spill: {max_chars: 0}}\n":                  9000,
+		"hooks: {output_spill: {max_chars: 50000}}\n":              9000,
+		"hooks: {output_spill: {enabled: false, max_chars: 10}}\n": 9000,
+		"hooks: [\n": 9000,
+	} {
+		testenv.Write(t, cfg, yaml)
+		d := Agent{}.Delivery()
+		if d.Chunk != size || d.Slots != slots || d.Capacity != min(1_000_000, slots*size) {
+			t.Errorf("%q: %+v", yaml, d)
+		}
+	}
+}

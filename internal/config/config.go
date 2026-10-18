@@ -36,11 +36,12 @@ const (
 	// files.
 	Schema = "ctxtra/v1"
 
-	// MaxFileBytes limits every file a session reads.
-	MaxFileBytes = 1 << 20
+	// MaxFileBytes limits every file a session reads: 1,000,000 characters,
+	// which an agent can get in full, are up to 4 MB of UTF-8.
+	MaxFileBytes = 4 << 20
 	// MaxSessionBytes limits what one session reads in total: the config,
 	// binding files, instruction files and SKILL.md files.
-	MaxSessionBytes = 4 << 20
+	MaxSessionBytes = 16 << 20
 
 	// Scheme starts a reference to a file in a source.
 	Scheme = "ctxtra://"

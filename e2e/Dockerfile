@@ -11,8 +11,8 @@ FROM golang:1.27-trixie AS go
 
 FROM node:24-trixie-slim
 COPY --from=go /usr/local/go /usr/local/go
-# Python 3.13 for Hermes.
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl python3 python3-venv \
+# Python 3.13 for Hermes, tmux for the TUI tests.
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl python3 python3-venv tmux \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Agents refuse some modes as root, and the tests should not need it.

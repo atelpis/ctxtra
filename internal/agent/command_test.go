@@ -27,6 +27,19 @@ func TestCommandIsStable(t *testing.T) {
 			t.Errorf("CommandBinary(%s) = %q, %v", got, b, ok)
 		}
 	}
+	slot := agent.SlotCommand("/opt/ctxtra", "claude", "SessionStart", 17)
+	if want := `/bin/sh -c 'f="/opt/ctxtra"; if [ -x "$f" ]; then exec "$f" hook claude SessionStart --slot 17; else /bin/cat >/dev/null 2>&1; echo "{}"; fi'`; slot != want {
+		t.Errorf("slot command:\n got %s\nwant %s", slot, want)
+	}
+	if n, ok := agent.CommandSlot(slot); !ok || n != 17 {
+		t.Errorf("CommandSlot: %d, %v", n, ok)
+	}
+	if b, ok := agent.CommandBinary(slot); !ok || b != "/opt/ctxtra" {
+		t.Errorf("CommandBinary of a slot command: %q, %v", b, ok)
+	}
+	if _, ok := agent.CommandSlot(agent.Command("/opt/ctxtra", "claude", "SessionStart")); ok {
+		t.Error("a slot in a command without one")
+	}
 	if _, ok := agent.CommandBinary("other-tool hook codex SessionStart"); ok {
 		t.Error("another tool's command recognized as ours")
 	}

@@ -28,7 +28,7 @@ func Lock(path string) (unlock func(), err error) {
 	return func() { f.Close() }, nil
 }
 
-// ErrLockTimeout is LockShared giving up.
+// ErrLockTimeout is LockShared or LockTimeout giving up.
 var ErrLockTimeout = errors.New("timed out waiting for a lock")
 
 // LockShared takes a shared lock on the file path: many holders, but none
@@ -36,6 +36,15 @@ var ErrLockTimeout = errors.New("timed out waiting for a lock")
 // be written, for example in an agent's sandbox, an existing one is locked
 // read-only: flock doesn't need write access.
 func LockShared(path string, timeout time.Duration) (unlock func(), err error) {
+	return lockWait(path, syscall.LOCK_SH, timeout)
+}
+
+// LockTimeout is Lock that waits at most timeout.
+func LockTimeout(path string, timeout time.Duration) (unlock func(), err error) {
+	return lockWait(path, syscall.LOCK_EX, timeout)
+}
+
+func lockWait(path string, how int, timeout time.Duration) (unlock func(), err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
@@ -48,7 +57,7 @@ func LockShared(path string, timeout time.Duration) (unlock func(), err error) {
 	}
 	deadline := time.Now().Add(timeout)
 	for {
-		err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+		err := syscall.Flock(int(f.Fd()), how|syscall.LOCK_NB)
 		if err == nil {
 			return func() { f.Close() }, nil
 		}
@@ -59,6 +68,6 @@ func LockShared(path string, timeout time.Duration) (unlock func(), err error) {
 			}
 			return nil, err
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 }
