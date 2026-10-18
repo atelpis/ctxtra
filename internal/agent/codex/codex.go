@@ -26,7 +26,10 @@ import (
 // Agent is Codex CLI.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent    = Agent{}
+	_ agent.Upgrader = Agent{}
+)
 
 // events are not registered for resume: the resumed transcript already
 // contains the injected text. Changing them changes the hooks, and Codex
@@ -115,6 +118,15 @@ func (Agent) Answer(event string, res *resolve.Result) any {
 // 0.162.1).
 func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Codex", Capacity: contextLimit * 4, Unit: chunk.Bytes}
+}
+
+// Legacy: a hook without additionalContextLimit, set up by an older
+// version, shows the model about 2,500 tokens of 4 bytes, with some room for
+// how Codex rounds. The hook finds out from hooks.json, and takes the old
+// limit unless the file shows that ctxtra's hooks for the event have the
+// new one: cut text is worse than files dropped with a message.
+func (a Agent) Legacy(event string, _ agent.Input) (agent.Delivery, bool) {
+	return agent.Delivery{Title: "Codex", Capacity: 9000, Unit: chunk.Bytes}, !a.hooks().Limited(event)
 }
 
 var reVersion = regexp.MustCompile(`\b(\d+)\.(\d+)\.(\d+)\b`)

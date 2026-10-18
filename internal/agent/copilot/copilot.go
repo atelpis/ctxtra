@@ -62,11 +62,13 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 
 // Delivery: Copilot drops all hook text, without a word, when it doesn't fit
 // the model's context window; several hooks count together. With Copilot
-// 1.0.98 and an unknown model, 600,000 ASCII characters of plain prose pass
-// but only about 570,000 of text with IDs and numbers, and 150,000 CJK
-// characters. Its tokenizer counts more than the estimate for such text, so
-// the capacity keeps about a third of the window free, which also leaves room
-// for the conversation before Copilot compacts it.
+// 1.0.98 and an unknown model, about 150,000 tokens pass: 600,000 ASCII
+// characters of plain prose, but 150,000 CJK characters, and not 194,000
+// characters of short words and punctuation ("x!x!"). A tokenizer that
+// works on bytes makes at most one token of a byte, so bytes of UTF-8 are an
+// upper bound on the tokens of any text: a capacity of 140,000 bytes leaves
+// room for Copilot's own prompt. It costs English text: about 140,000
+// characters fit, where about 600,000 would.
 func (Agent) Delivery() agent.Delivery {
-	return agent.Delivery{Title: "Copilot", Capacity: 100_000, Unit: chunk.Tokens}
+	return agent.Delivery{Title: "Copilot", Capacity: 140_000, Unit: chunk.Bytes}
 }

@@ -375,16 +375,31 @@ func TestContextLimit(t *testing.T) {
 	if st := c.Status(); !st.OK || len(st.Details) != 0 {
 		t.Errorf("status %+v", st)
 	}
-	// An entry of an older version, without the limit: doctor says so, and
-	// setup adds it.
+	if !c.Limited("SessionStart") || !c.Limited("SubagentStart") {
+		t.Error("not limited as set up")
+	}
+	// An entry of an older version, without the limit: the hook sees it,
+	// doctor says so, and setup adds it.
 	testenv.Write(t, c.Path, strings.Replace(string(b), `,
             "additionalContextLimit": 250000`, "", 1))
 	if st := c.Status(); st.OK || len(st.Details) != 1 ||
 		st.Details[0] != "SessionStart: a ctxtra hook without additionalContextLimit 250000, which cuts the text (run ctxtra setup)" {
 		t.Errorf("without the limit: %+v", st)
 	}
+	if c.Limited("SessionStart") || !c.Limited("SubagentStart") {
+		t.Error("limited without the limit")
+	}
 	r = agent.Report{}
 	if err := c.Apply(fakeBinary(t, h), &r); err != nil || len(r.Changes) != 1 || !c.Status().OK {
 		t.Errorf("setup: %+v, %v, %+v", r, err, c.Status())
+	}
+	// Without a ctxtra hook for the event, or without the file, nothing
+	// shows the limit.
+	if c.Limited("Stop") {
+		t.Error("limited without a hook")
+	}
+	os.Remove(c.Path)
+	if c.Limited("SessionStart") {
+		t.Error("limited without the file")
 	}
 }

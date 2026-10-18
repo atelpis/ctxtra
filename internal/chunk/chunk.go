@@ -15,15 +15,13 @@ type Unit int
 const (
 	Chars Unit = iota // Unicode code points
 	Bytes             // bytes of UTF-8
-	// Tokens is an estimate for agents that count tokens: four ASCII
-	// characters make a token, a character outside the Basic Multilingual
-	// Plane (emoji) three, and every other character one. It is more than
-	// most tokenizers count for Latin and Cyrillic text, and about right for
-	// CJK and emoji.
-	Tokens
 	// UTF16 is UTF-16 code units, what JavaScript's length counts: a
 	// character outside the Basic Multilingual Plane, such as an emoji, is 2.
 	UTF16
+	// JSON is bytes of the text as a JSON string in a hook answer, without
+	// its quotes: UTF-8 with the escapes that jsonorder.Marshal writes, for
+	// example 2 bytes for a quote, a backslash or a line end.
+	JSON
 )
 
 // Len is the length of s in u.
@@ -31,45 +29,51 @@ func (u Unit) Len(s string) int {
 	switch u {
 	case Bytes:
 		return len(s)
-	case Tokens:
-		ascii, other := 0, 0
-		for _, r := range s {
-			switch {
-			case r < utf8.RuneSelf:
-				ascii++
-			case r > 0xFFFF:
-				other += 3
-			default:
-				other++
-			}
-		}
-		return (ascii+3)/4 + other
-	case UTF16:
-		n := 0
-		for _, r := range s {
-			n += u.width(r)
-		}
-		return n
+	case Chars:
+		return utf8.RuneCountInString(s)
 	}
-	return utf8.RuneCountInString(s)
+	n := 0
+	for i, r := range s {
+		n += u.width(s[i:], r)
+	}
+	return n
 }
 
-// width is how many units r is, for Chars and UTF16.
-func (u Unit) width(r rune) int {
-	if u == UTF16 && r > 0xFFFF {
-		return 2
+// width is how many units r, the rune at the start of s, is. Not for Bytes.
+func (u Unit) width(s string, r rune) int {
+	switch u {
+	case UTF16:
+		if r > 0xFFFF {
+			return 2
+		}
+	case JSON:
+		return jsonWidth(s, r)
 	}
 	return 1
+}
+
+// jsonWidth is the length of r, the rune at the start of s, in a JSON
+// string written by encoding/json without HTML escaping.
+func jsonWidth(s string, r rune) int {
+	switch {
+	case r == '"' || r == '\\' || r == '\b' || r == '\f' || r == '\n' || r == '\r' || r == '\t':
+		return 2
+	case r < 0x20 || r == '\u2028' || r == '\u2029':
+		return 6 // \u00XX, \u2028
+	case r == utf8.RuneError:
+		if _, n := utf8.DecodeRuneInString(s); n == 1 {
+			return 6 // a byte that isn't UTF-8: \ufffd, or in newer Go U+FFFD itself
+		}
+	}
+	return utf8.RuneLen(r)
 }
 
 // String names u in messages. UTF-16 units are "characters": they are, but
 // for emoji and rare scripts.
 func (u Unit) String() string {
 	switch u {
-	case Bytes:
+	case Bytes, JSON:
 		return "bytes"
-	case Tokens:
-		return "tokens"
 	}
 	return "characters"
 }
@@ -182,16 +186,9 @@ func split(blocks []Block, size int, u Unit, digits int) [][]piece {
 // cut returns the longest start of s that is at most n long and ends at a
 // line end, and whether that is all of s. When no line fits, it is the
 // longest start that ends between characters, and line is false. It reads
-// at most n units of s. Tokens are cut as characters: n characters are at
-// most n tokens.
+// at most n units of s.
 func (u Unit) cut(s string, n int) (text string, all, line bool) {
 	n = max(n, 0)
-	if u == Tokens {
-		if u.Len(s) <= n {
-			return s, true, true
-		}
-		u = Chars
-	}
 	end := len(s) // after the first n units
 	if u == Bytes {
 		if len(s) <= n {
@@ -204,7 +201,7 @@ func (u Unit) cut(s string, n int) (text string, all, line bool) {
 	} else {
 		count := 0
 		for i, r := range s {
-			if w := u.width(r); count+w > n {
+			if w := u.width(s[i:], r); count+w > n {
 				end = i
 				break
 			} else {

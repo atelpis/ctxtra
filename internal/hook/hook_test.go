@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,10 +25,11 @@ func TestOutputPerAgent(t *testing.T) {
 		"schema: ctxtra/v1\nbindings:\n  - {name: a, match: {global: true}, instructions: [~/a.md], skills: [~/s/deploy]}\n")
 	testenv.Config(t, h, good)
 
+	// As set up: Claude's hooks have slots, which other agents ignore.
 	run := func(agent, event, input string) map[string]any {
 		t.Helper()
 		var out, errOut bytes.Buffer
-		if code := Run(agent, event, strings.NewReader(input), &out, &errOut); code != 0 {
+		if code := RunSlot(agent, event, 0, strings.NewReader(input), &out, &errOut); code != 0 {
 			t.Fatalf("%s: exit %d", agent, code)
 		}
 		var m map[string]any
@@ -172,5 +174,63 @@ func TestClaudeHookUnderCursor(t *testing.T) {
 	testenv.Write(t, filepath.Join(h, ".cursor", "hooks.json"), `{"version": 1, "hooks": {}}`)
 	if out := run(-1, fromCursor); !strings.Contains(out, "Rule A") {
 		t.Errorf("claude under cursor, no cursor hook: %s", out)
+	}
+}
+
+// Hooks that an older version set up, which call this version: they get the
+// text they got then, whole files dropped from the end, and the user and
+// the log are told to run setup.
+func TestOldHooks(t *testing.T) {
+	h := testenv.Home(t)
+	r := testenv.Repo(t, filepath.Join(h, "svc"), "")
+	testenv.Write(t, filepath.Join(h, "small.md"), "SMALL FILE")
+	testenv.Write(t, filepath.Join(h, "big.md"), strings.Repeat("big \"line\" with \\ escapes\n", 1200))
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
+		"schema: ctxtra/v1\nbindings:\n  - {name: a, match: {global: true}, instructions: [~/small.md, ~/big.md]}\n")
+	testenv.Config(t, h, "schema: ctxtra/v1\ninclude: [b.yaml]\n")
+	// Codex's hooks as the previous version wrote them: no
+	// additionalContextLimit.
+	cmd, _ := json.Marshal(agent.Command("/bin/ctxtra", "codex", "SessionStart"))
+	codexHooks := `{"hooks": {"SessionStart": [{"matcher": "startup|clear|compact", "hooks": [{"type": "command", "command": ` +
+		string(cmd) + `, "timeout": 10, "statusMessage": "ctxtra: personal instructions"}]}]}}`
+	testenv.Write(t, filepath.Join(h, ".codex", "hooks.json"), codexHooks)
+	run := func(harness string, slot int, input string) string {
+		var out bytes.Buffer
+		RunSlot(harness, "SessionStart", slot, strings.NewReader(input), &out, io.Discard)
+		return out.String()
+	}
+	input := `{"cwd": "` + r + `"}`
+	for _, c := range []struct {
+		harness, input, limit string
+		slot                  int
+	}{
+		{"claude", input, "Claude Code's limit of 9,000 characters", -1},
+		{"muse", input, "Muse's limit of 13,000 bytes", -1},
+		{"codex", input, "Codex's limit of 9,000 bytes", -1},
+		{"hermes", input, "Hermes's limit of 9,000 characters", -1},
+	} {
+		out := run(c.harness, c.slot, c.input)
+		if !strings.Contains(out, "SMALL FILE") || strings.Contains(out, "big \\\"line") {
+			t.Errorf("%s: %.300s", c.harness, out)
+		}
+		if c.harness != "hermes" && (!strings.Contains(out, "dropped big.md (over "+c.limit+")") || !strings.Contains(out, "run ctxtra setup")) {
+			t.Errorf("%s: user message in %.600s", c.harness, out)
+		}
+		e := logEntries(t, h)
+		last := e[len(e)-1]
+		if len(last.Dropped) != 1 || !slices.ContainsFunc(last.Problems, func(p string) bool { return strings.Contains(p, "run ctxtra setup") }) {
+			t.Errorf("%s: log %+v", c.harness, last)
+		}
+	}
+	// Hooks of this version get it all.
+	limited := strings.Replace(codexHooks, `"timeout": 10,`, `"timeout": 10, "additionalContextLimit": 250000,`, 1)
+	testenv.Write(t, filepath.Join(h, ".codex", "hooks.json"), limited)
+	for harness, input := range map[string]string{"codex": input, "hermes": `{"cwd": "` + r + `", "ctxtra_plugin": 2}`} {
+		if out := run(harness, -1, input); !strings.Contains(out, "big \\\"line") || strings.Contains(out, "run ctxtra setup") {
+			t.Errorf("%s of this version: %.300s", harness, out)
+		}
+	}
+	if out := run("claude", 0, input); !strings.Contains(out, "big \\\"line") || strings.Contains(out, "run ctxtra setup") {
+		t.Errorf("claude slot 0: %.300s", out)
 	}
 }

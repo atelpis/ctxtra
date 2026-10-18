@@ -43,8 +43,11 @@ asks once more after a hook changed, for example after an upgrade that changes t
 Hermes loads the plugin only after you enable it once (`hermes plugins enable ctxtra`).
 `ctxtra setup --remove` removes them.
 
-An upgrade in the same place needs no new setup. If the binary moves, run `ctxtra setup` again, and trust
-the hooks again in Codex; `doctor` shows which binary the hooks run and whether it exists.
+After an upgrade, run `ctxtra setup`. Codex then asks once to trust the changed hooks, and Hermes needs the
+plugin reloaded, or Hermes restarted, if it is running. Until then, hooks set up by an older version get only
+as much text as they got then: files over that are dropped, and the message at session start and the log
+say to run setup. If the binary moves, run `ctxtra setup` again, and trust the hooks again in Codex;
+`doctor` shows which binary the hooks run and whether it exists.
 
 ## Let your agent help
 
@@ -136,10 +139,12 @@ nothing and logs the error.
 ## Limits
 
 - Each agent gets a limited amount of text in full: 360,000 characters in Claude Code and Muse, 1,000,000
-  bytes in Codex, 650,000 bytes in Antigravity, about 100,000 tokens in Copilot (400,000 characters of
-  English), 1,000,000 characters in the others (not measured in Cursor and Devin). Non-Latin text counts
-  more in Codex, Antigravity and Copilot: a CJK character is 3 bytes, and about a token; an emoji counts 2
-characters in Claude Code and Muse, and Muse's hooks count bytes, so Muse fits less non-ASCII text. Above the limit,
+  bytes in Codex, 650,000 bytes in Antigravity, 140,000 bytes in Copilot, 1,000,000 characters in the
+  others (not measured in Cursor and Devin). Copilot counts tokens, and a byte is at most one token in any
+  text, so bytes are a safe limit there; it costs English text, which would fit about four times more.
+  Non-Latin text counts more in Codex, Antigravity and Copilot: a CJK character is 3 bytes; an emoji counts 2
+  characters in Claude Code and Muse. Muse's hooks count bytes as they are in the hook's JSON answer, so
+  Muse fits less non-ASCII text, and less text with many quotes or backslashes. Above the limit,
   whole files are dropped from the end, as with `budget.max-chars`; the message at session start, the log,
   `explain` and `doctor` name them. Several agents cut or drop a large hook output, so ctxtra splits the
   text into labeled parts there: 40 hooks per event in Claude Code and Muse, a plugin callback per part in
@@ -161,10 +166,12 @@ characters in Claude Code and Muse, and Muse's hooks count bytes, so Muse fits l
   also runs the hooks in `~/.claude/settings.json`: with both set up, Claude's hook adds nothing in Devin
   sessions (`doctor` shows it as skipped). Checked by the CLI tests only, not with the real agent, which
   needs a Devin login. Windsurf's old Cascade agent isn't supported: its hooks can't add context.
-- Cursor: the Agent CLI waits for the session-start hook and got 800,000 characters in full (tested with
-  2026.10.12). The desktop app (tested with 3.25) starts the hooks when the first message is sent and
-  doesn't wait for them: text from hooks that end too late is lost for that message. So far it got
-  30,000 characters in full and lost 100,000. It also runs the hooks in `~/.claude/settings.json`: with
+- Cursor: the Agent CLI waits for the session-start hook: with 800,000 characters, every codeword that
+  the [test kit](e2e/cursorkit) samples from the text reached the model (tested with 2026.10.12). That
+  shows the text arrived at those places, not that every line did. The desktop app (tested with 3.25)
+  starts the hooks when the first message is sent and doesn't wait for them: text from hooks that end too
+  late is lost for that message. So far every sampled codeword of 30,000 characters arrived, and all of
+  100,000 characters was lost. It also runs the hooks in `~/.claude/settings.json`: with
   ctxtra's Cursor hook set up, Claude's hook adds nothing there, at once (`doctor` shows it as skipped).
 - OpenCode: only OpenCode 2 (tested with 2.0.29); version 1 plugins have another format. OpenCode adds the
   text to every model request, not to the transcript, so resumed sessions get it too. Its background

@@ -32,6 +32,7 @@ type payload struct {
 	SessionID      string   `json:"session_id"`
 	AgentID        string   `json:"agent_id"` // a Claude subagent, whose session_id is its parent's
 	CursorVersion  string   `json:"cursor_version"`
+	Plugin         int      `json:"ctxtra_plugin"` // the version of ctxtra's Hermes plugin
 }
 
 // Run reads the hook input from in and writes the agent's answer to out. It
@@ -83,10 +84,11 @@ func RunSlot(harness, event string, slot int, in io.Reader, out, errOut io.Write
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
+	input := agent.Input{CursorVersion: p.CursorVersion, Slot: max(slot, -1), Plugin: p.Plugin}
 	// Before anything slow: an agent that doesn't wait for its hooks may run
 	// this one, and all slots of it.
 	if s, ok := a.(agent.Skipper); ok {
-		if why := s.Skip(agent.Input{CursorVersion: p.CursorVersion}); why != "" {
+		if why := s.Skip(input); why != "" {
 			if slot <= 0 {
 				e := Entry{Ts: ts, Harness: harness, Event: event, Dir: dir, Source: p.Source, AgentType: p.AgentType, Skipped: why}
 				if r := gitrepo.Identify(dir); r != nil { // for doctor, which finds runs by repository
@@ -99,10 +101,10 @@ func RunSlot(harness, event string, slot int, in io.Reader, out, errOut io.Write
 		}
 	}
 	if sl, ok := a.(agent.Slotted); ok && slot >= 0 {
-		runSlot(a, sl, slot, ts, event, p, dir, out, errOut)
+		runSlot(a, sl, slot, ts, event, p, input, dir, out, errOut)
 		return 0
 	}
-	res, e := session(a, ts, event, p, dir)
+	res, e := session(a, ts, event, p, input, dir)
 	logEntry(e)
 	for _, m := range res.Missing {
 		fmt.Fprintf(errOut, "ctxtra: bound file not found: %s\n", m)
@@ -112,13 +114,25 @@ func RunSlot(harness, event string, slot int, in io.Reader, out, errOut io.Write
 }
 
 // session resolves what a session in dir gets, with the files that the
-// agent wouldn't get in full dropped, and its log entry.
-func session(a agent.Agent, ts, event string, p payload, dir string) (*resolve.Result, Entry) {
+// agent wouldn't get in full dropped, and its log entry. A hook that an
+// older version set up gets what it got then, and the user and the log are
+// told to run setup.
+func session(a agent.Agent, ts, event string, p payload, in agent.Input, dir string) (*resolve.Result, Entry) {
 	// Before resolving: the session lists the skill as it is on disk.
 	skillErr := skill.Refresh()
 	res, _ := resolve.Session(dir, paths.ConfigPath())
-	a.Delivery().Fit(res)
+	d, upgrade := a.Delivery(), ""
+	if u, ok := a.(agent.Upgrader); ok {
+		if old, ok := u.Legacy(event, in); ok {
+			d, upgrade = old, fmt.Sprintf("the hook is from an older version of ctxtra, with %s; run ctxtra setup", old.Over())
+			res.Notices = append(slices.Clip(res.Notices), upgrade)
+		}
+	}
+	d.Fit(res)
 	e := newEntry(ts, a.Name(), event, p, res, resolve.Chars(res.Render()))
+	if upgrade != "" {
+		e.Problems = append(slices.Clip(e.Problems), upgrade)
+	}
 	if skillErr != nil {
 		e.Problems = append(slices.Clip(e.Problems), "can't update the ctxtra skill: "+skillErr.Error())
 	}

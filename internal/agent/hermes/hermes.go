@@ -27,10 +27,17 @@ import (
 // Agent is Hermes Agent.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent    = Agent{}
+	_ agent.Upgrader = Agent{}
+)
 
 // pluginName is the plugin's name in plugin.yaml and in plugins.enabled.
 const pluginName = "ctxtra"
+
+// pluginVersion is sent by the plugin as ctxtra_plugin in the hook input.
+// Plugins of older versions send none.
+const pluginVersion = 2
 
 const enableNote = "hermes: the plugin runs only after you enable it: run `hermes plugins enable " + pluginName +
 	"`. It applies from the next session."
@@ -186,6 +193,12 @@ func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Hermes", Capacity: min(1_000_000, slots*size), Chunk: size, Slots: slots}
 }
 
+// Legacy: a plugin of an older version adds the text with one callback,
+// which gets as much as Hermes doesn't spill.
+func (Agent) Legacy(_ string, in agent.Input) (agent.Delivery, bool) {
+	return agent.Delivery{Title: "Hermes", Capacity: min(partChars, spillChars())}, in.Plugin < pluginVersion
+}
+
 // spillChars is hooks.output_spill.max_chars in config.yaml, read the way
 // Hermes reads it: a whole number of at least 1, else 10,000. With spilling
 // turned off, it is the largest int.
@@ -281,7 +294,7 @@ def _run(event):
     try:
         out = subprocess.run(
             [BIN, "hook", "hermes", event],
-            input=json.dumps({"cwd": _cwd()}),
+            input=json.dumps({"cwd": _cwd(), "ctxtra_plugin": ` + strconv.Itoa(pluginVersion) + `}),
             capture_output=True,
             text=True,
             timeout=10,

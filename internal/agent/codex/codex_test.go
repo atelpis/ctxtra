@@ -77,3 +77,30 @@ func TestVersion(t *testing.T) {
 		}
 	}
 }
+
+// The hook takes the old limit unless hooks.json shows ctxtra's hooks for
+// the event with additionalContextLimit, as setup writes them, also in
+// $CODEX_HOME.
+func TestLegacy(t *testing.T) {
+	h := testenv.Home(t)
+	t.Setenv("CODEX_HOME", filepath.Join(h, "codex-home"))
+	bin := filepath.Join(h, "bin", "ctxtra")
+	var a Agent
+	if _, old := a.Legacy("SessionStart", agent.Input{}); !old {
+		t.Error("without hooks.json: not old")
+	}
+	if err := a.Setup(agent.Options{Binary: bin}, &agent.Report{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range []string{"SessionStart", "SubagentStart"} {
+		if _, old := a.Legacy(ev, agent.Input{}); old {
+			t.Errorf("%s as set up: old", ev)
+		}
+	}
+	// A command ctxtra doesn't write, with the limit: not recognized.
+	testenv.Write(t, a.ConfigPath(), `{"hooks": {"SessionStart": [{"hooks": [{"type": "command", `+
+		`"command": "exec ctxtra hook codex SessionStart", "additionalContextLimit": 250000}]}]}}`)
+	if d, old := a.Legacy("SessionStart", agent.Input{}); !old || d.Capacity != 9000 {
+		t.Errorf("hand-written hook: %v, %+v", old, d)
+	}
+}

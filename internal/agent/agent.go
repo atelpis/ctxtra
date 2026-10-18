@@ -43,21 +43,18 @@ type Delivery struct {
 	// Chunk is the largest part of the text in one hook output; 0 when the
 	// agent gets the whole text in one.
 	Chunk int
-	// ChunkBytes: Chunk counts bytes of UTF-8, not Unit (Muse).
-	ChunkBytes bool
+	// ChunkJSON: Chunk counts the part as it is in the hook answer, in
+	// chunk.JSON, not in Unit (Muse).
+	ChunkJSON bool
 	// Slots is how many parts the agent takes at one session start; 0 for any
 	// number.
 	Slots int
 }
 
 // Over names the limit, for messages: "Claude Code's limit of 360,000
-// characters", "Copilot's limit of about 100,000 tokens".
+// characters", "Copilot's limit of 140,000 bytes".
 func (d Delivery) Over() string {
-	about := ""
-	if d.Unit == chunk.Tokens {
-		about = "about "
-	}
-	return fmt.Sprintf("%s's limit of %s%s %s", d.Title, about, thousands(d.Capacity), d.Unit)
+	return fmt.Sprintf("%s's limit of %s %s", d.Title, thousands(d.Capacity), d.Unit)
 }
 
 // Fits reports whether the agent gets all of res.
@@ -74,8 +71,8 @@ func (d Delivery) Fit(res *resolve.Result) { res.Fit(d.Fits, d.Over()) }
 // Chunks is the text of res in parts of at most d.Chunk.
 func (d Delivery) Chunks(res *resolve.Result) []string {
 	u := d.Unit
-	if d.ChunkBytes {
-		u = chunk.Bytes
+	if d.ChunkJSON {
+		u = chunk.JSON
 	}
 	return chunk.Split(res.Blocks(), d.Chunk, u)
 }
@@ -103,9 +100,19 @@ type Skipper interface {
 	Skip(in Input) string
 }
 
-// Input is the part of a hook's input that tells which agent runs it.
+// Upgrader is an agent whose hook, as an older version of ctxtra set it up,
+// gets less text than Delivery. Legacy is what such a hook gets, and ok is
+// false for a hook of this version.
+type Upgrader interface {
+	Legacy(event string, in Input) (d Delivery, ok bool)
+}
+
+// Input is the part of a hook's input and command line that tells which
+// agent and which setup runs it.
 type Input struct {
 	CursorVersion string // set by Cursor, also when it runs another agent's hooks
+	Slot          int    // the hook's --slot, or -1 without one
+	Plugin        int    // the version of the plugin that runs ctxtra (Hermes), 0 when it doesn't say
 }
 
 // AdditionalContext is the hook answer format that Claude Code, Codex CLI and

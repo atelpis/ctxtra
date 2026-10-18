@@ -24,7 +24,7 @@ func TestLogFIFODoesNotBlock(t *testing.T) {
 	done := make(chan string, 1)
 	go func() {
 		var out bytes.Buffer
-		Run("claude", "SessionStart", strings.NewReader(`{"cwd": "`+h+`"}`), &out, &bytes.Buffer{})
+		RunSlot("claude", "SessionStart", 0, strings.NewReader(`{"cwd": "`+h+`"}`), &out, &bytes.Buffer{})
 		done <- out.String()
 	}()
 	select {

@@ -20,8 +20,9 @@ import (
 type Agent struct{}
 
 var (
-	_ agent.Agent   = Agent{}
-	_ agent.Slotted = Agent{}
+	_ agent.Agent    = Agent{}
+	_ agent.Slotted  = Agent{}
+	_ agent.Upgrader = Agent{}
 )
 
 // events are not registered for resume: the resumed transcript already
@@ -85,4 +86,11 @@ func (Agent) SlotAnswer(event, text, summary string) any {
 // of up to 9,000 each (measured with Claude Code 2.1.300).
 func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Claude Code", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 9000, Slots: 40}
+}
+
+// Legacy: a hook without a slot, set up by an older version, is the only
+// one of its event, and gets one part.
+func (a Agent) Legacy(_ string, in agent.Input) (agent.Delivery, bool) {
+	d := a.Delivery()
+	return agent.Delivery{Title: d.Title, Capacity: d.Chunk, Unit: d.Unit}, in.Slot < 0
 }

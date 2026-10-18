@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/atelpis/ctxtra/internal/agent"
+	"github.com/atelpis/ctxtra/internal/agent/registry"
+	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
@@ -83,7 +87,7 @@ func logEntries(t *testing.T, h string) []Entry {
 }
 
 // The slots of one session start resolve once, add the parts in order, and
-// leave no copy of the text behind.
+// leave the snapshot readable by the user only.
 func TestSlots(t *testing.T) {
 	h, r := bigSession(t, 100_000)
 	input := `{"cwd": "` + r + `", "session_id": "s1", "source": "startup"}`
@@ -123,8 +127,9 @@ func TestSlots(t *testing.T) {
 	if st, _ := os.Stat(filepath.Join(slots, dirs[0].Name())); st.Mode().Perm() != 0o700 {
 		t.Errorf("folder mode %v", st.Mode())
 	}
-	if _, err := os.Stat(filepath.Join(slots, dirs[0].Name(), "snapshot.json")); !os.IsNotExist(err) {
-		t.Errorf("snapshot left: %v", err)
+	gens := generations(filepath.Join(slots, dirs[0].Name()))
+	if st, err := os.Stat(filepath.Join(slots, dirs[0].Name(), gens[0], "snapshot.json")); len(gens) != 1 || err != nil || st.Mode().Perm() != 0o600 {
+		t.Errorf("generations %v, snapshot %v, %v", gens, st, err)
 	}
 
 	// A subagent of the same session is a session start of its own, and
@@ -138,38 +143,259 @@ func TestSlots(t *testing.T) {
 	}
 }
 
-// The snapshot is readable by the user only, a snapshot of an earlier
-// session start isn't used, and folders of earlier session starts go.
+// age makes the snapshot of the newest generation in d written and read
+// longer than joinWindow ago, and the folders older than keepSlots.
+func age(t *testing.T, d string) {
+	t.Helper()
+	gens := generations(d)
+	gen := filepath.Join(d, gens[len(gens)-1])
+	b, err := os.ReadFile(filepath.Join(gen, "snapshot.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var s snapshot
+	if err := json.Unmarshal(b, &s); err != nil {
+		t.Fatal(err)
+	}
+	s.Made = s.Made.Add(-joinWindow - time.Second)
+	b, _ = json.Marshal(s)
+	testenv.Write(t, filepath.Join(gen, "snapshot.json"), string(b))
+	read := time.Now().Add(-joinWindow - time.Second)
+	os.Chtimes(filepath.Join(gen, "snapshot.json"), read, read)
+	old := time.Now().Add(-2 * keepSlots)
+	os.Chtimes(gen, old, old)
+	os.Chtimes(d, old, old)
+}
+
+// The snapshot is readable by the user only and pinned for joinWindow: a
+// slot joins it also when its number did, in the next round. Later, a slot
+// starts a new generation, and folders of earlier session starts go.
 func TestSnapshot(t *testing.T) {
 	h, r := bigSession(t, 1000)
 	p := payload{Cwd: r, SessionID: "s2", Source: "startup"}
 	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", p, r))
 	calls := 0
 	mk := func() snapshot { calls++; return snapshot{Parts: []string{fmt.Sprint(calls)}} }
-	if s, err := shared(d, mk); err != nil || s.Parts[0] != "1" {
-		t.Fatalf("first: %+v, %v", s, err)
+	at, s, err := shared(d, 0, mk)
+	if err != nil || s.Parts[0] != "1" || at.round != 0 || at.first {
+		t.Fatalf("first: %+v, %+v, %v", at, s, err)
 	}
-	if st, err := os.Stat(filepath.Join(d, "snapshot.json")); err != nil || st.Mode().Perm() != 0o600 {
+	if st, err := os.Stat(filepath.Join(at.gen, "snapshot.json")); err != nil || st.Mode().Perm() != 0o600 {
 		t.Errorf("snapshot: %v, %v", st, err)
 	}
-	if s, _ := shared(d, mk); s.Parts[0] != "1" {
-		t.Errorf("second: %+v", s)
+	for _, f := range []string{d, at.gen} {
+		if st, err := os.Stat(f); err != nil || st.Mode().Perm() != 0o700 {
+			t.Errorf("%s: %v, %v", f, st, err)
+		}
 	}
+	for _, c := range []struct {
+		slot, round int
+		first       bool
+	}{{1, 0, false}, {0, 1, true}, {1, 1, false}, {1, 2, true}, {0, 2, false}} {
+		if a, s, _ := shared(d, c.slot, mk); s.Parts[0] != "1" || a.gen != at.gen || a.round != c.round || a.first != c.first {
+			t.Errorf("slot %d: %+v, %+v, want round %d", c.slot, a, s, c.round)
+		}
+	}
+	// After joinWindow: a new generation, resolved again.
+	age(t, d)
+	if a, s, _ := shared(d, 0, mk); s.Parts[0] != "2" || a.gen == at.gen || a.round != 0 {
+		t.Errorf("after joinWindow: %+v, %+v", a, s)
+	}
+	// Folders of earlier session starts go, unless their lock is held; the
+	// session start's own folder and its young generations stay.
 	old := time.Now().Add(-time.Hour)
-	os.Chtimes(filepath.Join(d, "snapshot.json"), old, old)
-	if s, _ := shared(d, mk); s.Parts[0] != "2" {
-		t.Errorf("after an hour: %+v", s)
+	stale, busy := filepath.Join(h, ".ctxtra", "slots", "stale"), filepath.Join(h, ".ctxtra", "slots", "busy")
+	testenv.Write(t, filepath.Join(stale, "0000000000000001", "snapshot.json"), "{}")
+	unlock, err := fsutil.LockTimeout(filepath.Join(busy, "lock"), 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	stale := filepath.Join(h, ".ctxtra", "slots", "stale")
-	testenv.Write(t, filepath.Join(stale, "snapshot.json"), "{}")
-	os.Chtimes(stale, old, old)
-	os.Chtimes(filepath.Join(d, "snapshot.json"), old, old)
-	shared(d, mk)
+	defer unlock()
+	oldGen := filepath.Join(d, fmt.Sprintf("%016x", old.UnixNano()))
+	testenv.Write(t, filepath.Join(oldGen, "snapshot.json"), "{}")
+	for _, f := range []string{stale, busy, oldGen} {
+		ageAll(f, old)
+	}
+	age(t, d)
+	shared(d, 2, mk)
 	if _, err := os.Stat(stale); !os.IsNotExist(err) {
 		t.Errorf("stale folder left: %v", err)
 	}
+	if _, err := os.Stat(oldGen); !os.IsNotExist(err) {
+		t.Errorf("old generation left: %v", err)
+	}
+	if _, err := os.Stat(busy); err != nil {
+		t.Errorf("a folder whose lock is held: %v", err)
+	}
+	if n := len(generations(d)); n != 3 {
+		t.Errorf("%d generations, want 3", n)
+	}
 	if slotKey("claude", "SessionStart", payload{Cwd: r}, r) != "" {
 		t.Error("a key without a session ID")
+	}
+}
+
+// Cleaning never deletes the folder of the session start that cleans, nor
+// its lock while it resolves (Codex's review).
+func TestCleanCurrentFolder(t *testing.T) {
+	d := filepath.Join(t.TempDir(), "slots", "current")
+	if _, _, err := shared(d, 0, func() snapshot { return snapshot{Parts: []string{"old"}} }); err != nil {
+		t.Fatal(err)
+	}
+	age(t, d)
+	at, _, err := shared(d, 0, func() snapshot {
+		if _, err := os.Stat(filepath.Join(d, "lock")); err != nil {
+			t.Error("the lock was deleted while resolving:", err)
+		}
+		return snapshot{Parts: []string{"new"}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range []string{d, at.gen} {
+		if st, err := os.Stat(f); err != nil || st.Mode().Perm() != 0o700 {
+			t.Errorf("%s: %v %v", f, st, err)
+		}
+	}
+}
+
+// While one slot resolves, another slot of an old folder waits, and then
+// joins its generation (Codex's review).
+func TestCleanKeepsLock(t *testing.T) {
+	d := filepath.Join(t.TempDir(), "slots", "current")
+	shared(d, 0, func() snapshot { return snapshot{Parts: []string{"old"}} })
+	age(t, d)
+	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go func() {
+		shared(d, 0, func() snapshot { close(entered); <-release; return snapshot{Parts: []string{"first"}} })
+		close(done)
+	}()
+	<-entered
+	overlap, second := make(chan struct{}), make(chan snapshot)
+	go func() {
+		_, s, _ := shared(d, 1, func() snapshot { close(overlap); return snapshot{Parts: []string{"second"}} })
+		second <- s
+	}()
+	select {
+	case <-overlap:
+		t.Error("a second slot resolved while the first holds the lock")
+	case <-time.After(time.Second):
+	}
+	close(release)
+	<-done
+	if s := <-second; s.Parts[0] != "first" {
+		t.Errorf("second slot: %+v", s)
+	}
+}
+
+// A session start that didn't finish, slot 0 of two parts only, and a
+// second one within joinWindow whose slot 1 comes first: the second gets
+// both parts of the first snapshot, never a mix (Codex's second review).
+func TestSnapshotPinned(t *testing.T) {
+	d := filepath.Join(t.TempDir(), "slots", "key")
+	old := func() snapshot { return snapshot{Parts: []string{"OLD-0", "OLD-1"}} }
+	fresh := func() snapshot { return snapshot{Parts: []string{"NEW-0", "NEW-1"}} }
+	first, _, err := shared(d, 0, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a1, s1, _ := shared(d, 1, fresh)
+	a0, s0, _ := shared(d, 0, fresh)
+	if a1.gen != first.gen || a0.gen != first.gen || s1.Parts[1] != "OLD-1" || s0.Parts[0] != "OLD-0" {
+		t.Errorf("second start: slot 1 %+v %v, slot 0 %+v %v", a1, s1.Parts, a0, s0.Parts)
+	}
+	// Slot 1 is in round 0, after slot 0 of the first start, and slot 0 in
+	// round 1, which it is the first of: it logs.
+	if a1.round != 0 || a0.round != 1 || !a0.first {
+		t.Errorf("rounds: slot 1 %+v, slot 0 %+v", a1, a0)
+	}
+}
+
+// The pin counts from when a slot last read the snapshot: a session start
+// that begins while the window ends still reads it with all its slots.
+func TestSnapshotPinnedByReads(t *testing.T) {
+	d := filepath.Join(t.TempDir(), "slots", "key")
+	first, _, err := shared(d, 0, func() snapshot { return snapshot{Parts: []string{"OLD-0", "OLD-1"}} })
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(first.gen, "snapshot.json")
+	almost := time.Now().Add(-joinWindow + 200*time.Millisecond)
+	os.Chtimes(path, almost, almost)
+	shared(d, 1, nil) // slot 1 of a second start, just within the window
+	time.Sleep(300 * time.Millisecond)
+	at, s, _ := shared(d, 0, func() snapshot { return snapshot{Parts: []string{"NEW-0", "NEW-1"}} })
+	if at.gen != first.gen || s.Parts[0] != "OLD-0" {
+		t.Errorf("slot 0 of the second start: %+v %v", at, s.Parts)
+	}
+}
+
+// After joinWindow, a session start that didn't finish doesn't feed a
+// later one: slot 0 ran alone, the file changed, and the next session
+// start gets the new text (Codex's review). Within joinWindow it gets the
+// pinned text, all of it, and logs that it did, once.
+func TestSnapshotGeneration(t *testing.T) {
+	h, r := bigSession(t, 1000)
+	input := `{"cwd": "` + r + `", "session_id": "same", "source": "clear"}`
+	p := payload{Cwd: r, SessionID: "same", Source: "clear"}
+	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", p, r))
+	RunSlot("claude", "SessionStart", 0, strings.NewReader(input), io.Discard, io.Discard)
+	testenv.Write(t, filepath.Join(h, "big.md"), "NEW-GENERATION-CONTEXT")
+	if got := runSlots(t, "SessionStart", input); strings.Contains(got[0].text, "NEW-GENERATION-CONTEXT") || !strings.Contains(got[0].text, "big L00000") {
+		t.Errorf("within joinWindow: %q", got[0].text)
+	}
+	e := logEntries(t, h)
+	if len(e) != 2 || e[0].Reused != "" || !strings.HasPrefix(e[1].Reused, "the text of a session start ") || len(e[1].Files) != 2 {
+		t.Errorf("log %+v", e)
+	}
+	age(t, d)
+	if got := runSlots(t, "SessionStart", input); !strings.Contains(got[0].text, "NEW-GENERATION-CONTEXT") {
+		t.Errorf("after joinWindow: %q", got[0].text)
+	}
+	if e := logEntries(t, h); len(e) != 3 || e[2].Reused != "" {
+		t.Errorf("log %+v", e)
+	}
+}
+
+// Two session starts of a text in several parts overlap: slots 0 to 9 of
+// the first have joined and still run when the second starts, after the
+// file changed. Every part of the second is from the first's snapshot, in
+// order, each once; the second logs once, and resolves nothing.
+func TestOverlappingGenerations(t *testing.T) {
+	h, r := bigSession(t, 30_000)
+	input := `{"cwd": "` + r + `", "session_id": "same", "source": "resume"}`
+	p := payload{Cwd: r, SessionID: "same", Source: "resume"}
+	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", p, r))
+	claude, _ := registry.Get("claude")
+	var want []string
+	for k := range 10 {
+		_, s, err := shared(d, k, func() snapshot {
+			res, e := session(claude, "", "SessionStart", p, agent.Input{Slot: k}, r)
+			return snapshot{Parts: claude.Delivery().Chunks(res), Entry: &e}
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = s.Parts
+	}
+	if len(want) < 4 {
+		t.Fatalf("%d parts", len(want))
+	}
+	testenv.Write(t, filepath.Join(h, "big.md"), "NEW-GENERATION-CONTEXT")
+	got := runSlots(t, "SessionStart", input)
+	for k, w := range want {
+		if got[k].text != w {
+			t.Errorf("part %d isn't the pinned one: %.80q", k+1, got[k].text)
+		}
+	}
+	if got[len(want)].text != "" {
+		t.Errorf("an extra part: %.80q", got[len(want)].text)
+	}
+	if e := logEntries(t, h); len(e) != 1 || e[0].Reused == "" {
+		t.Errorf("log %+v", e)
+	}
+	if gens := generations(d); len(gens) != 1 {
+		t.Errorf("generations %v, want 1", gens)
 	}
 }
 
@@ -186,8 +412,8 @@ func TestSlotsWithoutSession(t *testing.T) {
 	if n < 4 || !strings.Contains(got[n-1].text, "LAST FILE") {
 		t.Errorf("%d parts", n)
 	}
-	if n := len(logEntries(t, h)); n != 1 {
-		t.Errorf("%d log entries, want 1", n)
+	if e := logEntries(t, h); len(e) != 1 {
+		t.Errorf("%d log entries, want 1: %+v", len(e), e)
 	}
 	if _, err := os.Stat(filepath.Join(h, ".ctxtra", "slots")); !os.IsNotExist(err) {
 		t.Errorf("slot folder: %v", err)
@@ -238,5 +464,47 @@ func TestSlotsReadOnlyState(t *testing.T) {
 	b, err := os.ReadFile(logPath)
 	if err != nil || strings.Count(string(b), "\n") != 1 || !strings.Contains(string(b), "the hooks can't share the session's text") {
 		t.Errorf("log: %v\n%s", err, b)
+	}
+}
+
+// ageAll sets the time of path and of everything in it: nothing used it
+// since then.
+func ageAll(path string, at time.Time) {
+	filepath.WalkDir(path, func(p string, _ fs.DirEntry, err error) error {
+		if err == nil {
+			os.Chtimes(p, at, at)
+		}
+		return nil
+	})
+}
+
+// A pin slides with its reads, so a generation can be older than keepSlots
+// and still pinned: the cleanup of another session start keeps it, and the
+// slots of the burst all get its text.
+func TestPinSurvivesOtherCleanup(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "slots")
+	d := filepath.Join(parent, "a")
+	text := func(parts ...string) func() snapshot { return func() snapshot { return snapshot{Parts: parts} } }
+	at, _, err := shared(d, 0, text("OLD-0", "OLD-1", "OLD-2"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Minute)
+	aged := filepath.Join(d, fmt.Sprintf("%016x", old.UnixNano()))
+	if err := os.Rename(at.gen, aged); err != nil {
+		t.Fatal(err)
+	}
+	os.Chtimes(d, old, old)
+	if _, s, err := shared(d, 1, text("UNEXPECTED")); err != nil || s.Parts[1] != "OLD-1" {
+		t.Fatalf("slot 1 didn't join the pin: %+v %v", s, err)
+	}
+	if _, _, err := shared(filepath.Join(parent, "b"), 0, text("OTHER")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(aged, "snapshot.json")); err != nil {
+		t.Errorf("another session start's cleanup deleted the pinned snapshot: %v", err)
+	}
+	if _, s, err := shared(d, 2, text("NEW-0", "NEW-1", "NEW-2")); err != nil || s.Parts[2] != "OLD-2" {
+		t.Errorf("slot 2: %+v %v, want OLD-2 from the pin", s, err)
 	}
 }

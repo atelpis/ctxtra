@@ -6,6 +6,7 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/chunk"
+	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
 
@@ -54,9 +55,6 @@ func TestDelivery(t *testing.T) {
 	if got := (agent.Delivery{Title: "Codex", Capacity: 1_000_000, Unit: chunk.Bytes}).Over(); got != "Codex's limit of 1,000,000 bytes" {
 		t.Errorf("over: %q", got)
 	}
-	if got := (agent.Delivery{Title: "Copilot", Capacity: 100_000, Unit: chunk.Tokens}).Over(); got != "Copilot's limit of about 100,000 tokens" {
-		t.Errorf("over: %q", got)
-	}
 	// Three files of 140,000 characters: two fit 40 parts of 9,000, the third doesn't.
 	res := &resolve.Result{Dir: "/x"}
 	for _, n := range []string{"x", "y", "z"} {
@@ -70,17 +68,20 @@ func TestDelivery(t *testing.T) {
 	if n := len(d.Chunks(res)); n > 40 || n < 30 {
 		t.Errorf("%d parts", n)
 	}
-	// Muse's parts count bytes: CJK text needs three times the parts.
-	muse := agent.Delivery{Title: "Muse", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 13_000, ChunkBytes: true, Slots: 40}
-	cjk := &resolve.Result{Dir: "/x", Files: []resolve.Hit{{Path: "/c.md", Global: true, Content: strings.Repeat("観測\n", 30_000)}}}
-	parts := muse.Chunks(cjk)
-	for _, p := range parts {
-		if len(p) > 13_000 {
-			t.Errorf("part of %d bytes", len(p))
+	// Muse's parts count bytes of JSON: CJK text needs three times the
+	// parts, and so do quotes and backslashes.
+	muse := agent.Delivery{Title: "Muse", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 13_000, ChunkJSON: true, Slots: 40}
+	for _, line := range []string{"観測", `\"\"\"`} {
+		res := &resolve.Result{Dir: "/x", Files: []resolve.Hit{{Path: "/c.md", Global: true, Content: strings.Repeat(line+"\n", 30_000)}}}
+		parts := muse.Chunks(res)
+		for _, p := range parts {
+			if b, _ := jsonorder.Marshal(p); len(b)-2 > 13_000 {
+				t.Errorf("%q: part of %d bytes of JSON", line, len(b)-2)
+			}
 		}
-	}
-	if len(parts) < 17 {
-		t.Errorf("%d parts for 210,000 bytes", len(parts))
+		if len(parts) < 17 {
+			t.Errorf("%q: %d parts for over 210,000 bytes of JSON", line, len(parts))
+		}
 	}
 	// Parts that don't fit the slots, below the capacity: a smaller chunk.
 	small := agent.Delivery{Title: "Hermes", Capacity: 1_000_000, Chunk: 5000, Slots: 40}

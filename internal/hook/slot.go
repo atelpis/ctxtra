@@ -7,9 +7,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -30,12 +32,31 @@ import (
 // for the snapshot, and orderWait, counted from when the slot has it: 8.1 s,
 // under the 10 s hook timeout. The slot that resolves waits for the
 // resolving instead of snapshotWait.
+//
+// Nothing in the hook input tells two session starts with the same session
+// ID, event and source apart, for example two /clear in a row, or a retry
+// after a start that didn't finish. So a snapshot is pinned: every slot that
+// comes within joinWindow after the snapshot was written, or after the last
+// slot read it, reads it too, also when a slot with its number already did,
+// and a slot that comes later starts a new generation, a folder of its own,
+// and resolves. The slots of one session start begin within milliseconds of
+// each other, and under load within a second or so; slots that waited
+// snapshotWait for the lock join at once, because the age counts from when
+// the snapshot was written. So the parts of two snapshots mix only when two
+// slots of one session start begin more than joinWindow apart. The cost: a
+// second session start with the same key within joinWindow gets the text as
+// it was at the first one, and the log says so.
+//
+// Each slot that joins a generation gets a round, the number of slots with
+// its number that joined before it, and orders itself after the slot before
+// it in the same round, so a second session start never waits for the ended
+// slots of the first one.
 const (
 	snapshotWait = 6 * time.Second // the most a slot waits for the snapshot
 	orderWait    = 2 * time.Second // the most a slot waits for the slot before it
 	orderGap     = 20 * time.Millisecond
-	snapshotAge  = 20 * time.Second // an older snapshot is from an earlier session start
-	keepSlots    = time.Minute      // folders of earlier session starts are deleted after this
+	joinWindow   = 3 * time.Second // a snapshot is pinned this long after it was last read
+	keepSlots    = time.Minute     // folders of earlier session starts are deleted after this
 	maxSnapshot  = 16 << 20
 )
 
@@ -44,16 +65,27 @@ const (
 // ended. A variable for tests, which run slots in one process.
 var endLock = func(unlock func()) {}
 
-// snapshot is what all slots of one session start answer.
+// snapshot is what all slots of one session start answer, and its log
+// entry, which a later session start that reads it logs again.
 type snapshot struct {
-	Parts   []string `json:"parts"`
-	Summary string   `json:"summary,omitempty"`
-	Missing []string `json:"missing,omitempty"`
+	Parts   []string  `json:"parts"`
+	Summary string    `json:"summary,omitempty"`
+	Missing []string  `json:"missing,omitempty"`
+	Made    time.Time `json:"made"`
+	Entry   *Entry    `json:"entry,omitempty"`
 }
 
-func runSlot(a agent.Agent, sl agent.Slotted, slot int, ts, event string, p payload, dir string, out, errOut io.Writer) {
+// seat is where a slot joined: its generation, its round there, and whether
+// it is the first slot of a round after the first, which logs.
+type seat struct {
+	gen   string
+	round int
+	first bool
+}
+
+func runSlot(a agent.Agent, sl agent.Slotted, slot int, ts, event string, p payload, in agent.Input, dir string, out, errOut io.Writer) {
 	resolveNow := func() (snapshot, Entry) {
-		res, e := session(a, ts, event, p, dir)
+		res, e := session(a, ts, event, p, in, dir)
 		return snapshot{Parts: a.Delivery().Chunks(res), Summary: agent.Summary(res), Missing: res.Missing}, e
 	}
 	var snap snapshot
@@ -61,23 +93,33 @@ func runSlot(a agent.Agent, sl agent.Slotted, slot int, ts, event string, p payl
 	key := slotKey(a.Name(), event, p, dir)
 	err := errors.New("no session ID")
 	if key != "" {
-		d := filepath.Join(paths.StateDir(), "slots", key)
-		if unlock, err := fsutil.LockTimeout(filepath.Join(d, fmt.Sprintf("run.%d", slot)), 100*time.Millisecond); err == nil {
-			defer endLock(unlock)
-		}
-		snap, err = shared(d, func() snapshot {
+		var at seat
+		at, snap, err = shared(filepath.Join(paths.StateDir(), "slots", key), slot, func() snapshot {
 			s, e := resolveNow()
 			resolved = &e
+			s.Entry = &e
 			return s
 		})
 		if err == nil {
-			if resolved != nil {
+			mark := func(what string, k int) string {
+				return filepath.Join(at.gen, fmt.Sprintf("%s.%d.%d", what, k, at.round))
+			}
+			if unlock, err := fsutil.LockTimeout(mark("run", slot), 100*time.Millisecond); err == nil {
+				defer endLock(unlock)
+			}
+			switch {
+			case resolved != nil:
 				logEntry(*resolved)
+			case at.first && snap.Entry != nil:
+				e := *snap.Entry
+				e.Ts = ts
+				e.Reused = fmt.Sprintf("the text of a session start %d ms earlier", time.Since(snap.Made).Milliseconds())
+				logEntry(e)
 			}
 			if slot > 0 && slot < len(snap.Parts) {
-				waitFor(d, slot-1, time.Now().Add(orderWait))
+				waitFor(mark("done", slot-1), mark("run", slot-1), time.Now().Add(orderWait))
 			}
-			defer finish(d, slot, a.Delivery().Slots)
+			defer finish(at, slot)
 		}
 	}
 	if err != nil {
@@ -121,57 +163,173 @@ func slotKey(harness, event string, p payload, dir string) string {
 	return hex.EncodeToString(h.Sum(nil))[:32]
 }
 
-// shared returns the snapshot in folder d, or else makes it with compute
-// and writes it, readable by the user only: it is the text of the user's
-// files.
-func shared(d string, compute func() snapshot) (snapshot, error) {
+// shared returns where slot joins in folder d, and the snapshot there. When
+// the newest generation's snapshot is older than joinWindow, shared makes a
+// new generation with compute and writes the snapshot there, readable by
+// the user only: it is the text of the user's files. Folders are readable by
+// the user only too.
+func shared(d string, slot int, compute func() snapshot) (seat, snapshot, error) {
 	unlock, err := fsutil.LockTimeout(filepath.Join(d, "lock"), snapshotWait)
 	if err != nil {
-		return snapshot{}, err
+		return seat{}, snapshot{}, err
 	}
 	defer unlock()
-	path := filepath.Join(d, "snapshot.json")
-	if st, err := os.Lstat(path); err == nil && time.Since(st.ModTime()) < snapshotAge {
-		var s snapshot
-		b, err := fsutil.ReadBounded(path, maxSnapshot)
-		if err == nil && json.Unmarshal(b, &s) == nil {
-			return s, nil
+	gens := generations(d)
+	if len(gens) > 0 {
+		gen := filepath.Join(d, gens[len(gens)-1])
+		if at, s, ok := join(gen, slot); ok {
+			return at, s, nil
 		}
 	}
-	clean(filepath.Dir(d))
-	// Marks of an earlier session start with the same key.
-	if old, err := filepath.Glob(filepath.Join(d, "done.*")); err == nil {
-		for _, f := range old {
-			os.Remove(f)
-		}
+	clean(d, gens)
+	// A new name, later than every one before: generations sort by name.
+	name := fmt.Sprintf("%016x", time.Now().UnixNano())
+	if len(gens) > 0 && name <= gens[len(gens)-1] {
+		return seat{}, snapshot{}, fmt.Errorf("%s: a generation from the future", d)
+	}
+	at := seat{gen: filepath.Join(d, name)}
+	if err := os.Mkdir(at.gen, 0o700); err != nil {
+		return seat{}, snapshot{}, err
 	}
 	s := compute()
+	s.Made = time.Now()
 	b, err := json.Marshal(s)
 	if err != nil {
-		return snapshot{}, err
+		return seat{}, s, err
 	}
-	// The other slots can't read it then, and add nothing.
-	if err := fsutil.WriteFile(path, b, 0o600); err != nil {
-		return s, err
+	// The other slots can't read it then, and resolve on their own.
+	if err := fsutil.WriteFile(filepath.Join(at.gen, "snapshot.json"), b, 0o600); err != nil {
+		return seat{}, s, err
 	}
-	return s, nil
+	return at, s, create(filepath.Join(at.gen, fmt.Sprintf("slot.%d.0", slot)))
 }
 
-// clean deletes the folders of earlier session starts in dir.
-func clean(dir string) {
-	entries, _ := os.ReadDir(dir)
+// join returns where slot joins generation gen, and its snapshot, when the
+// snapshot was written or last read at most joinWindow ago; the snapshot's
+// modification time is when. Joining sets it.
+func join(gen string, slot int) (seat, snapshot, bool) {
+	var s snapshot
+	path := filepath.Join(gen, "snapshot.json")
+	st, err := os.Lstat(path)
+	if err != nil {
+		return seat{}, s, false
+	}
+	if age := time.Since(st.ModTime()); age < 0 || age > joinWindow {
+		return seat{}, s, false
+	}
+	b, err := fsutil.ReadBounded(path, maxSnapshot)
+	if err != nil || json.Unmarshal(b, &s) != nil {
+		return seat{}, s, false
+	}
+	now := time.Now()
+	if os.Chtimes(path, now, now) != nil {
+		return seat{}, s, false
+	}
+	at := seat{gen: gen}
+	for {
+		if _, err := os.Lstat(filepath.Join(gen, fmt.Sprintf("slot.%d.%d", slot, at.round))); errors.Is(err, os.ErrNotExist) {
+			break
+		}
+		at.round++
+	}
+	if at.round > 0 {
+		others, _ := filepath.Glob(filepath.Join(gen, fmt.Sprintf("slot.*.%d", at.round)))
+		at.first = len(others) == 0
+	}
+	return at, s, create(filepath.Join(gen, fmt.Sprintf("slot.%d.%d", slot, at.round))) == nil
+}
+
+// create creates the empty file path, which must not exist.
+func create(path string) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// generations are the names of the generation folders in d, oldest first.
+func generations(d string) []string {
+	entries, _ := os.ReadDir(d)
+	var out []string
 	for _, e := range entries {
-		if st, err := e.Info(); err == nil && st.IsDir() && time.Since(st.ModTime()) > keepSlots {
-			os.RemoveAll(filepath.Join(dir, e.Name()))
+		if e.IsDir() && len(e.Name()) == 16 {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
+
+// clean deletes the generations in d, and the folders next to d, that no
+// slot used for keepSlots: a pin slides with every read, so a generation
+// can be older than that and still pinned, but its last use isn't. All its
+// slots have ended by then, because the agents end a hook after 10 s. The
+// caller holds d's lock; the folder of another session start is checked
+// and deleted only while ctxtra holds its lock, and moved away first, so a
+// slot that opened its lock before doesn't use it (see fsutil.LockTimeout).
+func clean(d string, gens []string) {
+	for _, g := range gens {
+		gen := filepath.Join(d, g)
+		used := lastUse(gen)
+		// A generation's own time counts: it is new before its snapshot is.
+		if st, err := os.Lstat(gen); err == nil && st.ModTime().After(used) {
+			used = st.ModTime()
+		}
+		if time.Since(used) > keepSlots {
+			os.RemoveAll(gen)
+		}
+	}
+	parent := filepath.Dir(d)
+	entries, _ := os.ReadDir(parent)
+	for _, e := range entries {
+		other := filepath.Join(parent, e.Name())
+		if other == d || !e.IsDir() || strings.HasPrefix(e.Name(), ".") || time.Since(lastUse(other)) <= keepSlots {
+			continue
+		}
+		unlock, err := fsutil.LockTimeout(filepath.Join(other, "lock"), 0)
+		if err != nil {
+			continue
+		}
+		// Used since the check above: a slot joined while ctxtra waited.
+		if time.Since(lastUse(other)) <= keepSlots {
+			unlock()
+			continue
+		}
+		trash := filepath.Join(parent, fmt.Sprintf(".deleted-%s-%d", e.Name(), os.Getpid()))
+		moved := os.Rename(other, trash) == nil
+		unlock()
+		if moved {
+			os.RemoveAll(trash)
 		}
 	}
 }
 
-// waitFor waits until slot k in folder d has answered and ended, or until
-// deadline.
-func waitFor(d string, k int, deadline time.Time) {
+// lastUse is the newest modification time of what is in the folder dir and
+// in its folders: a read of a snapshot sets its time, and a slot that joins
+// makes files. The lock files don't count, nor does dir itself, whose time
+// changes when clean makes its lock to check it.
+func lastUse(dir string) time.Time {
+	var last time.Time
+	filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
+		if err != nil || path == dir || e.Name() == "lock" {
+			return nil
+		}
+		if info, err := e.Info(); err == nil && info.ModTime().After(last) {
+			last = info.ModTime()
+		}
+		if e.IsDir() && path != dir && filepath.Dir(path) != dir {
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	return last
+}
+
+// waitFor waits until the slot before has answered, which creates done,
+// and ended, which frees its lock run, or until deadline.
+func waitFor(done, run string, deadline time.Time) {
 	for {
-		if _, err := os.Lstat(filepath.Join(d, fmt.Sprintf("done.%d", k))); err == nil {
+		if _, err := os.Lstat(done); err == nil {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -179,23 +337,18 @@ func waitFor(d string, k int, deadline time.Time) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	// Slot k holds run.k until it ends.
-	if unlock, err := fsutil.LockTimeout(filepath.Join(d, fmt.Sprintf("run.%d", k)), time.Until(deadline)); err == nil {
+	// The slot holds run until it ends.
+	if unlock, err := fsutil.LockTimeout(run, time.Until(deadline)); err == nil {
 		unlock()
 		time.Sleep(orderGap)
 	}
 }
 
-// finish marks slot as done. The last of slots to finish deletes the
-// snapshot: every slot has read it.
-func finish(d string, slot, slots int) {
-	if f, err := os.OpenFile(filepath.Join(d, fmt.Sprintf("done.%d", slot)), os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+// finish marks slot as done in its round, for the order of the slot after
+// it. The snapshot stays: a slot may still join it while it is pinned, and
+// clean deletes it with its generation once no slot used it for keepSlots.
+func finish(at seat, slot int) {
+	if f, err := os.OpenFile(filepath.Join(at.gen, fmt.Sprintf("done.%d.%d", slot, at.round)), os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
 		f.Close()
 	}
-	for k := range slots {
-		if _, err := os.Lstat(filepath.Join(d, fmt.Sprintf("done.%d", k))); err != nil {
-			return
-		}
-	}
-	os.Remove(filepath.Join(d, "snapshot.json"))
 }

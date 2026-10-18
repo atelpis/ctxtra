@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/atelpis/ctxtra/internal/jsonorder"
 )
 
 // file is a block like resolve renders it, with n numbered lines of text.
@@ -192,12 +194,34 @@ func TestUTF16(t *testing.T) {
 	check(t, long, 1001, UTF16, Split(long, 1001, UTF16))
 }
 
-func TestTokens(t *testing.T) {
-	for s, want := range map[string]int{"": 0, "abcd": 1, "abcde": 2, "観測": 2, "Привет": 6, "ab界": 2, "🚀": 3, "a🚀界": 5} {
-		if got := Tokens.Len(s); got != want {
-			t.Errorf("%q: %d tokens, want %d", s, got, want)
+func TestJSON(t *testing.T) {
+	// Every ASCII character, the separators that encoding/json escapes and
+	// a valid U+FFFD: the length is what the hook answer has. A byte that
+	// isn't UTF-8 counts as the longer of the two ways Go writes it.
+	var all strings.Builder
+	for c := range 0x80 {
+		all.WriteByte(byte(c))
+	}
+	for _, s := range []string{all.String(), "a\u2028b\u2029c", "x\xffy", "\ufffd", "観測🚀", `"\"\\`} {
+		b, err := jsonorder.Marshal(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, want := JSON.Len(s), len(b)-2; got != want && !(got > want && !utf8.ValidString(s)) {
+			t.Errorf("%q: %d, want %d", s, got, want)
 		}
 	}
-	blocks := []Block{file("a.md", 300, "mixed 観測 text")}
-	check(t, blocks, 1500, Tokens, Split(blocks, 1500, Tokens))
+	// Quotes and backslashes take twice the room: more parts than by
+	// bytes, each within the size once encoded.
+	blocks := []Block{file("esc.md", 300, strings.Repeat(`\"`, 20)), file("b.md", 3, "x")}
+	parts := Split(blocks, 1000, JSON)
+	check(t, blocks, 1000, JSON, parts)
+	if len(parts) <= len(Split(blocks, 1000, Bytes)) {
+		t.Errorf("%d parts in JSON, no more than in bytes", len(parts))
+	}
+	for i, p := range parts {
+		if b, _ := jsonorder.Marshal(p); len(b)-2 > 1000 {
+			t.Errorf("part %d: %d bytes of JSON", i+1, len(b)-2)
+		}
+	}
 }

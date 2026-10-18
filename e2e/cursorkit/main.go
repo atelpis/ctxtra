@@ -305,7 +305,7 @@ func verify(dir string) error {
 		fmt.Printf("WARNING: the model called tools %v, so the codewords may come from a file it read\n", tools)
 	}
 	if len(ok) == canaries && len(tools) == 0 {
-		fmt.Println("RESULT: full text delivered")
+		fmt.Println("RESULT: all sampled codewords verified")
 	} else {
 		fmt.Println("RESULT: not proven")
 	}

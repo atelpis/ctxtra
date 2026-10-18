@@ -2,7 +2,9 @@ package e2e
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -16,13 +18,14 @@ import (
 // cut or drop one hook's text above about 10K and 15K characters, so ctxtra
 // splits the text across a fixed number of hooks there; the other agents get
 // it from one hook or plugin. Copilot drops all of it when it doesn't fit
-// the model's context window, Antigravity keeps only the last ~686K bytes.
+// the model's context window, so ctxtra counts its bytes, an upper bound on
+// tokens; Antigravity keeps only the last ~686K bytes.
 func capacity(agent string) int {
 	switch agent {
 	case "claude", "muse":
 		return 360_000
 	case "copilot":
-		return 400_000
+		return 140_000
 	case "antigravity":
 		return 650_000
 	}
@@ -52,6 +55,9 @@ var fillers = []string{
 // character, which is how JavaScript agents count.
 var emoji = strings.Repeat("🚀🧪📈", 12)
 
+// escaped is text that takes twice the room in a JSON hook answer.
+var escaped = strings.Repeat(`\"`, 20)
+
 // writeBig writes a file of about chars characters (code points). With
 // unicode, most lines are non-ASCII, so the file has more bytes than
 // characters.
@@ -63,6 +69,8 @@ func writeBig(s *Session, rel, id string, chars int, unicode bool) bigFile {
 		switch {
 		case id == "F5":
 			filler = emoji
+		case id == "F6":
+			filler = escaped
 		case unicode:
 			filler = fillers[1+n%(len(fillers)-1)]
 		}
@@ -79,6 +87,7 @@ func writeBig(s *Session, rel, id string, chars int, unicode bool) bigFile {
 // and that the lines appear in the order of files, then lines.
 func complete(t *testing.T, name, text string, files ...bigFile) {
 	t.Helper()
+	text = byLabel(text)
 	pos := -1
 	for _, f := range files {
 		var missing, dup []int
@@ -123,14 +132,15 @@ func absent(t *testing.T, name, text string, f bigFile) {
 	}
 }
 
-// capacityFiles binds about 305K characters in five files across two
+// capacityFiles binds about 315K characters in six files across two
 // bindings: a large file that doesn't fit one hook of any agent, Unicode
-// text, emoji-heavy text, and small files around them. Copilot gets half:
-// its capacity counts tokens, and non-ASCII text has many.
+// text, emoji-heavy text, text with many quotes and backslashes, and small
+// files around them. Copilot gets a third, about 131K bytes with the
+// headers: its capacity counts bytes, and non-ASCII text has many.
 func capacityFiles(s *Session) []bigFile {
 	n := func(chars int) int {
 		if s.agent.Name() == "copilot" {
-			return chars / 2
+			return chars / 3
 		}
 		return chars
 	}
@@ -140,15 +150,16 @@ func capacityFiles(s *Session) []bigFile {
 		writeBig(s, "ctx/uni.md", "F3", n(40_000), true),
 		writeBig(s, "ctx/team.md", "F4", n(60_000), false),
 		writeBig(s, "ctx/emoji.md", "F5", n(20_000), true),
+		writeBig(s, "ctx/escaped.md", "F6", n(10_000), false),
 	}
 	s.Config(global("me", "~/ctx/me.md", "~/ctx/big.md") + `  - name: svc
     match: {dirs: [~/dev/svc]}
-    instructions: [~/ctx/uni.md, ~/ctx/team.md, ~/ctx/emoji.md]
+    instructions: [~/ctx/uni.md, ~/ctx/team.md, ~/ctx/emoji.md, ~/ctx/escaped.md]
 `)
 	return files
 }
 
-// Every line of about 305K characters of bound files, Unicode and emoji included,
+// Every line of about 315K characters of bound files, Unicode, emoji and escapes included,
 // reaches the model at session start, once, in config order.
 func TestCapacity(t *testing.T) {
 	forEachAgent(t, nil, func(t *testing.T, a Agent) {
@@ -221,4 +232,77 @@ func TestOverCapacity(t *testing.T) {
 			}
 		}
 	})
+}
+
+// Short words and punctuation have many tokens per character: Copilot drops
+// all of 1,900 such lines, about 194K characters, and of 2,800 (Codex's
+// reviews). Their bytes are over Copilot's capacity, so ctxtra drops the
+// file whole and the log says so; the file before it arrives in full.
+// Copilot shows no message from the hook.
+func TestCopilotDenseText(t *testing.T) {
+	forEachAgent(t, nil, func(t *testing.T, a Agent) {
+		if a.Name() != "copilot" {
+			t.Skip("Copilot only")
+		}
+		for _, lines := range []int{1900, 2800} {
+			t.Run(fmt.Sprint(lines), func(t *testing.T) {
+				s := newSession(t, a)
+				repo := s.Repo("dev/svc", "", nil)
+				me := writeBig(s, "ctx/me.md", "F1", 5_000, false)
+				dense := bigFile{path: s.Path("ctx/dense.md")}
+				for i := range lines {
+					dense.lines = append(dense.lines, fmt.Sprintf("DENSE-%04d ", i)+strings.Repeat("x!", 45))
+				}
+				s.Write("ctx/dense.md", strings.Join(dense.lines, "\n"))
+				s.Config(global("me", "~/ctx/me.md", "~/ctx/dense.md"))
+				s.Setup()
+				r := s.Run(repo, driver.Options{})
+				text := r.First(mock.Main).text
+				complete(t, "main[first]", text, me)
+				absent(t, "main[first]", text, dense)
+				logged := false
+				for _, e := range s.Log() {
+					logged = logged || slices.ContainsFunc(e.Dropped, func(p string) bool { return strings.HasSuffix(p, "/ctx/dense.md") })
+				}
+				if !logged {
+					t.Errorf("ctxtra's log doesn't list dense.md as dropped: %+v", s.Log())
+				}
+			})
+		}
+	})
+}
+
+var partLabel = regexp.MustCompile(`\[ctxtra part (\d+) of \d+`)
+
+// byLabel puts the parts of a text that ctxtra split into the order their
+// labels give. Claude orders the parts by when their hooks end, which ctxtra
+// keeps in order only on a best-effort basis: on a busy machine two parts
+// can swap. The labels are what keeps the text correct, so the order is
+// checked as the model can rebuild it. Text without labels is returned as
+// it is.
+func byLabel(text string) string {
+	at := partLabel.FindAllStringSubmatchIndex(text, -1)
+	if len(at) < 2 {
+		return text
+	}
+	type part struct {
+		n    int
+		text string
+	}
+	parts := make([]part, len(at))
+	for i, m := range at {
+		end := len(text)
+		if i+1 < len(at) {
+			end = at[i+1][0]
+		}
+		n, _ := strconv.Atoi(text[m[2]:m[3]])
+		parts[i] = part{n, text[m[0]:end]}
+	}
+	slices.SortStableFunc(parts, func(a, b part) int { return a.n - b.n })
+	var b strings.Builder
+	b.WriteString(text[:at[0][0]])
+	for _, p := range parts {
+		b.WriteString(p.text)
+	}
+	return b.String()
 }

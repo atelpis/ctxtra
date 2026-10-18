@@ -64,7 +64,7 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestUserMessage` | Claude and Muse get the one-line message for the user from the hook |
 | `TestOutsideGit` | Outside git, only `global` and `dirs` bindings apply |
 | `TestResume` | Copilot and Muse: a resumed session has the current version of the files, once |
-| `TestCapacity` | About 305K characters of bound files (half for Copilot), Unicode and emoji included, reach the model at session start: every line once, in config order. Agents that get the text from several hooks resolve the files once |
+| `TestCapacity` | About 315K characters of bound files (a third for Copilot), Unicode and emoji included, reach the model at session start: every line once, in config order (parts that arrive out of order are put back by their labels). Agents that get the text from several hooks resolve the files once |
 | `TestCapacitySubagent` | The same text reaches a subagent in full, and the main agent still has it once after tool calls |
 | `TestOverCapacity` | Above the agent's capacity (see `capacity` in [capacity_test.go](capacity_test.go)), whole files are dropped from the end: the files before them arrive in full, the dropped one not at all; the log and the user message name it |
 | `TestCopilotCompactionDropsText` | Documents a known Copilot limit: after Copilot compacts a long conversation, the hook's text is gone and the hook doesn't run again. Fails when Copilot changes that |
@@ -83,7 +83,8 @@ Not covered here, and checked by hand before a release:
   hand with the real model: `go run ./cursorkit prepare -dir DIR -chars N [-delay D]` makes a test folder
   whose project hook binds a file with random codewords, `go run ./cursorkit cli -dir DIR` runs a CLI chat,
   and `go run ./cursorkit verify -dir DIR` checks a desktop chat opened in `DIR/workspace`: every codeword
-  in the answer, read from Cursor's transcript, and no tool call.
+  in the answer, read from Cursor's transcript, and no tool call. The codewords are samples: they show that
+  the text arrived at those places, not every line between them or their order.
 - The Antigravity App and IDE. They read the same hook file as the CLI.
 - Hermes with `plugins.isolation: host`.
 - DSH's web UI and TUI: the tests run its headless profile. DSH 0.2.0-rc.2's headless profile exits before a

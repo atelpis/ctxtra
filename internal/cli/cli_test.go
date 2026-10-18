@@ -47,7 +47,7 @@ bindings:
 	if code, out, _ := run("doctor", r); code != 1 || !strings.Contains(out, "claude: not set up") || !strings.Contains(out, "MISSING") {
 		t.Errorf("doctor: %d\n%s", code, out)
 	}
-	if code, out, _ := run("hook", "claude"); code != 0 || out != "{}\n" {
+	if code, out, _ := run("hook", "claude", "SessionStart", "--slot", "0"); code != 0 || out != "{}\n" {
 		t.Errorf("hook without input: %d %q", code, out)
 	}
 	for _, args := range [][]string{{"nope"}, {"files", "a", "b"}, {"setup", "--agent"}, {"setup", "extra"}, {"install"}} {
@@ -82,6 +82,7 @@ func TestSizeWarnings(t *testing.T) {
 		warn    []string
 	}{
 		{"short", nil},
+		{strings.Repeat("a\n", 75_000), []string{"copilot"}}, // 150,000 bytes
 		{strings.Repeat("a\n", 200_000), []string{"claude", "muse", "copilot"}},
 		{strings.Repeat("界\n", 300_000), []string{"claude", "muse", "codex", "antigravity", "copilot"}}, // 1,200,000 bytes
 	} {
@@ -93,7 +94,7 @@ func TestSizeWarnings(t *testing.T) {
 				t.Errorf("%d bytes: %s warned %v:\n%s", len(tc.content), a, warned, out)
 			}
 		}
-		if tc.warn != nil && !strings.Contains(out, "WARNING: over Claude Code's limit of 360,000 characters, claude sessions don't get b.md\n") {
+		if slices.Contains(tc.warn, "claude") && !strings.Contains(out, "WARNING: over Claude Code's limit of 360,000 characters, claude sessions don't get b.md\n") {
 			t.Errorf("warning:\n%s", out)
 		}
 	}

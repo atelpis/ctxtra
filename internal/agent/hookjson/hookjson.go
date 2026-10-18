@@ -247,6 +247,28 @@ func (c Config) Status() agent.Status {
 	return s
 }
 
+// Limited reports whether event has one of our handlers, and each of them
+// has additionalContextLimit ContextLimit. It is false when the file can't
+// be read.
+func (c Config) Limited(event string) bool {
+	data, err := c.read()
+	if err != nil {
+		return false
+	}
+	list, found := c.entries(data, event), false
+	for gi, e := range list {
+		for hi, h := range handlers(e) {
+			if cmd, ok := ourCommand(commandOf(h)); ok {
+				if limit(data, list, Command{cmd, gi, hi}) != fmt.Sprint(c.ContextLimit) {
+					return false
+				}
+				found = true
+			}
+		}
+	}
+	return found
+}
+
 // limit is the additionalContextLimit of the handler of cmd, as written.
 func limit(data *jsonorder.Map, list []any, cmd Command) string {
 	if data == nil || cmd.Group >= len(list) {

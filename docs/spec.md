@@ -356,21 +356,24 @@ the dropped files.
 | Agent | Capacity | How the text gets there |
 |---|---|---|
 | Claude Code | 360,000 characters, counted in UTF-16 | 40 hooks per event, a part of up to 9,000 each |
-| Muse | 360,000 characters, counted in UTF-16 | 40 hooks per event, a part of up to 13,000 bytes each; text that isn't ASCII needs more parts, so fewer files fit |
+| Muse | 360,000 characters, counted in UTF-16 | 40 hooks per event, a part of up to 13,000 bytes each, counted as in the JSON answer, and a summary of up to 2,000; text that isn't ASCII, or has many quotes or backslashes, needs more parts, so fewer files fit |
 | Codex | 1,000,000 bytes | one hook with `additionalContextLimit` (250,000 tokens of 4 bytes); Codex 0.145.0 or later |
 | Hermes | 1,000,000 characters | a plugin callback per part of up to 9,000 characters, or `hooks.output_spill.max_chars` if lower; the capacity shrinks with it |
 | Antigravity | 650,000 bytes | one hook, an injected step per part of up to 40,000 bytes |
-| Copilot | about 100,000 tokens | one hook |
+| Copilot | 140,000 bytes | one hook |
 | Pi, OpenCode, DSH | 1,000,000 characters | one plugin |
-| Cursor | 1,000,000 characters | one hook; the Agent CLI got 800,000 in full, the desktop app doesn't wait for the hook (see README) |
+| Cursor | 1,000,000 characters | one hook; not measured in full: in the Agent CLI every sampled codeword of 800,000 characters arrived, the desktop app doesn't wait for the hook (see README) |
 | Devin | 1,000,000 characters | one hook; not measured |
 
 Characters are Unicode code points; Claude Code and Muse count UTF-16 units, where an emoji or another
-character outside the Basic Multilingual Plane counts 2. Copilot counts tokens, which ctxtra estimates: four ASCII characters
-are a token, an emoji or another character outside the Basic Multilingual Plane three, and every other
-character one. Non-Latin text counts more in the agents that count bytes or
-tokens: a CJK character is 3 bytes in Codex and Antigravity, and a token in Copilot. Copilot drops all of
-the text, without a word, when it doesn't fit the model's context window; ctxtra drops files before that.
+character outside the Basic Multilingual Plane counts 2. Copilot counts tokens, and ctxtra counts bytes of
+UTF-8 for it: a tokenizer that works on bytes makes at most one token of a byte, so bytes are an upper bound
+on the tokens of any text. Copilot passed about 150,000 tokens, and 140,000 bytes leave room for its own
+prompt. The bound costs English text, about 140,000 characters fit where about 600,000 would, but no
+estimate per character holds for every text: Copilot dropped all of 194,000 characters of short words and
+punctuation (`x!x!`). Non-Latin text counts more in the agents that count bytes: a CJK character is 3
+bytes in Codex, Antigravity and Copilot. Copilot drops all of the text, without a word, when it doesn't fit
+the model's context window; ctxtra drops files before that.
 When Copilot compacts a long conversation, ctxtra's text is gone for the rest of the session: Copilot
 doesn't run the hook again.
 
@@ -381,10 +384,24 @@ is left, else at a line end; a line longer than a part is split between characte
 
 Claude Code and Muse run the hooks of an event at once. The first one resolves the session and writes the
 parts to `~/.ctxtra/slots/`, readable by you only; the others read them there, so the session is resolved
-and logged once. The file is deleted when every hook has read it, else by a session start a minute later.
-When the folder can't be written, for example in a sandbox, each hook resolves the session on its own.
-Claude Code orders the texts by when the hooks end, so each hook waits for the one before it, up to 2
-seconds; the labels keep the text correct in any order.
+and logged once. The hook input doesn't tell two session starts of the same session, event and source
+apart, for example two `/clear` in a row, or a retry after a start that didn't finish. So the parts are
+pinned: a hook that starts within 3 seconds after they were written, or after a hook last read them, uses
+them, and a hook that starts later resolves the session again, in a folder of its own. The hooks of one
+session start begin within a second or so of each other, so they read one text, never parts of two. The
+cost: a second session start within 3 seconds gets the text as it was at the first one, also when a file
+changed in between; its log entry says `reused` with how much earlier. Each read starts the 3 seconds
+again, so session starts that keep coming less than 3 seconds apart keep getting that first text, however
+old it gets. The file stays after the hooks ended: a session start deletes the folders that no hook used
+for a minute, never one that a hook used more recently. When the folder can't be written, for example
+in a sandbox, each hook resolves the session on its own. Claude Code orders the texts by when the hooks
+end, so each hook waits for the one before it, up to 2 seconds; the labels keep the text correct in any
+order.
+
+Hooks that an older version of ctxtra set up keep working after an upgrade, with what they got then: one
+hook of up to 9,000 characters in Claude Code, 13,000 bytes in Muse, about 9,000 bytes in Codex (unless
+`hooks.json` shows ctxtra's hooks for the event with `additionalContextLimit`), and one callback of up to 9,000 characters in Hermes (an older plugin).
+Files over that are dropped, and the message at session start and the log say to run `ctxtra setup`.
 
 ## Validation
 

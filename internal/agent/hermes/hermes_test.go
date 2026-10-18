@@ -188,7 +188,7 @@ print(json.dumps({
 		t.Errorf("missing binary: %+v", r)
 	}
 	got, _ := os.ReadFile(calls)
-	want := "hook hermes pre_llm_call {\"cwd\": \"/session\"}\nhook hermes subagent {\"cwd\": \"/session\"}\n"
+	want := "hook hermes pre_llm_call {\"cwd\": \"/session\", \"ctxtra_plugin\": 2}\nhook hermes subagent {\"cwd\": \"/session\", \"ctxtra_plugin\": 2}\n"
 	if string(got) != want {
 		t.Errorf("calls:\n%s\nwant:\n%s", got, want)
 	}
