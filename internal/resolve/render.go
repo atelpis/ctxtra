@@ -4,23 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/paths"
 )
 
-const blockSep = "\n\n"
-
 // Render is the text given to the agent: each file with a short header, then
 // the list of skills. A nil Result renders as "".
-func (r *Result) Render() string {
-	if r == nil {
-		return ""
-	}
-	blocks := r.fileBlocks()
-	if len(r.Skills) > 0 {
-		blocks = append(blocks, r.skillBlock())
-	}
-	return strings.Join(blocks, blockSep)
-}
+func (r *Result) Render() string { return chunk.Join(r.Blocks()) }
 
 // RenderFiles is Render without the list of skills, for agents that get the
 // skills as native skills.
@@ -28,13 +18,26 @@ func (r *Result) RenderFiles() string {
 	if r == nil {
 		return ""
 	}
-	return strings.Join(r.fileBlocks(), blockSep)
+	return chunk.Join(r.fileBlocks())
 }
 
-func (r *Result) fileBlocks() []string {
-	blocks := make([]string, 0, len(r.Files)+1)
+// Blocks are the parts of Render: a block per file, then one for the list
+// of skills.
+func (r *Result) Blocks() []chunk.Block {
+	if r == nil {
+		return nil
+	}
+	blocks := r.fileBlocks()
+	if len(r.Skills) > 0 {
+		blocks = append(blocks, chunk.Block{Title: "Skills added by ctxtra", Text: r.skillBlock()})
+	}
+	return blocks
+}
+
+func (r *Result) fileBlocks() []chunk.Block {
+	blocks := make([]chunk.Block, 0, len(r.Files)+1)
 	for _, h := range r.Files {
-		blocks = append(blocks, r.block(h))
+		blocks = append(blocks, chunk.Block{Title: "Contents of " + h.Path, Text: r.block(h)})
 	}
 	return blocks
 }

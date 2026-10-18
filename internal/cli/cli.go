@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent/registry"
@@ -58,7 +59,8 @@ Usage:
   ctxtra skill [install]  show the ctxtra skill, which lets your agents set up and
                           change ctxtra; install adds it to every session
   ctxtra help [TOPIC]     this text, or a topic of the docs of this version
-  ctxtra hook AGENT [EVENT]  hook entry point; reads the agent's hook JSON on stdin
+  ctxtra hook AGENT [EVENT [--slot N]]
+                          hook entry point; reads the agent's hook JSON on stdin
   ctxtra version
 
 Agents: %s. Without --agent: every agent found on this machine.
@@ -98,7 +100,13 @@ func Run(args []string, stdio IO, version string) int {
 		if len(rest) > 1 {
 			event = rest[1]
 		}
-		return hook.Run(rest[0], event, hookInput(stdio.In), stdio.Out, term.Writer{W: stdio.Err})
+		slot := -1
+		if len(rest) == 4 && rest[2] == "--slot" {
+			if n, err := strconv.Atoi(rest[3]); err == nil && n >= 0 {
+				slot = n
+			}
+		}
+		return hook.RunSlot(rest[0], event, slot, hookInput(stdio.In), stdio.Out, term.Writer{W: stdio.Err})
 	case "setup":
 		return runSetup(rest, stdio)
 	case "add":

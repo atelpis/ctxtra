@@ -10,3 +10,8 @@ func Lock(path string) (unlock func(), err error) { return func() {}, nil }
 
 // LockShared doesn't lock either.
 func LockShared(path string, timeout time.Duration) (unlock func(), err error) { return func() {}, nil }
+
+// LockTimeout doesn't lock either.
+func LockTimeout(path string, timeout time.Duration) (unlock func(), err error) {
+	return func() {}, nil
+}

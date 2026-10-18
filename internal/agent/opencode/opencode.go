@@ -76,7 +76,11 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 	return map[string]any{"text": res.RenderFiles(), "skills": skills}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: OpenCode gets 1,200,000 characters in full (measured with OpenCode
+// 2.0.29).
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "OpenCode", Capacity: 1_000_000}
+}
 
 // Plugin is the plugin that runs bin.
 func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, pluginBody) }

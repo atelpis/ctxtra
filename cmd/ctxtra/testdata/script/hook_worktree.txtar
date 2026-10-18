@@ -50,9 +50,9 @@ runhook antigravity SessionStart elsewhere/svc-feature
 stdout '^\{"injectSteps":\[\{"systemMessage":\{"systemMessage":".*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL.*<name>deploy</name>'
 ! stdout 'ctxtra: added'
 
-# Hermes gets files and the skill list as text, like Claude.
+# Hermes gets files and the skill list as text, like Claude, in parts.
 runhook hermes pre_llm_call elsewhere/svc-feature
-stdout '^\{"context":"Contents of [^"]*/ctx/work.md.*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL.*<name>deploy</name>'
+stdout '^\{"chunks":\["Contents of [^"]*/ctx/work.md.*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL.*<name>deploy</name>'
 ! stdout 'systemMessage|CTXMARK-SKILLBODY'
 
 # DSH gets files and the list of skills as one text; a subagent's run is

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/paths"
@@ -24,13 +25,14 @@ var oldTemplates = []string{
 }
 
 // commandRes match commandTemplate and oldTemplates with any binary path, so
-// setup recognizes its own entries also after the binary moved.
+// setup recognizes its own entries also after the binary moved. The event
+// can have a slot (SlotCommand).
 var commandRes = func() []*regexp.Regexp {
 	var out []*regexp.Regexp
 	for _, t := range append([]string{commandTemplate}, oldTemplates...) {
 		p := strings.Split(t, "%s")
 		out = append(out, regexp.MustCompile("^"+regexp.QuoteMeta(p[0])+`([^"]+)`+regexp.QuoteMeta(p[1])+`(\S+)`+
-			regexp.QuoteMeta(p[2])+`(\S+)`+regexp.QuoteMeta(p[3])+"$"))
+			regexp.QuoteMeta(p[2])+`(\S+)(?: --slot (\d+))?`+regexp.QuoteMeta(p[3])+"$"))
 	}
 	return out
 }()
@@ -40,6 +42,23 @@ var commandRes = func() []*regexp.Regexp {
 // another machine with a different user name.
 func Command(bin, agent, event string) string {
 	return fmt.Sprintf(commandTemplate, ShellPath(bin), agent, event)
+}
+
+// SlotCommand is the command of hook slot of a Slotted agent.
+func SlotCommand(bin, agent, event string, slot int) string {
+	return Command(bin, agent, fmt.Sprintf("%s --slot %d", event, slot))
+}
+
+// CommandSlot returns the slot in one of our hook commands, and whether it
+// has one.
+func CommandSlot(cmd string) (int, bool) {
+	for _, re := range commandRes {
+		if m := re.FindStringSubmatch(cmd); m != nil && m[4] != "" {
+			n, err := strconv.Atoi(m[4])
+			return n, err == nil
+		}
+	}
+	return 0, false
 }
 
 // ShellPath is bin as the hook command writes it.

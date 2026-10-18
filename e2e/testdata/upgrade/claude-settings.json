@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"CTXTRA_BIN\"; if [ -x \"$f\" ]; then exec \"$f\" hook claude SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"CTXTRA_BIN\"; if [ -x \"$f\" ]; then exec \"$f\" hook claude SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

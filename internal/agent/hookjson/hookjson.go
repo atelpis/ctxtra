@@ -41,6 +41,13 @@ type Config struct {
 	Own bool
 	// Key overrides the top-level event list key (Antigravity uses "ctxtra").
 	Key string
+	// Slots is the number of our entries per event for a grouped layout, each
+	// running agent.SlotCommand (Claude, Muse); 0 for one entry with
+	// agent.Command.
+	Slots int
+	// ContextLimit is written as additionalContextLimit to each handler
+	// (Codex); 0 for none.
+	ContextLimit int
 }
 
 func (c Config) key() string {
@@ -78,19 +85,21 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 			}
 			list = arr
 		}
-		want, handler := c.entry(o.Binary, ev)
-		if add && !c.Flat && c.countOurs(list) > 1 {
+		want, handler := c.wanted(o.Binary, ev)
+		if add && !c.Flat && c.countOurs(list) > len(want) {
 			r.Warnings = append(r.Warnings, fmt.Sprintf("%s: removed duplicate ctxtra %s hooks; hooks after them moved", c.Agent, ev.Name))
 		}
 		// Ours: entries that only run our command, or single handlers in a
 		// group edited by hand. Setup updates the first one in place and
-		// removes the rest; --remove removes all.
+		// removes the rest; --remove removes all. With slots, our entries
+		// take the place of the first one, and a group edited by hand loses
+		// our handlers and gets our entries after it.
 		placed := !add
 		kept := []any{}
 		for _, e := range list {
 			if c.isOurs(e) {
 				if !placed {
-					kept = append(kept, want)
+					kept = append(kept, want...)
 					placed = true
 				}
 				continue
@@ -100,14 +109,19 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 				if !placed {
 					repl = handler
 				}
-				if updateMixed(e, repl) && repl != nil {
+				if updateMixed(e, repl) && !placed {
 					placed = true
+					if repl == nil {
+						kept = append(kept, e)
+						kept = append(kept, want...)
+						continue
+					}
 				}
 			}
 			kept = append(kept, e)
 		}
 		if !placed {
-			kept = append(kept, want)
+			kept = append(kept, want...)
 		}
 		if len(kept) > 0 {
 			hooks.Set(ev.Name, kept)
@@ -210,7 +224,83 @@ func (c Config) Status() agent.Status {
 	if len(evs) == 0 {
 		return agent.Status{State: "not set up", OK: true}
 	}
-	return BinaryStatus(fmt.Sprintf("set up for %v", evs), bins)
+	s := BinaryStatus(fmt.Sprintf("set up for %v", evs), bins)
+	if c.ContextLimit > 0 {
+		data, _ := c.read()
+		for _, ev := range c.Events {
+			for _, cmd := range cmds[ev.Name] {
+				if limit(data, c.entries(data, ev.Name), cmd) != fmt.Sprint(c.ContextLimit) {
+					s.OK = false
+					s.Details = append(s.Details, fmt.Sprintf("%s: a ctxtra hook without additionalContextLimit %d, which cuts the text (run ctxtra setup)", ev.Name, c.ContextLimit))
+				}
+			}
+		}
+	}
+	if c.Slots > 0 {
+		for _, ev := range c.Events {
+			if n := slots(cmds[ev.Name]); n != c.Slots {
+				s.OK = false
+				s.Details = append(s.Details, fmt.Sprintf("%s: %d of the %d ctxtra hooks (run ctxtra setup)", ev.Name, n, c.Slots))
+			}
+		}
+	}
+	return s
+}
+
+// Limited reports whether event has one of our handlers, and each of them
+// has additionalContextLimit ContextLimit. It is false when the file can't
+// be read.
+func (c Config) Limited(event string) bool {
+	data, err := c.read()
+	if err != nil {
+		return false
+	}
+	list, found := c.entries(data, event), false
+	for gi, e := range list {
+		for hi, h := range handlers(e) {
+			if cmd, ok := ourCommand(commandOf(h)); ok {
+				if limit(data, list, Command{cmd, gi, hi}) != fmt.Sprint(c.ContextLimit) {
+					return false
+				}
+				found = true
+			}
+		}
+	}
+	return found
+}
+
+// limit is the additionalContextLimit of the handler of cmd, as written.
+func limit(data *jsonorder.Map, list []any, cmd Command) string {
+	if data == nil || cmd.Group >= len(list) {
+		return ""
+	}
+	hs := handlers(list[cmd.Group])
+	if cmd.Handler >= len(hs) {
+		return ""
+	}
+	h, ok := hs[cmd.Handler].(*jsonorder.Map)
+	if !ok {
+		return ""
+	}
+	v, ok := h.Get("additionalContextLimit")
+	if !ok {
+		return ""
+	}
+	return fmt.Sprint(v)
+}
+
+// slots is how many different slots cmds run, or 0 when one of them has no
+// slot or two have the same.
+func slots(cmds []Command) int {
+	seen := map[int]bool{}
+	for _, cmd := range cmds {
+		n, ok := agent.CommandSlot(cmd.Text)
+		if !ok || seen[n] {
+			return 0
+		}
+		seen[n] = true
+	}
+	return len(seen)
 }
 
 // BinaryStatus adds the binaries the hooks run, and whether they exist, to
@@ -228,11 +318,27 @@ func BinaryStatus(state string, bins []string) agent.Status {
 	return s
 }
 
-// entry is the entry setup writes for one event, and for grouped layouts
-// its single handler.
-func (c Config) entry(bin string, ev Event) (entry, handler *jsonorder.Map) {
+// wanted are the entries setup writes for one event, and for a grouped
+// layout without slots the single handler, to update a group edited by hand
+// in place.
+func (c Config) wanted(bin string, ev Event) (entries []any, handler any) {
+	if c.Slots == 0 {
+		e, h := c.entry(agent.Command(bin, c.Agent, ev.Name), ev)
+		if h == nil {
+			return []any{e}, nil
+		}
+		return []any{e}, h
+	}
+	for n := range c.Slots {
+		e, _ := c.entry(agent.SlotCommand(bin, c.Agent, ev.Name, n), ev)
+		entries = append(entries, e)
+	}
+	return entries, nil
+}
+
+// entry is one entry that runs cmd, and for a grouped layout its handler.
+func (c Config) entry(cmd string, ev Event) (entry, handler *jsonorder.Map) {
 	entry = jsonorder.NewMap()
-	cmd := agent.Command(bin, c.Agent, ev.Name)
 	if c.Flat {
 		entry.Set("command", cmd)
 		entry.Set("timeout", Timeout)
@@ -244,6 +350,9 @@ func (c Config) entry(bin string, ev Event) (entry, handler *jsonorder.Map) {
 	handler.Set("timeout", Timeout)
 	if c.StatusMessage != "" {
 		handler.Set("statusMessage", c.StatusMessage)
+	}
+	if c.ContextLimit > 0 {
+		handler.Set("additionalContextLimit", c.ContextLimit)
 	}
 	if ev.Matcher != "" {
 		entry.Set("matcher", ev.Matcher)

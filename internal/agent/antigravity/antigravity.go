@@ -11,6 +11,7 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
+	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
@@ -68,20 +69,22 @@ func (a Agent) Status() agent.Status {
 	return s
 }
 
-// Answer injects the text as a system message. Antigravity has no message
-// for the user.
-func (Agent) Answer(_ string, res *resolve.Result) any {
-	text := res.Render()
-	if text == "" {
+// Answer injects the text as system messages, a step per part.
+// Antigravity has no message for the user.
+func (a Agent) Answer(_ string, res *resolve.Result) any {
+	var steps []any
+	for _, text := range a.Delivery().Chunks(res) {
+		steps = append(steps, map[string]any{"systemMessage": map[string]any{"systemMessage": text}})
+	}
+	if len(steps) == 0 {
 		return map[string]any{}
 	}
-	return map[string]any{"injectSteps": []any{map[string]any{"systemMessage": map[string]any{"systemMessage": text}}}}
+	return map[string]any{"injectSteps": steps}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
-
-var _ agent.ByteLimiter = Agent{}
-
-// ByteLimit: the CLI cuts hook text after about 48,900 bytes (measured with
-// agy 1.4.0).
-func (Agent) ByteLimit() int { return 48000 }
+// Delivery: the CLI cuts an injected step after about 48,900 bytes, and of
+// all steps together keeps the last 686,000 bytes or so: the earlier steps
+// are lost (measured with agy 1.4.0).
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Antigravity", Capacity: 650_000, Unit: chunk.Bytes, Chunk: 40_000}
+}

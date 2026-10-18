@@ -38,7 +38,7 @@ func WriteAtomic(path string, data []byte, backupDir string, dryRun bool) (strin
 			return path, false, err
 		}
 	}
-	return path, true, replace(path, data, mode)
+	return path, true, replace(path, data, mode, 0o755)
 }
 
 // Backup writes old, the content of path, to a new file in dir named after
@@ -61,9 +61,9 @@ func Backup(path string, old []byte, dir string) error {
 }
 
 // replace writes data to a temporary file next to path and renames it, so a
-// reader never sees a half-written file.
-func replace(path string, data []byte, mode os.FileMode) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+// reader never sees a half-written file. Missing folders get dirMode.
+func replace(path string, data []byte, mode, dirMode os.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(filepath.Dir(path), ".ctxtra-")
@@ -85,6 +85,11 @@ func replace(path string, data []byte, mode os.FileMode) error {
 }
 
 // WriteFile writes data to path atomically, with mode, without a backup.
+// Missing folders are created readable by the user only when the file is.
 func WriteFile(path string, data []byte, mode os.FileMode) error {
-	return replace(path, data, mode)
+	dirMode := os.FileMode(0o755)
+	if mode&0o077 == 0 {
+		dirMode = 0o700
+	}
+	return replace(path, data, mode, dirMode)
 }

@@ -2,6 +2,7 @@ package hookjson
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -287,5 +288,118 @@ func TestOwnFileRemoved(t *testing.T) {
 	}
 	if b, err := os.ReadFile(target); err != nil || strings.Contains(string(b), "ctxtra") {
 		t.Errorf("target: %v\n%s", err, b)
+	}
+}
+
+// With slots, setup writes an entry per slot in the place of the old single
+// entry, keeps another tool's entries around them, and --remove removes all.
+func TestSlots(t *testing.T) {
+	h := testenv.Home(t)
+	on := fakeBinary(t, h)
+	single := Config{Agent: "claude", Path: filepath.Join(h, ".claude", "settings.json"), Events: events}
+	c := single
+	c.Slots = 4
+	testenv.Write(t, c.Path, otherTool)
+	var r agent.Report
+	if err := single.Apply(on, &r); err != nil {
+		t.Fatal(err)
+	}
+	// Another tool's hook after the old single entry.
+	b, _ := os.ReadFile(c.Path)
+	after := strings.Replace(string(b), `"SubagentStart": [`, `"SubagentStart": [{"hooks": [{"type": "command", "command": "late-tool"}]}, `, 1)
+	testenv.Write(t, c.Path, after)
+	if st := c.Status(); st.OK || !strings.Contains(strings.Join(st.Details, "\n"), "SessionStart: 0 of the 4 ctxtra hooks (run ctxtra setup)") {
+		t.Errorf("old single entry: %+v", st)
+	}
+	r = agent.Report{}
+	if err := c.Apply(on, &r); err != nil || len(r.Changes) != 1 || len(r.Warnings) != 0 {
+		t.Fatalf("upgrade: %+v, %v", r, err)
+	}
+	b, _ = os.ReadFile(c.Path)
+	s := string(b)
+	for _, ev := range []string{"SessionStart", "SubagentStart"} {
+		for n := range 4 {
+			if !strings.Contains(s, fmt.Sprintf("hook claude %s --slot %d;", ev, n)) {
+				t.Errorf("no slot %d for %s:\n%s", n, ev, s)
+			}
+		}
+		if strings.Contains(s, "hook claude "+ev+";") {
+			t.Errorf("the old %s entry is still there:\n%s", ev, s)
+		}
+	}
+	if strings.Index(s, "other-tool") > strings.Index(s, "SessionStart --slot 0") ||
+		strings.Index(s, "late-tool") > strings.Index(s, "SubagentStart --slot 0") {
+		t.Errorf("want [other, ours] and [late, ours]:\n%s", s)
+	}
+	if strings.Count(s, `"matcher": "startup"`) != 4 {
+		t.Errorf("want the matcher in each SessionStart entry:\n%s", s)
+	}
+	if st := c.Status(); !st.OK || st.State != "set up for [SessionStart SubagentStart], runs ~/go/bin/ctxtra (ok)" {
+		t.Errorf("status %+v", st)
+	}
+	r = agent.Report{}
+	if err := c.Apply(on, &r); err != nil || len(r.Changes) != 0 {
+		t.Errorf("second setup changed %v (err %v)", r.Changes, err)
+	}
+	// A slot removed by hand: doctor says so, and setup puts it back.
+	testenv.Write(t, c.Path, strings.Replace(s, "SessionStart --slot 2;", "SessionStart --slot 1;", 1))
+	if st := c.Status(); st.OK {
+		t.Errorf("slot 2 missing: %+v", st)
+	}
+	if err := c.Apply(on, &r); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(c.Path); string(b) != s {
+		t.Errorf("setup didn't restore the slots:\n%s", b)
+	}
+	if err := c.Apply(remove, &r); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.ReadFile(c.Path)
+	if strings.Contains(string(b), "hook claude") || !strings.Contains(string(b), "other-tool") || !strings.Contains(string(b), "late-tool") {
+		t.Errorf("remove:\n%s", b)
+	}
+}
+
+func TestContextLimit(t *testing.T) {
+	h := testenv.Home(t)
+	c := Config{Agent: "codex", Path: filepath.Join(h, ".codex", "hooks.json"), Events: events, ContextLimit: 250000}
+	var r agent.Report
+	if err := c.Apply(fakeBinary(t, h), &r); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(c.Path)
+	if strings.Count(string(b), `"additionalContextLimit": 250000`) != 2 {
+		t.Errorf("limits:\n%s", b)
+	}
+	if st := c.Status(); !st.OK || len(st.Details) != 0 {
+		t.Errorf("status %+v", st)
+	}
+	if !c.Limited("SessionStart") || !c.Limited("SubagentStart") {
+		t.Error("not limited as set up")
+	}
+	// An entry of an older version, without the limit: the hook sees it,
+	// doctor says so, and setup adds it.
+	testenv.Write(t, c.Path, strings.Replace(string(b), `,
+            "additionalContextLimit": 250000`, "", 1))
+	if st := c.Status(); st.OK || len(st.Details) != 1 ||
+		st.Details[0] != "SessionStart: a ctxtra hook without additionalContextLimit 250000, which cuts the text (run ctxtra setup)" {
+		t.Errorf("without the limit: %+v", st)
+	}
+	if c.Limited("SessionStart") || !c.Limited("SubagentStart") {
+		t.Error("limited without the limit")
+	}
+	r = agent.Report{}
+	if err := c.Apply(fakeBinary(t, h), &r); err != nil || len(r.Changes) != 1 || !c.Status().OK {
+		t.Errorf("setup: %+v, %v, %+v", r, err, c.Status())
+	}
+	// Without a ctxtra hook for the event, or without the file, nothing
+	// shows the limit.
+	if c.Limited("Stop") {
+		t.Error("limited without a hook")
+	}
+	os.Remove(c.Path)
+	if c.Limited("SessionStart") {
+		t.Error("limited without the file")
 	}
 }

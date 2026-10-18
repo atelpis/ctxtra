@@ -66,14 +66,17 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 	return map[string]any{"files": files, "skills": skills, "message": agent.Summary(res)}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: Pi gets 1,200,000 characters in full (measured with Pi 1.2.0).
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Pi", Capacity: 1_000_000}
+}
 
 // Extension is the extension that runs bin.
 func Extension(bin string) string { return extfile.Content(extfile.TypeScript, bin, extensionBody) }
 
 // extensionBody runs the binary asynchronously, so Pi's event loop never
 // waits on it, with a 10 second timeout and room for the largest output
-// ctxtra can produce (4 MiB of files, JSON-escaped).
+// ctxtra can produce (1,000,000 characters, up to 4 MB, JSON-escaped).
 const extensionBody = `// Written by ctxtra setup. Adds the instruction files and skills that
 // ctxtra binds to the current folder. Safe to delete; ` + "`ctxtra setup --remove`" + ` removes it.
 import { execFile } from "node:child_process";

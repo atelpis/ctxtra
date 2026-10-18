@@ -118,7 +118,10 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 	return map[string]any{"text": res.Render()}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: DSH gets 1,200,000 characters in full (measured with DSH 0.2.1-rc.2).
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "DSH", Capacity: 1_000_000}
+}
 
 // Plugin is the plugin that runs bin.
 func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, pluginBody) }

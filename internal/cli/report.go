@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -37,7 +38,7 @@ func (r report) files(dir string) int {
 		fmt.Fprintf(r.Err, "missing: %s\n", m)
 	}
 	for _, h := range res.Dropped {
-		fmt.Fprintf(r.Err, "dropped (over budget.max-chars): %s\n", h.Path)
+		fmt.Fprintf(r.Err, "dropped (over %s): %s\n", h.Over, h.Path)
 	}
 	for _, n := range res.Notices {
 		fmt.Fprintf(r.Err, "notice: %s\n", n)
@@ -87,8 +88,9 @@ func (r report) explain(dir string) int {
 		skills[h.Path] = h
 	}
 	dropped := map[string]string{}
+	over := map[string]string{}
 	for _, h := range res.Dropped {
-		dropped[h.Path] = h.Origin
+		dropped[h.Path], over[h.Path] = h.Origin, h.Over
 	}
 	fmt.Fprintln(r.Out)
 	if len(res.Trace) == 0 {
@@ -103,7 +105,7 @@ func (r report) explain(dir string) int {
 		for _, f := range t.Files {
 			switch {
 			case dropped[f] == t.Origin:
-				fmt.Fprintf(r.Out, "    dropped  %s (over budget.max-chars)\n", f)
+				fmt.Fprintf(r.Out, "    dropped  %s (over %s)\n", f, over[f])
 			case files[f].Origin == t.Origin:
 				fmt.Fprintf(r.Out, "    file     %s (%d chars)\n", f, resolve.Chars(files[f].Content))
 			case files[f].Origin != "" || dropped[f] != "":
@@ -136,20 +138,26 @@ func (r report) explain(dir string) int {
 		fmt.Fprintf(r.Out, ", budget.max-chars %d", res.MaxChars)
 	}
 	fmt.Fprintln(r.Out)
-	r.sizeWarnings(text, "")
+	r.sizeWarnings(res, "")
 	return 0
 }
 
-// sizeWarnings warns about each agent whose limit text is over.
-func (r report) sizeWarnings(text, indent string) {
-	chars := resolve.Chars(text)
+// sizeWarnings warns about each agent that wouldn't get all of res: the
+// files its sessions don't get.
+func (r report) sizeWarnings(res *resolve.Result, indent string) {
 	for _, a := range registry.All() {
-		if l := a.PreviewLimit(); l > 0 && chars > l {
-			fmt.Fprintf(r.Out, "%sWARNING: %d chars; over about %d, %s shows the model only a preview\n", indent, chars, l, a.Name())
+		d := a.Delivery()
+		c := *res
+		c.Dropped = nil
+		d.Fit(&c)
+		if len(c.Dropped) == 0 {
+			continue
 		}
-		if b, ok := a.(agent.ByteLimiter); ok && b.ByteLimit() > 0 && len(text) > b.ByteLimit() {
-			fmt.Fprintf(r.Out, "%sWARNING: %d bytes; over about %d, %s drops the rest\n", indent, len(text), b.ByteLimit(), a.Name())
+		names := make([]string, len(c.Dropped))
+		for i, h := range c.Dropped {
+			names[i] = filepath.Base(h.Path)
 		}
+		fmt.Fprintf(r.Out, "%sWARNING: over %s, %s sessions don't get %s\n", indent, d.Over(), a.Name(), agent.Names(names))
 	}
 }
 
@@ -184,12 +192,12 @@ func (r report) doctor(dir string) int {
 		fmt.Fprintf(r.Out, "  MISSING: %s\n", m)
 	}
 	for _, h := range res.Dropped {
-		fmt.Fprintf(r.Out, "  DROPPED (over budget.max-chars): %s\n", h.Path)
+		fmt.Fprintf(r.Out, "  DROPPED (over %s): %s\n", h.Over, h.Path)
 	}
 	for _, n := range res.Notices {
 		fmt.Fprintf(r.Out, "  NOTICE: %s\n", n)
 	}
-	r.sizeWarnings(res.Render(), "  ")
+	r.sizeWarnings(res, "  ")
 
 	fmt.Fprintln(r.Out, "\nhooks:")
 	for _, a := range registry.All() {

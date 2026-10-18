@@ -44,3 +44,42 @@ func TestLockSharedReadOnly(t *testing.T) {
 	unlock()
 	<-done
 }
+
+// A lock whose file was moved away while someone waited for it, as slot
+// cleanup does, isn't held: the waiter locks the new file at the path,
+// which another holder excludes.
+func TestLockMoved(t *testing.T) {
+	d := filepath.Join(t.TempDir(), "d")
+	p := filepath.Join(d, "lock")
+	first, err := LockTimeout(p, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan func(), 1)
+	go func() {
+		if u, err := LockTimeout(p, 3*time.Second); err == nil {
+			got <- u
+		}
+		close(got)
+	}()
+	time.Sleep(50 * time.Millisecond) // the waiter has the old file open
+	if err := os.Rename(d, d+".old"); err != nil {
+		t.Fatal(err)
+	}
+	other, err := LockTimeout(p, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first()
+	select {
+	case <-got:
+		t.Fatal("got the lock of a moved file while another holds the file at the path")
+	case <-time.After(200 * time.Millisecond):
+	}
+	other()
+	if u, ok := <-got; !ok {
+		t.Fatal("no lock after the holder released it")
+	} else {
+		u()
+	}
+}

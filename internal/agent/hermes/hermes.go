@@ -7,10 +7,12 @@ package hermes
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
@@ -25,10 +27,17 @@ import (
 // Agent is Hermes Agent.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent    = Agent{}
+	_ agent.Upgrader = Agent{}
+)
 
 // pluginName is the plugin's name in plugin.yaml and in plugins.enabled.
 const pluginName = "ctxtra"
+
+// pluginVersion is sent by the plugin as ctxtra_plugin in the hook input.
+// Plugins of older versions send none.
+const pluginVersion = 2
 
 const enableNote = "hermes: the plugin runs only after you enable it: run `hermes plugins enable " + pluginName +
 	"`. It applies from the next session."
@@ -103,11 +112,16 @@ func removeDir() {
 	os.Remove(pluginDir())
 }
 
-// Status adds whether plugin.yaml is in place and the plugin is enabled.
+// Status adds whether plugin.yaml is in place, the plugin is this
+// version's, and it is enabled.
 func (a Agent) Status() agent.Status {
 	s := extfile.Status(a.ConfigPath())
 	if s.State == "not set up" {
 		return s
+	}
+	if b, err := os.ReadFile(a.ConfigPath()); err == nil && !isPlugin(string(b)) {
+		s.OK = false
+		s.Details = append(s.Details, paths.Tilde(a.ConfigPath())+": written by another version of ctxtra (run ctxtra setup)")
 	}
 	if b, err := os.ReadFile(manifestPath()); err != nil || !strings.HasPrefix(string(b), extfile.Python.Mark()) {
 		s.OK = false
@@ -152,21 +166,90 @@ func enabled() (bool, error) {
 
 // Answer is the text for the first user message, files and the skill list
 // like Claude and Codex: a plugin's skills are registered once per gateway,
-// not per session. Hermes has no way to show the user a message from a
-// plugin, so there is no summary.
-func (Agent) Answer(_ string, res *resolve.Result) any {
+// not per session. The plugin's callback K adds part K of chunks. context
+// is the whole text, for a plugin written by an older version. Hermes has no
+// way to show the user a message from a plugin, so there is no summary.
+func (a Agent) Answer(_ string, res *resolve.Result) any {
 	if text := res.Render(); text != "" {
-		return map[string]any{"context": text}
+		return map[string]any{"chunks": a.Delivery().Chunks(res), "context": text}
 	}
 	return map[string]any{}
 }
 
-// PreviewLimit: Hermes writes larger hook context to a file and gives the
-// model a preview (hooks.output_spill.max_chars).
-func (Agent) PreviewLimit() int { return 10000 }
+const (
+	// slots is how many pre_llm_call callbacks the plugin registers: enough
+	// for 1,000,000 characters in parts of 9,000, with room for the labels.
+	slots = 125
+	// partChars is the largest part, in characters.
+	partChars = 9000
+)
+
+// Delivery: Hermes writes a callback's text over hooks.output_spill.max_chars
+// (10,000 by default) to a file and gives the model 500 characters of its
+// start and end, but each callback's text on its own and in order (measured
+// with Hermes v2026.9.24). A lower max_chars makes the parts smaller.
+func (Agent) Delivery() agent.Delivery {
+	size := min(partChars, spillChars())
+	return agent.Delivery{Title: "Hermes", Capacity: min(1_000_000, slots*size), Chunk: size, Slots: slots}
+}
+
+// Legacy: a plugin of an older version adds the text with one callback,
+// which gets as much as Hermes doesn't spill.
+func (Agent) Legacy(_ string, in agent.Input) (agent.Delivery, bool) {
+	return agent.Delivery{Title: "Hermes", Capacity: min(partChars, spillChars())}, in.Plugin < pluginVersion
+}
+
+// spillChars is hooks.output_spill.max_chars in config.yaml, read the way
+// Hermes reads it: a whole number of at least 1, else 10,000. With spilling
+// turned off, it is the largest int.
+func spillChars() int {
+	const fallback = 10_000
+	b, err := fsutil.ReadBounded(filepath.Join(dir(), "config.yaml"), 4<<20)
+	if err != nil {
+		return fallback
+	}
+	var cfg struct {
+		Hooks struct {
+			Spill struct {
+				Enabled  *bool `yaml:"enabled"`
+				MaxChars any   `yaml:"max_chars"`
+			} `yaml:"output_spill"`
+		} `yaml:"hooks"`
+	}
+	if yaml.Unmarshal(b, &cfg) != nil {
+		return fallback
+	}
+	sp := cfg.Hooks.Spill
+	if sp.Enabled != nil && !*sp.Enabled {
+		return math.MaxInt
+	}
+	n := 0
+	switch v := sp.MaxChars.(type) {
+	case int:
+		n = v
+	case float64:
+		n = int(v)
+	case string:
+		n, _ = strconv.Atoi(strings.TrimSpace(v))
+	}
+	if n < 1 {
+		return fallback
+	}
+	return n
+}
 
 // Plugin is the plugin code that runs bin.
 func Plugin(bin string) string { return extfile.Content(extfile.Python, bin, pluginBody) }
+
+// isPlugin reports whether code is Plugin for the binary it names.
+func isPlugin(code string) bool {
+	for line := range strings.Lines(code) {
+		if bin, ok := strings.CutPrefix(strings.TrimRight(line, "\n"), "# binary: "); ok {
+			return code == Plugin(agent.ExpandShellPath(bin))
+		}
+	}
+	return false
+}
 
 var manifest = extfile.Python.Mark() + `
 # Written by ctxtra setup. Safe to delete; ` + "`ctxtra setup --remove`" + ` removes it.
@@ -180,14 +263,22 @@ provides_hooks: [pre_llm_call]
 // sessions included, with a 10 second timeout. Hermes adds the text to that
 // turn's user message and sends it again with that message on every later
 // turn, also after a resume. ctxtra logs a subagent's session as a
-// "subagent" event, other sessions as "pre_llm_call".
-const pluginBody = `# Written by ctxtra setup. Adds the instruction files and skills that
+// "subagent" event, other sessions as "pre_llm_call". Hermes runs the
+// callbacks one after another, in the order they were registered: the first
+// runs the binary, and each callback adds one part.
+var pluginBody = `# Written by ctxtra setup. Adds the instruction files and skills that
 # ctxtra binds to the session's folder. Safe to delete; ` + "`ctxtra setup --remove`" + ` removes it.
 import json
 import os
 import subprocess
 
 BIN = %s
+
+# Hermes cuts a callback's text above hooks.output_spill.max_chars, so ctxtra
+# gives the text in parts, and callback K adds part K. A session's parts are
+# kept from its first callback to its last.
+SLOTS = ` + strconv.Itoa(slots) + `
+_parts = {}
 
 
 def _cwd():
@@ -203,23 +294,32 @@ def _run(event):
     try:
         out = subprocess.run(
             [BIN, "hook", "hermes", event],
-            input=json.dumps({"cwd": _cwd()}),
+            input=json.dumps({"cwd": _cwd(), "ctxtra_plugin": ` + strconv.Itoa(pluginVersion) + `}),
             capture_output=True,
             text=True,
             timeout=10,
         ).stdout
-        context = json.loads(out).get("context")
+        parts = json.loads(out).get("chunks")
     except Exception:
-        return None
-    return {"context": context} if isinstance(context, str) and context else None
+        return []
+    if not isinstance(parts, list) or not all(isinstance(p, str) for p in parts):
+        return []
+    return parts
 
 
-def _pre_llm_call(is_first_turn=False, parent_session_id="", **kwargs):
-    if not is_first_turn:
-        return None
-    return _run("subagent" if parent_session_id else "pre_llm_call")
+def _callback(k):
+    def _pre_llm_call(is_first_turn=False, parent_session_id="", session_id="", **kwargs):
+        if not is_first_turn:
+            return None
+        if k == 0:
+            _parts[session_id] = _run("subagent" if parent_session_id else "pre_llm_call")
+        parts = _parts.pop(session_id, []) if k == SLOTS - 1 else _parts.get(session_id, [])
+        return {"context": parts[k]} if k < len(parts) and parts[k] else None
+
+    return _pre_llm_call
 
 
 def register(ctx):
-    ctx.register_hook("pre_llm_call", _pre_llm_call)
+    for k in range(SLOTS):
+        ctx.register_hook("pre_llm_call", _callback(k))
 `

@@ -28,7 +28,7 @@ func Lock(path string) (unlock func(), err error) {
 	return func() { f.Close() }, nil
 }
 
-// ErrLockTimeout is LockShared giving up.
+// ErrLockTimeout is LockShared or LockTimeout giving up.
 var ErrLockTimeout = errors.New("timed out waiting for a lock")
 
 // LockShared takes a shared lock on the file path: many holders, but none
@@ -36,6 +36,37 @@ var ErrLockTimeout = errors.New("timed out waiting for a lock")
 // be written, for example in an agent's sandbox, an existing one is locked
 // read-only: flock doesn't need write access.
 func LockShared(path string, timeout time.Duration) (unlock func(), err error) {
+	return lockWait(path, syscall.LOCK_SH, timeout)
+}
+
+// LockTimeout is Lock that waits at most timeout.
+func LockTimeout(path string, timeout time.Duration) (unlock func(), err error) {
+	return lockWait(path, syscall.LOCK_EX, timeout)
+}
+
+// lockWait locks path, and again when the file it locked is no longer at
+// path, deleted or moved by someone who held the lock before: holders of
+// the old file and of a new one would exclude each other no more.
+func lockWait(path string, how int, timeout time.Duration) (unlock func(), err error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		f, err := lockFile(path, how, deadline)
+		if err != nil {
+			return nil, err
+		}
+		fst, err1 := f.Stat()
+		st, err2 := os.Stat(path)
+		if err1 == nil && err2 == nil && os.SameFile(fst, st) {
+			return func() { f.Close() }, nil
+		}
+		f.Close()
+		if time.Now().After(deadline) {
+			return nil, ErrLockTimeout
+		}
+	}
+}
+
+func lockFile(path string, how int, deadline time.Time) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
@@ -46,11 +77,10 @@ func LockShared(path string, timeout time.Duration) (unlock func(), err error) {
 	if err != nil {
 		return nil, err
 	}
-	deadline := time.Now().Add(timeout)
 	for {
-		err := syscall.Flock(int(f.Fd()), syscall.LOCK_SH|syscall.LOCK_NB)
+		err := syscall.Flock(int(f.Fd()), how|syscall.LOCK_NB)
 		if err == nil {
-			return func() { f.Close() }, nil
+			return f, nil
 		}
 		if !errors.Is(err, syscall.EWOULDBLOCK) || time.Now().After(deadline) {
 			f.Close()
@@ -59,6 +89,6 @@ func LockShared(path string, timeout time.Duration) (unlock func(), err error) {
 			}
 			return nil, err
 		}
-		time.Sleep(20 * time.Millisecond)
+		time.Sleep(5 * time.Millisecond)
 	}
 }
