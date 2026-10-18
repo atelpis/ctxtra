@@ -159,8 +159,9 @@ var interactive = func(in io.Reader) bool {
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }
 
-// offerSkill asks, after setup, whether to install the skill. Without a
-// terminal, for example when an agent runs setup, it says how instead.
+// offerSkill asks, after setup, whether to install the skill; Enter says
+// yes. Without a terminal, for example when an agent runs setup, it says
+// how instead.
 func offerSkill(stdio IO) error {
 	if skillBound() != nil {
 		return nil
@@ -169,18 +170,19 @@ func offerSkill(stdio IO) error {
 		fmt.Fprintln(stdio.Out, "to let your agents help you set up and change ctxtra: ctxtra skill install")
 		return nil
 	}
-	fmt.Fprintf(stdio.Out, `
-ctxtra has a skill that lets your agents help you set up and change ctxtra. Installing it writes the
-skill to %s and adds a binding to %s that adds it to every session.
-The skill comes with this binary and is updated with it: after you upgrade ctxtra, new sessions get the
-new version. ctxtra skill shows it.
-Install the ctxtra skill? [y/N] `, paths.Tilde(paths.SkillDir()), paths.Tilde(paths.ConfigPath()))
+	fmt.Fprint(stdio.Out, `
+ctxtra comes with a skill for your agents:
+it helps you get started, manage your config, and fix problems.
+You can install it later with: ctxtra skill install
+Install it now? [Y/n] `)
 	answer, err := bufio.NewReader(stdio.In).ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
-	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
-		fmt.Fprintln(stdio.Out, "not installed; to install it later: ctxtra skill install")
+	// Input that ends without a line (Ctrl-D) is no answer.
+	a := strings.ToLower(strings.TrimSpace(answer))
+	if err != nil || a != "" && a != "y" && a != "yes" {
+		fmt.Fprintln(stdio.Out, "not installed")
 		return nil
 	}
 	return installSkill(stdio)

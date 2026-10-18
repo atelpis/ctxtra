@@ -104,14 +104,16 @@ func TestSetupOffersSkill(t *testing.T) {
 		}
 		return o.String()
 	}
-	if out := setupWith("\n"); !strings.Contains(out, "Install the ctxtra skill? [y/N]") || !strings.Contains(out, "not installed") {
-		t.Errorf("declined:\n%s", out)
+	for _, answer := range []string{"n\n", "no\n", "x\n", ""} {
+		if out := setupWith(answer); !strings.Contains(out, "Install it now? [Y/n]") || !strings.Contains(out, "not installed") {
+			t.Errorf("declined with %q:\n%s", answer, out)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(h, ".ctxtra", "skills")); err == nil {
 		t.Error("declined, but the skill was written")
 	}
-	if out := setupWith("y\n"); !strings.Contains(out, "added binding ctxtra") {
-		t.Errorf("accepted:\n%s", out)
+	if out := setupWith("\n"); !strings.Contains(out, "added binding ctxtra") {
+		t.Errorf("accepted with Enter:\n%s", out)
 	}
 	if out := setupWith(""); strings.Contains(out, "ctxtra skill") {
 		t.Errorf("installed, but asked again:\n%s", out)
