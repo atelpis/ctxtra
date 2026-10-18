@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/atelpis/ctxtra/internal/agent"
+	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
@@ -130,5 +131,46 @@ func TestClaudeHookUnderDevin(t *testing.T) {
 	testenv.Write(t, filepath.Join(h, ".config", "devin", "config.json"), `{}`)
 	if out := run(); !strings.Contains(out, "Rule A") {
 		t.Errorf("claude under devin, no devin hook: %s", out)
+	}
+}
+
+// The Cursor desktop app runs Claude's hooks too, with cursor_version in the
+// input. With ctxtra's Cursor hook set up, every slot of Claude's hook adds
+// nothing, and only slot 0 logs why.
+func TestClaudeHookUnderCursor(t *testing.T) {
+	h := testenv.Home(t)
+	r := testenv.Repo(t, filepath.Join(h, "svc"), "")
+	testenv.Write(t, filepath.Join(h, "a.md"), "Rule A")
+	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
+		"schema: ctxtra/v1\nbindings:\n  - {name: a, match: {global: true}, instructions: [~/a.md]}\n")
+	testenv.Config(t, h, "schema: ctxtra/v1\ninclude: [b.yaml]\n")
+	cmd, _ := json.Marshal(agent.Command("/bin/ctxtra", "cursor", "sessionStart"))
+	testenv.Write(t, filepath.Join(h, ".cursor", "hooks.json"),
+		`{"version": 1, "hooks": {"sessionStart": [{"command": `+string(cmd)+`}]}}`)
+	run := func(slot int, input string) string {
+		var out bytes.Buffer
+		RunSlot("claude", "SessionStart", slot, strings.NewReader(input), &out, io.Discard)
+		return out.String()
+	}
+	fromCursor := `{"cwd": "` + r + `", "session_id": "s1", "hook_event_name": "sessionStart", "cursor_version": "3.25.9"}`
+	for _, slot := range []int{0, 1, 39} {
+		if out := run(slot, fromCursor); strings.TrimSpace(out) != "{}" {
+			t.Errorf("claude slot %d under cursor: %s", slot, out)
+		}
+	}
+	if runs := LastRuns(r, r); len(runs) != 1 || !strings.HasPrefix(runs[0].Skipped, "run by Cursor") {
+		t.Errorf("last runs: %+v", runs)
+	}
+	if b, _ := os.ReadFile(paths.LogPath()); strings.Count(string(b), "run by Cursor") != 1 {
+		t.Errorf("log entries for the skipped slots, want 1:\n%s", b)
+	}
+	// Claude Code itself sends no cursor_version.
+	if out := run(0, `{"cwd": "`+r+`", "session_id": "s2"}`); !strings.Contains(out, "Rule A") {
+		t.Errorf("claude: %s", out)
+	}
+	// Without ctxtra's Cursor hook, Claude's hook is the one that serves Cursor.
+	testenv.Write(t, filepath.Join(h, ".cursor", "hooks.json"), `{"version": 1, "hooks": {}}`)
+	if out := run(-1, fromCursor); !strings.Contains(out, "Rule A") {
+		t.Errorf("claude under cursor, no cursor hook: %s", out)
 	}
 }

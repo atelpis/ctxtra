@@ -21,16 +21,19 @@ import (
 // hook per part of the text there. The first slot to get the lock resolves
 // the session and writes a snapshot that the other slots read, so a session
 // start is resolved and logged once. Claude orders the hooks' texts by when
-// the hooks end: each slot answers after the slot before it ended, or after
-// orderWait; the labels of the parts keep the text correct in any order.
+// the hooks end: each slot answers orderGap after the slot before it ended,
+// or after orderWait; the labels of the parts keep the text correct in any
+// order. Without the gap, Claude on Linux sometimes swaps two slots that end
+// within a millisecond of each other.
 //
 // The waits add up to at most 100 ms for the slot's own lock, snapshotWait
 // for the snapshot, and orderWait, counted from when the slot has it: 8.1 s,
 // under the 10 s hook timeout. The slot that resolves waits for the
 // resolving instead of snapshotWait.
 const (
-	snapshotWait = 6 * time.Second  // the most a slot waits for the snapshot
-	orderWait    = 2 * time.Second  // the most a slot waits for the slot before it
+	snapshotWait = 6 * time.Second // the most a slot waits for the snapshot
+	orderWait    = 2 * time.Second // the most a slot waits for the slot before it
+	orderGap     = 20 * time.Millisecond
 	snapshotAge  = 20 * time.Second // an older snapshot is from an earlier session start
 	keepSlots    = time.Minute      // folders of earlier session starts are deleted after this
 	maxSnapshot  = 16 << 20
@@ -51,9 +54,6 @@ type snapshot struct {
 func runSlot(a agent.Agent, sl agent.Slotted, slot int, ts, event string, p payload, dir string, out, errOut io.Writer) {
 	resolveNow := func() (snapshot, Entry) {
 		res, e := session(a, ts, event, p, dir)
-		if e.Skipped != "" {
-			return snapshot{}, e
-		}
 		return snapshot{Parts: a.Delivery().Chunks(res), Summary: agent.Summary(res), Missing: res.Missing}, e
 	}
 	var snap snapshot
@@ -182,6 +182,7 @@ func waitFor(d string, k int, deadline time.Time) {
 	// Slot k holds run.k until it ends.
 	if unlock, err := fsutil.LockTimeout(filepath.Join(d, fmt.Sprintf("run.%d", k)), time.Until(deadline)); err == nil {
 		unlock()
+		time.Sleep(orderGap)
 	}
 }
 

@@ -161,6 +161,11 @@ characters in Claude Code and Muse, and Muse's hooks count bytes, so Muse fits l
   also runs the hooks in `~/.claude/settings.json`: with both set up, Claude's hook adds nothing in Devin
   sessions (`doctor` shows it as skipped). Checked by the CLI tests only, not with the real agent, which
   needs a Devin login. Windsurf's old Cascade agent isn't supported: its hooks can't add context.
+- Cursor: the Agent CLI waits for the session-start hook and got 800,000 characters in full (tested with
+  2026.10.12). The desktop app (tested with 3.25) starts the hooks when the first message is sent and
+  doesn't wait for them: text from hooks that end too late is lost for that message. So far it got
+  30,000 characters in full and lost 100,000. It also runs the hooks in `~/.claude/settings.json`: with
+  ctxtra's Cursor hook set up, Claude's hook adds nothing there, at once (`doctor` shows it as skipped).
 - OpenCode: only OpenCode 2 (tested with 2.0.29); version 1 plugins have another format. OpenCode adds the
   text to every model request, not to the transcript, so resumed sessions get it too. Its background
   service keeps the plugin loaded: when the bound skills change, they apply from the second model request

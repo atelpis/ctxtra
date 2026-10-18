@@ -13,6 +13,7 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/registry"
+	"github.com/atelpis/ctxtra/internal/gitrepo"
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
@@ -30,6 +31,7 @@ type payload struct {
 	AgentType      string   `json:"agent_type"`
 	SessionID      string   `json:"session_id"`
 	AgentID        string   `json:"agent_id"` // a Claude subagent, whose session_id is its parent's
+	CursorVersion  string   `json:"cursor_version"`
 }
 
 // Run reads the hook input from in and writes the agent's answer to out. It
@@ -81,16 +83,27 @@ func RunSlot(harness, event string, slot int, in io.Reader, out, errOut io.Write
 	if dir == "" {
 		dir, _ = os.Getwd()
 	}
+	// Before anything slow: an agent that doesn't wait for its hooks may run
+	// this one, and all slots of it.
+	if s, ok := a.(agent.Skipper); ok {
+		if why := s.Skip(agent.Input{CursorVersion: p.CursorVersion}); why != "" {
+			if slot <= 0 {
+				e := Entry{Ts: ts, Harness: harness, Event: event, Dir: dir, Source: p.Source, AgentType: p.AgentType, Skipped: why}
+				if r := gitrepo.Identify(dir); r != nil { // for doctor, which finds runs by repository
+					e.Repo = r.Root
+				}
+				logEntry(e)
+			}
+			fmt.Fprintln(out, empty)
+			return 0
+		}
+	}
 	if sl, ok := a.(agent.Slotted); ok && slot >= 0 {
 		runSlot(a, sl, slot, ts, event, p, dir, out, errOut)
 		return 0
 	}
 	res, e := session(a, ts, event, p, dir)
 	logEntry(e)
-	if e.Skipped != "" {
-		fmt.Fprintln(out, empty)
-		return 0
-	}
 	for _, m := range res.Missing {
 		fmt.Fprintf(errOut, "ctxtra: bound file not found: %s\n", m)
 	}
@@ -99,8 +112,7 @@ func RunSlot(harness, event string, slot int, in io.Reader, out, errOut io.Write
 }
 
 // session resolves what a session in dir gets, with the files that the
-// agent wouldn't get in full dropped, and its log entry. The entry says why
-// when the session gets nothing.
+// agent wouldn't get in full dropped, and its log entry.
 func session(a agent.Agent, ts, event string, p payload, dir string) (*resolve.Result, Entry) {
 	// Before resolving: the session lists the skill as it is on disk.
 	skillErr := skill.Refresh()
@@ -109,11 +121,6 @@ func session(a agent.Agent, ts, event string, p payload, dir string) (*resolve.R
 	e := newEntry(ts, a.Name(), event, p, res, resolve.Chars(res.Render()))
 	if skillErr != nil {
 		e.Problems = append(slices.Clip(e.Problems), "can't update the ctxtra skill: "+skillErr.Error())
-	}
-	if s, ok := a.(agent.Skipper); ok {
-		if e.Skipped = s.Skip(); e.Skipped != "" {
-			e.Chars = 0
-		}
 	}
 	return res, e
 }

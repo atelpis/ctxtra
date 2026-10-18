@@ -362,7 +362,8 @@ the dropped files.
 | Antigravity | 650,000 bytes | one hook, an injected step per part of up to 40,000 bytes |
 | Copilot | about 100,000 tokens | one hook |
 | Pi, OpenCode, DSH | 1,000,000 characters | one plugin |
-| Cursor, Devin | 1,000,000 characters | one hook; not measured |
+| Cursor | 1,000,000 characters | one hook; the Agent CLI got 800,000 in full, the desktop app doesn't wait for the hook (see README) |
+| Devin | 1,000,000 characters | one hook; not measured |
 
 Characters are Unicode code points; Claude Code and Muse count UTF-16 units, where an emoji or another
 character outside the Basic Multilingual Plane counts 2. Copilot counts tokens, which ctxtra estimates: four ASCII characters

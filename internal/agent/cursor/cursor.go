@@ -37,6 +37,13 @@ func (a Agent) hooks() hookjson.Config {
 		Flat: true, Version: 1}
 }
 
+// HookSetUp reports whether ctxtra's sessionStart hook is in Cursor's hook
+// file.
+func HookSetUp() bool {
+	cmds, err := Agent{}.hooks().Commands()
+	return err == nil && len(cmds["sessionStart"]) > 0
+}
+
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
 
 func (a Agent) Status() agent.Status { return a.hooks().Status() }

@@ -79,7 +79,11 @@ Not covered here, and checked by hand before a release:
   Claude, Codex, Pi and OpenCode. These need a pseudo-terminal runner.
 - Codex hook trust through `/hooks`. The other tests run Codex with `--dangerously-bypass-hook-trust`;
   `TestCodexTrustTUI` covers the startup hook review only.
-- Cursor Agent CLI: its model protocol can't be mocked.
+- Cursor (Agent CLI and desktop app): its model protocol can't be mocked. [cursorkit](cursorkit) checks it by
+  hand with the real model: `go run ./cursorkit prepare -dir DIR -chars N [-delay D]` makes a test folder
+  whose project hook binds a file with random codewords, `go run ./cursorkit cli -dir DIR` runs a CLI chat,
+  and `go run ./cursorkit verify -dir DIR` checks a desktop chat opened in `DIR/workspace`: every codeword
+  in the answer, read from Cursor's transcript, and no tool call.
 - The Antigravity App and IDE. They read the same hook file as the CLI.
 - Hermes with `plugins.isolation: host`.
 - DSH's web UI and TUI: the tests run its headless profile. DSH 0.2.0-rc.2's headless profile exits before a

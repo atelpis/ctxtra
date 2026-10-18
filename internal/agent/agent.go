@@ -100,7 +100,12 @@ type Slotted interface {
 // which that agent's own hook serves. Skip is why the hook adds nothing, or
 // "" when it runs as usual.
 type Skipper interface {
-	Skip() string
+	Skip(in Input) string
+}
+
+// Input is the part of a hook's input that tells which agent runs it.
+type Input struct {
+	CursorVersion string // set by Cursor, also when it runs another agent's hooks
 }
 
 // AdditionalContext is the hook answer format that Claude Code, Codex CLI and

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/atelpis/ctxtra/internal/agent"
+	"github.com/atelpis/ctxtra/internal/agent/cursor"
 	"github.com/atelpis/ctxtra/internal/agent/devin"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
 	"github.com/atelpis/ctxtra/internal/chunk"
@@ -54,11 +55,17 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().
 
 func (a Agent) Status() agent.Status { return a.hooks().Status() }
 
-// Skip: Devin also runs the hooks in ~/.claude/settings.json, and when
-// ctxtra's Devin hook is set up, the session would get the files twice.
-func (Agent) Skip() string {
-	if devin.UnderDevin() {
+// Skip: Devin and the Cursor desktop app also run the hooks in
+// ~/.claude/settings.json, and when ctxtra's own hook of that agent is set
+// up, the session would get the files twice. In Cursor, all of Claude's
+// slots would also slow down the session start, whose hooks Cursor doesn't
+// wait for.
+func (Agent) Skip(in agent.Input) string {
+	switch {
+	case devin.UnderDevin():
 		return "run by Devin, whose own ctxtra hook adds the files"
+	case in.CursorVersion != "" && cursor.HookSetUp():
+		return "run by Cursor, whose own ctxtra hook adds the files"
 	}
 	return ""
 }
