@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v3"
 
 	"github.com/atelpis/ctxtra/internal/paths"
@@ -353,8 +354,7 @@ func checkSchema(doc *yaml.Node, f map[string]*yaml.Node) error {
 	return nil
 }
 
-// pathList resolves the paths listed in file with ref. Globs are not
-// supported: every file and skill folder is listed by name. A reference to
+// pathList resolves and expands the paths listed in file. A reference to
 // a pinned source that isn't available is skipped alone, with a problem.
 func (c *Config) pathList(n *yaml.Node, what, file string, in *Source) ([]string, error) {
 	list, err := strList(n, what)
@@ -364,19 +364,46 @@ func (c *Config) pathList(n *yaml.Node, what, file string, in *Source) ([]string
 	base := filepath.Dir(file)
 	var out []string
 	for _, p := range list {
-		if strings.ContainsAny(p, "*?[") {
-			return nil, fmt.Errorf("line %d: %s entry %q looks like a glob; list each path by name", n.Line, what, p)
+		isGlob := strings.ContainsAny(p, "*?[{")
+		ref, pattern := p, ""
+		if isGlob {
+			if !doublestar.ValidatePattern(filepath.ToSlash(p)) {
+				return nil, fmt.Errorf("line %d: invalid glob pattern %q", n.Line, p)
+			}
+			var prefix string
+			prefix, pattern = doublestar.SplitPattern(filepath.ToSlash(p))
+			// Resolve a child of the fixed prefix so a pattern at a source's
+			// top also passes ref's requirement for a path inside the source.
+			ref = strings.TrimSuffix(prefix, "/") + "/.ctxtra-glob-root"
 		}
-		r, _, err := c.ref(p, base, in)
+		notesBefore := len(c.Notes)
+		r, src, err := c.ref(ref, base, in)
+		displayErr := err
+		if isGlob {
+			c.Notes = c.Notes[:notesBefore]
+			if err != nil {
+				displayErr = errors.New(strings.ReplaceAll(err.Error(), ref, p))
+			}
+		}
 		var unavailable errUnavailable
 		switch {
 		case errors.As(err, &unavailable):
-			c.problem(file, fmt.Errorf("line %d: %w", n.Line, err))
+			c.problem(file, fmt.Errorf("line %d: %w", n.Line, displayErr))
 			continue
 		case err != nil:
-			return nil, fmt.Errorf("line %d: %w", n.Line, err)
+			return nil, fmt.Errorf("line %d: %w", n.Line, displayErr)
 		}
-		out = append(out, r)
+		if isGlob {
+			root := filepath.Dir(r)
+			matches, err := c.expand(root, pattern, what, src)
+			if err != nil {
+				c.problem(file, fmt.Errorf("line %d: %s entry %q (in %q): %w", n.Line, what, p, paths.Tilde(root), err))
+				continue
+			}
+			out = append(out, matches...)
+		} else {
+			out = append(out, r)
+		}
 	}
 	return out, nil
 }

@@ -113,7 +113,7 @@ func TestStrictBindings(t *testing.T) {
 		"empty dirs":       item("{name: a, match: {dirs: []}, instructions: [x.md]}"),
 		"relative dir":     item("{name: a, match: {dirs: [dev/x]}, instructions: [x.md]}"),
 		"no instructions":  item("{name: a, match: {global: true}}"),
-		"glob":             item("{name: a, match: {global: true}, instructions: [notes/*.md]}"),
+		"bad glob":         item("{name: a, match: {global: true}, instructions: ['notes/[bad']}"),
 		"null instruction": item("{name: a, match: {global: true}, instructions: [null]}"),
 		"not a list":       item("{name: a, match: {global: true}, instructions: x.md}"),
 		"duplicate key":    item("{name: a, match: {global: true}, match: {dirs: [/x]}, instructions: [x.md]}"),

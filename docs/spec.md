@@ -328,7 +328,22 @@ any of them matches.
 - `instructions` and `skills` are lists. A binding needs at least one of them.
 - Each path is absolute, starts with `~`, is relative to the folder of the file the binding is in (the
   config or a binding file), or is a `ctxtra://<source>/<path>` reference.
-- Globs are not supported: list each file and skill folder by name.
+- `instructions` and `skills` support the same doublestar globs as `match`. Quote patterns in YAML
+  and on the command line, for example `instructions: ['notes/**/*.md']` or
+  `ctxtra bind notes --global --file '~/notes/**/*.md'`. Skill patterns select folders containing a regular `SKILL.md`, so `skills/**` can select skills
+  recursively without selecting their parent folders.
+- Glob metacharacters in a path are interpreted as patterns; for literal braces use character classes,
+  for example `notes/[{]draft[}].md` to select `notes/{draft}.md`. Metacharacters in a resolved parent
+  folder (such as the home or config folder) remain literal.
+- Entries apply in list order; each pattern expands in lexical path order. Overlapping entries are
+  deduplicated at their first position. A pattern with no matches is reported and skipped.
+- Glob expansion skips symlink entries and does not descend into symlinked folders. Symlinks in the
+  fixed prefix retain the usual trust checks. Every local file still needs to be trusted.
+- Each pattern is limited to 10,000 directory entries and operations, with a maximum traversal depth of
+  64. A traversal error or exceeded limit skips the whole pattern, with a problem.
+- Pinned-source patterns expand only against the selected commit. `sync` reviews matching files from
+  both the old and proposed commits, including newly matched files. Local patterns are expanded live:
+  new matching files apply immediately. Use `files`, `show` or `explain` to inspect the result.
 - Each file is added once per session, at its first position, and the same for each skill. Two skills with
   the same `name`: the first is used, the other is reported.
 - `SKILL.md` must start with YAML frontmatter that has a `description`. `name` is optional (default: the
