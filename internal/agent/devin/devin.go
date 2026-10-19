@@ -26,7 +26,10 @@ import (
 // Agent is Devin CLI and Devin Local.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent   = Agent{}
+	_ agent.Missing = Agent{}
+)
 
 // events: Devin has no subagent-start event, and its matchers match tool
 // names, so SessionStart has none.
@@ -53,7 +56,7 @@ func (Agent) Detect() bool {
 }
 
 func (a Agent) hooks() hookjson.Config {
-	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events}
+	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events, Missing: a}
 }
 
 // Setup refuses a config with comments, which Devin allows: ctxtra writes
@@ -74,6 +77,8 @@ func (a Agent) Status() agent.Status { return a.hooks().Status() }
 func (Agent) Answer(event string, res *resolve.Result) any {
 	return agent.AdditionalContext(event, res)
 }
+
+func (Agent) MissingAnswer(event, msg string) string { return agent.SystemMessage(event, msg) }
 
 // Delivery: not measured; Devin may cut large hook output.
 func (Agent) Delivery() agent.Delivery {

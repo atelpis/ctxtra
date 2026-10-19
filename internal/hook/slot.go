@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,14 +84,14 @@ type seat struct {
 	first bool
 }
 
-func runSlot(a agent.Agent, sl agent.Slotted, slot int, ts, event string, p payload, in agent.Input, dir string, out, errOut io.Writer) {
+func runSlot(a agent.Agent, sl agent.Slotted, d agent.Delivery, upgrade string, slot int, ts, event string, p payload, in agent.Input, dir string, out, errOut io.Writer) {
 	resolveNow := func() (snapshot, Entry) {
-		res, e := session(a, ts, event, p, in, dir)
-		return snapshot{Parts: a.Delivery().Chunks(res), Summary: agent.Summary(res), Missing: res.Missing}, e
+		res, e := session(a, d, upgrade, ts, event, p, dir)
+		return snapshot{Parts: d.Chunks(res), Summary: agent.Summary(res), Missing: res.Missing}, e
 	}
 	var snap snapshot
 	var resolved *Entry // the log entry, when this slot resolved the session
-	key := slotKey(a.Name(), event, p, dir)
+	key := slotKey(a.Name(), event, in.Slots, p, dir)
 	err := errors.New("no session ID")
 	if key != "" {
 		var at seat
@@ -151,13 +152,14 @@ func runSlot(a agent.Agent, sl agent.Slotted, slot int, ts, event string, p payl
 }
 
 // slotKey names the session start of a hook input, or is "" when the input
-// has no session ID.
-func slotKey(harness, event string, p payload, dir string) string {
+// has no session ID. The slot count is part of it: setups with different
+// counts get the text fitted to different counts.
+func slotKey(harness, event string, slots int, p payload, dir string) string {
 	if p.SessionID == "" {
 		return ""
 	}
 	h := sha256.New()
-	for _, s := range []string{harness, event, p.Source, p.SessionID, p.AgentID, dir} {
+	for _, s := range []string{harness, event, strconv.Itoa(slots), p.Source, p.SessionID, p.AgentID, dir} {
 		fmt.Fprintf(h, "%d:%s\n", len(s), s)
 	}
 	return hex.EncodeToString(h.Sum(nil))[:32]

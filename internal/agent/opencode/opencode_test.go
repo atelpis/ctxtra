@@ -131,7 +131,7 @@ console.log(JSON.stringify({ plugin: plugin.id, before: before.map((s) => s.id +
 	}
 	// One run at setup, then one per session, not one per request.
 	calls, _ := os.ReadFile(bin + ".calls")
-	if want := "hook opencode setup {\"cwd\":\"/a\"}\nhook opencode context {\"cwd\":\"/a\"}\nhook opencode context {\"cwd\":\"/b\"}\n"; string(calls) != want {
+	if want := "hook opencode setup {\"cwd\":\"/a\",\"ctxtra_plugin\":1}\nhook opencode context {\"cwd\":\"/a\",\"ctxtra_plugin\":1}\nhook opencode context {\"cwd\":\"/b\",\"ctxtra_plugin\":1}\n"; string(calls) != want {
 		t.Errorf("calls:\n%s", calls)
 	}
 	if r := run(filepath.Join(dir, "missing")); strings.Join(r.Before, ",") != "mine:USER" || len(r.Sizes) != 3 || r.Sizes[0] != 0 || r.Reloads != 0 {

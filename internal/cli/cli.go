@@ -59,7 +59,7 @@ Usage:
   ctxtra skill [install]  show the ctxtra skill, which lets your agents set up and
                           change ctxtra; install adds it to every session
   ctxtra help [TOPIC]     this text, or a topic of the docs of this version
-  ctxtra hook AGENT [EVENT [--slot N]]
+  ctxtra hook AGENT [EVENT [--slot K --of N]]
                           hook entry point; reads the agent's hook JSON on stdin
   ctxtra version
 
@@ -100,13 +100,11 @@ func Run(args []string, stdio IO, version string) int {
 		if len(rest) > 1 {
 			event = rest[1]
 		}
-		slot := -1
-		if len(rest) == 4 && rest[2] == "--slot" {
-			if n, err := strconv.Atoi(rest[3]); err == nil && n >= 0 {
-				slot = n
-			}
+		args := hook.Args{Slot: -1}
+		if len(rest) > 2 {
+			args = hookArgs(rest[2:])
 		}
-		return hook.RunSlot(rest[0], event, slot, hookInput(stdio.In), stdio.Out, term.Writer{W: stdio.Err})
+		return hook.RunArgs(rest[0], event, args, hookInput(stdio.In), stdio.Out, term.Writer{W: stdio.Err})
 	case "setup":
 		return runSetup(rest, stdio)
 	case "add":
@@ -147,6 +145,52 @@ func Run(args []string, stdio IO, version string) int {
 	}
 	fmt.Fprintf(stdio.Err, "unknown command %q\n\n%s", cmd, usage)
 	return 2
+}
+
+// hookArgs reads --slot K and --of N wherever they are, and ignores other
+// arguments, so a hook that a later version set up, with options this
+// version doesn't know, still runs. Options that can't be read are an
+// error: run without its slot, each hook of a slotted agent would add the
+// whole text.
+func hookArgs(args []string) hook.Args {
+	out := hook.Args{Slot: -1}
+	seen := map[string]bool{}
+	for i := 0; i < len(args); i++ {
+		name := args[i]
+		if name != "--slot" && name != "--of" {
+			continue
+		}
+		if seen[name] {
+			out.Err = fmt.Errorf("%s given twice", name)
+			return out
+		}
+		seen[name] = true
+		i++
+		if i == len(args) {
+			out.Err = fmt.Errorf("%s without a value", name)
+			return out
+		}
+		n, err := strconv.Atoi(args[i])
+		if err != nil || strings.Trim(args[i], "0123456789") != "" {
+			out.Err = fmt.Errorf("%s %q is not a non-negative integer", name, args[i])
+			return out
+		}
+		if name == "--slot" {
+			out.Slot = n
+		} else {
+			out.Slots = n
+		}
+	}
+	switch {
+	case !seen["--of"]:
+	case !seen["--slot"]:
+		out.Err = errors.New("--of without --slot")
+	case out.Slots == 0:
+		out.Err = errors.New("--of 0")
+	case out.Slot >= out.Slots:
+		out.Err = fmt.Errorf("--slot %d not below --of %d", out.Slot, out.Slots)
+	}
+	return out
 }
 
 // hookInput doesn't read from a terminal: that would wait for input forever

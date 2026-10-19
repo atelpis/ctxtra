@@ -129,3 +129,48 @@ func TestSetupOffersSkill(t *testing.T) {
 		t.Errorf("installed, but asked again:\n%s", out)
 	}
 }
+
+// The hook reads --slot and --of wherever they are and ignores other
+// arguments; options it can't read add nothing, and are logged.
+func TestHookArgs(t *testing.T) {
+	for _, c := range []struct {
+		args        string
+		slot, slots int
+		err         string
+	}{
+		{"", -1, 0, ""},
+		{"--slot 3", 3, 0, ""},
+		{"--slot 3 --of 40 --future x", 3, 40, ""},
+		{"--future --slot 3", 3, 0, ""},
+		{"--of 40 --part-size 12000 --slot 39", 39, 40, ""},
+		{"--slot x", 0, 0, `--slot "x" is not a non-negative integer`},
+		{"--slot -1", 0, 0, `--slot "-1" is not a non-negative integer`},
+		{"--slot +1", 0, 0, `--slot "+1" is not a non-negative integer`},
+		{"--slot 1 --slot 2", 0, 0, "--slot given twice"},
+		{"--slot 1 --of 4 --of 4", 0, 0, "--of given twice"},
+		{"--slot", 0, 0, "--slot without a value"},
+		{"--of 40", 0, 0, "--of without --slot"},
+		{"--slot 0 --of 0", 0, 0, "--of 0"},
+		{"--slot 40 --of 40", 0, 0, "--slot 40 not below --of 40"},
+	} {
+		got := hookArgs(strings.Fields(c.args))
+		switch {
+		case c.err != "":
+			if got.Err == nil || got.Err.Error() != c.err {
+				t.Errorf("%q: error %v, want %q", c.args, got.Err, c.err)
+			}
+		case got.Err != nil || got.Slot != c.slot || got.Slots != c.slots:
+			t.Errorf("%q: %+v, want slot %d of %d", c.args, got, c.slot, c.slots)
+		}
+	}
+	h := testenv.Home(t)
+	for _, args := range [][]string{{"--slot", "x"}, {"--slot", "1", "--slot", "2"}} {
+		code, out, _ := run(append([]string{"hook", "claude", "SessionStart"}, args...)...)
+		if code != 0 || out != "{}\n" {
+			t.Errorf("%v: %d %q", args, code, out)
+		}
+	}
+	if b, _ := os.ReadFile(filepath.Join(h, ".ctxtra", "log.jsonl")); strings.Count(string(b), "bad hook arguments") != 2 {
+		t.Errorf("log:\n%s", b)
+	}
+}

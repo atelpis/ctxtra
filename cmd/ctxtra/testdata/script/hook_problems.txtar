@@ -21,14 +21,17 @@ stdout 'systemMessage'
 ! exec ctxtra doctor
 stdout 'schema must be ctxtra/v1 \(found "ctxtra/v9"\)'
 
-# The hook command answers {} when the binary is gone. Set up from a copy
-# of the binary, then delete the copy.
+# When the binary is gone, the hook command tells the user at session
+# start, and answers {} for a subagent. Set up from a copy of the binary,
+# then delete the copy.
 mkdir bin
 exec cp $BIN bin/ctxtra
 exec bin/ctxtra setup --agent claude
 stdout 'hooks run ~/bin/ctxtra'
 rm bin/ctxtra
 runhook claude SessionStart notes
+stdout '^\{"systemMessage":"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent claude with the new binary"\}$'
+runhook claude SubagentStart notes
 stdout '^\{\}$'
 ! exec ctxtra doctor
 stdout 'claude: .*MISSING'

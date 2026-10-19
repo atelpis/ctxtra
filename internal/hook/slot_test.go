@@ -14,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/registry"
 	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/testenv"
@@ -48,12 +47,22 @@ type slotAnswer struct {
 // runSlots runs all 40 slots of claude's event at once, like Claude does.
 func runSlots(t *testing.T, event, input string) []slotAnswer {
 	t.Helper()
-	out := make([]slotAnswer, 40)
+	return runSlotsOf(t, event, input, 0)
+}
+
+// runSlotsOf is runSlots for a setup with --of slots, or 40 slots without
+// --of when slots is 0.
+func runSlotsOf(t *testing.T, event, input string, slots int) []slotAnswer {
+	t.Helper()
+	out := make([]slotAnswer, max(slots, 40))
+	if slots > 0 {
+		out = out[:slots]
+	}
 	var wg sync.WaitGroup
 	for k := range out {
 		wg.Go(func() {
 			var b bytes.Buffer
-			RunSlot("claude", event, k, strings.NewReader(input), &b, io.Discard)
+			RunArgs("claude", event, Args{Slot: k, Slots: slots}, strings.NewReader(input), &b, io.Discard)
 			var m struct {
 				HookSpecificOutput struct{ AdditionalContext string }
 				SystemMessage      string
@@ -173,7 +182,7 @@ func age(t *testing.T, d string) {
 func TestSnapshot(t *testing.T) {
 	h, r := bigSession(t, 1000)
 	p := payload{Cwd: r, SessionID: "s2", Source: "startup"}
-	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", p, r))
+	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", 0, p, r))
 	calls := 0
 	mk := func() snapshot { calls++; return snapshot{Parts: []string{fmt.Sprint(calls)}} }
 	at, s, err := shared(d, 0, mk)
@@ -230,7 +239,7 @@ func TestSnapshot(t *testing.T) {
 	if n := len(generations(d)); n != 3 {
 		t.Errorf("%d generations, want 3", n)
 	}
-	if slotKey("claude", "SessionStart", payload{Cwd: r}, r) != "" {
+	if slotKey("claude", "SessionStart", 0, payload{Cwd: r}, r) != "" {
 		t.Error("a key without a session ID")
 	}
 }
@@ -338,7 +347,7 @@ func TestSnapshotGeneration(t *testing.T) {
 	h, r := bigSession(t, 1000)
 	input := `{"cwd": "` + r + `", "session_id": "same", "source": "clear"}`
 	p := payload{Cwd: r, SessionID: "same", Source: "clear"}
-	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", p, r))
+	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", 0, p, r))
 	RunSlot("claude", "SessionStart", 0, strings.NewReader(input), io.Discard, io.Discard)
 	testenv.Write(t, filepath.Join(h, "big.md"), "NEW-GENERATION-CONTEXT")
 	if got := runSlots(t, "SessionStart", input); strings.Contains(got[0].text, "NEW-GENERATION-CONTEXT") || !strings.Contains(got[0].text, "big L00000") {
@@ -365,12 +374,12 @@ func TestOverlappingGenerations(t *testing.T) {
 	h, r := bigSession(t, 30_000)
 	input := `{"cwd": "` + r + `", "session_id": "same", "source": "resume"}`
 	p := payload{Cwd: r, SessionID: "same", Source: "resume"}
-	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", p, r))
+	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", 0, p, r))
 	claude, _ := registry.Get("claude")
 	var want []string
 	for k := range 10 {
 		_, s, err := shared(d, k, func() snapshot {
-			res, e := session(claude, "", "SessionStart", p, agent.Input{Slot: k}, r)
+			res, e := session(claude, claude.Delivery(), "", "", "SessionStart", p, r)
 			return snapshot{Parts: claude.Delivery().Chunks(res), Entry: &e}
 		})
 		if err != nil {
@@ -506,5 +515,35 @@ func TestPinSurvivesOtherCleanup(t *testing.T) {
 	}
 	if _, s, err := shared(d, 2, text("NEW-0", "NEW-1", "NEW-2")); err != nil || s.Parts[2] != "OLD-2" {
 		t.Errorf("slot 2: %+v %v, want OLD-2 from the pin", s, err)
+	}
+}
+
+// The slot count of a setup is part of the snapshot's key: setups with
+// different counts of one session never share a snapshot, and each gets
+// the text fitted to its count. A setup with more slots than this version
+// has, after a downgrade, gets nothing in the slots past them.
+func TestSlotCount(t *testing.T) {
+	h, r := bigSession(t, 30_000)
+	input := `{"cwd": "` + r + `", "session_id": "s6"}`
+	two := runSlotsOf(t, "SessionStart", input, 2)
+	if !strings.Contains(two[0].summary, "dropped big.md") || !strings.Contains(two[0].summary, "Claude Code's limit of 18,000 characters") ||
+		strings.Contains(two[0].text+two[1].text, "big L00000") {
+		t.Errorf("2 slots: %q, %.80q", two[0].summary, two[0].text)
+	}
+	forty := runSlotsOf(t, "SessionStart", input, 40)
+	if !strings.Contains(forty[0].text, "big L00000") || strings.Contains(forty[0].summary, "dropped") {
+		t.Errorf("40 slots: %q, %.80q", forty[0].summary, forty[0].text)
+	}
+	more := runSlotsOf(t, "SessionStart", input, 64)
+	for k := range more {
+		if k < 40 && more[k].text != forty[k].text || k >= 40 && more[k].text != "" {
+			t.Errorf("64 slots: part %d is %.80q", k, more[k].text)
+		}
+	}
+	if entries, _ := os.ReadDir(filepath.Join(h, ".ctxtra", "slots")); len(entries) != 3 {
+		t.Errorf("want a folder per slot count, got %d", len(entries))
+	}
+	if e := logEntries(t, h); len(e) != 3 {
+		t.Errorf("want a resolve per slot count, got %+v", e)
 	}
 }

@@ -113,7 +113,7 @@ cmp .config/devin/config.json commented.json
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook devin SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook devin SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{\\\"systemMessage\\\":\\\"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent devin with the new binary\\\"}\"; fi'",
             "timeout": 10
           }
         ]

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -123,8 +124,11 @@ func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "DSH", Capacity: 1_000_000}
 }
 
+// protocol is the version of the plugin, which it sends as ctxtra_plugin.
+const protocol = 1
+
 // Plugin is the plugin that runs bin.
-func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, pluginBody) }
+func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, protocol, pluginBody) }
 
 // pluginBody runs the binary asynchronously, like Pi's extension, with a 10
 // second timeout and room for the largest output ctxtra can produce.
@@ -135,7 +139,7 @@ func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin,
 // it. The plugin is plain JavaScript and imports only Node's modules: it is
 // loaded from outside any DSH profile, where DSH's own packages don't
 // resolve.
-const pluginBody = `// Written by ctxtra setup and loaded by its row in cordis.patch.yml. Adds the
+var pluginBody = `// Written by ctxtra setup and loaded by its row in cordis.patch.yml. Adds the
 // instruction files and skills that ctxtra binds to the session's folder.
 // ` + "`ctxtra setup --remove`" + ` removes both.
 import { execFile } from "node:child_process";
@@ -158,7 +162,7 @@ function run(ev, cwd, signal) {
 					}
 				});
 			child.stdin?.on("error", () => {});
-			child.stdin?.end(JSON.stringify({ cwd }));
+			child.stdin?.end(JSON.stringify({ cwd, ctxtra_plugin: ` + strconv.Itoa(protocol) + ` }));
 		} catch {
 			resolve({});
 		}

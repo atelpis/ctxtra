@@ -1,7 +1,9 @@
 // Package extfile manages the extension files that ctxtra writes for agents
 // without command hooks: a TypeScript module (Pi, OpenCode) or a Python
 // plugin (Hermes) that runs the binary. The first line marks the file as
-// ctxtra's; the second names the binary, for Status.
+// ctxtra's; the second names the binary, for Status; the third the version
+// of ctxtra's plugin protocol that the file speaks, which it also sends as
+// ctxtra_plugin.
 package extfile
 
 import (
@@ -10,6 +12,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -38,18 +42,54 @@ func (s Syntax) Mark() string { return s.comment + " @ctxtra-managed" }
 
 func (s Syntax) binaryMark() string { return s.comment + " binary: " }
 
-// Content is the extension for bin. body has one %s, where the binary path
-// goes as an expression: a JSON string, which is also a valid TypeScript and
-// Python string, or a path under the home folder, so the file works for
-// another user name.
-func Content(s Syntax, bin, body string) string {
+func (s Syntax) protocolMark() string { return s.comment + " protocol: " }
+
+// Content is the extension for bin, of version protocol. body has one %s,
+// where the binary path goes as an expression: a JSON string, which is also
+// a valid TypeScript and Python string, or a path under the home folder, so
+// the file works for another user name.
+func Content(s Syntax, bin string, protocol int, body string) string {
 	js, _ := json.Marshal(bin)
 	expr := string(js)
 	if t := paths.Tilde(bin); strings.HasPrefix(t, "~/") {
 		rel, _ := json.Marshal(t[2:])
 		expr = fmt.Sprintf(s.home, rel)
 	}
-	return s.Mark() + "\n" + s.binaryMark() + agent.ShellPath(bin) + "\n" + fmt.Sprintf(body, expr)
+	return s.Mark() + "\n" + s.binaryMark() + agent.ShellPath(bin) + "\n" + s.protocolMark() + strconv.Itoa(protocol) + "\n" +
+		fmt.Sprintf(body, expr)
+}
+
+// maxFile bounds what Protocol reads.
+const maxFile = 1 << 20
+
+// rePluginField is the version that a Python plugin from before the
+// protocol line sends (Hermes).
+var rePluginField = regexp.MustCompile(`"ctxtra_plugin": (\d+)`)
+
+// Protocol returns the protocol version of the extension at path, and
+// whether there is one of ctxtra's there. A file without the protocol line
+// is version 0, from before files said, or, for a Python plugin, the
+// ctxtra_plugin that it sends.
+func Protocol(path string) (int, bool) {
+	b, err := fsutil.ReadBounded(path, maxFile)
+	if err != nil || !managed(b) {
+		return 0, false
+	}
+	for line := range strings.Lines(string(b)) {
+		for _, s := range syntaxes {
+			if v, ok := strings.CutPrefix(strings.TrimRight(line, "\n"), s.protocolMark()); ok {
+				n, err := strconv.Atoi(v)
+				return n, err == nil && n >= 0
+			}
+		}
+	}
+	if bytes.HasPrefix(b, []byte(Python.Mark())) {
+		if m := rePluginField.FindSubmatch(b); m != nil {
+			n, err := strconv.Atoi(string(m[1]))
+			return n, err == nil
+		}
+	}
+	return 0, true
 }
 
 // Check reports an error when a file exists at path that ctxtra didn't

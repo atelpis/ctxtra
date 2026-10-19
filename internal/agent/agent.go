@@ -5,6 +5,7 @@
 package agent
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -86,12 +87,32 @@ func thousands(n int) string {
 	return s
 }
 
+// WithSlots is d for a setup with n slots, fewer than d.Slots.
+func (d Delivery) WithSlots(n int) Delivery {
+	if d.Slots == 0 || n <= 0 || n >= d.Slots {
+		return d
+	}
+	d.Slots = n
+	if d.Chunk > 0 && !d.ChunkJSON {
+		d.Capacity = min(d.Capacity, n*d.Chunk)
+	}
+	return d
+}
+
 // Slotted is an agent whose config has Delivery().Slots hooks per event,
-// which all run at once: hook K, run with --slot K, adds part K of the text.
+// which all run at once: hook K, run with --slot K --of N, adds part K of
+// the text.
 type Slotted interface {
 	// SlotAnswer is the hook output with text, and with summary for the user
 	// when it isn't "".
 	SlotAnswer(event, text, summary string) any
+}
+
+// OldSlots is an agent with slots whose setups from before version 1 don't
+// say how many slots they have (--of, ctxtra_slots). OldSlots is the count
+// that all of them have, which stays when Delivery().Slots changes.
+type OldSlots interface {
+	OldSlots() int
 }
 
 // Skipper is an agent whose hook can also run in another agent's session,
@@ -108,12 +129,24 @@ type Upgrader interface {
 	Legacy(event string, in Input) (d Delivery, ok bool)
 }
 
+// Missing is an agent whose hook answer can show the user a message.
+type Missing interface {
+	// MissingAnswer is the JSON that the hook command prints for event when
+	// the binary is gone, with msg for the user; "" for {}.
+	MissingAnswer(event, msg string) string
+}
+
 // Input is the part of a hook's input and command line that tells which
 // agent and which setup runs it.
 type Input struct {
 	CursorVersion string // set by Cursor, also when it runs another agent's hooks
 	Slot          int    // the hook's --slot, or -1 without one
-	Plugin        int    // the version of the plugin that runs ctxtra (Hermes), 0 when it doesn't say
+	// Slots is how many slots the setup has: the hook's --of, or the
+	// plugin's ctxtra_slots (Hermes); 0 when it doesn't say (OldSlots).
+	Slots int
+	// Plugin is the version of the plugin that runs ctxtra (Pi, OpenCode,
+	// DSH, Hermes), 0 when it doesn't say.
+	Plugin int
 }
 
 // AdditionalContext is the hook answer format that Claude Code, Codex CLI and
@@ -134,6 +167,21 @@ func ContextAnswer(event, text, summary string) any {
 		out["systemMessage"] = summary
 	}
 	return out
+}
+
+// SystemMessage is a MissingAnswer in the format of AdditionalContext: msg
+// as systemMessage at session start, nothing for other events.
+func SystemMessage(event, msg string) string {
+	if event != "SessionStart" {
+		return ""
+	}
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	if enc.Encode(map[string]string{"systemMessage": msg}) != nil {
+		return ""
+	}
+	return strings.TrimSuffix(b.String(), "\n")
 }
 
 // summaryNames limits inline name lists in diagnostics.

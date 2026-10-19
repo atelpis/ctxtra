@@ -23,6 +23,8 @@ var (
 	_ agent.Agent    = Agent{}
 	_ agent.Slotted  = Agent{}
 	_ agent.Upgrader = Agent{}
+	_ agent.Missing  = Agent{}
+	_ agent.OldSlots = Agent{}
 )
 
 // events are not registered for resume: the resumed transcript already
@@ -49,7 +51,7 @@ func (Agent) Detect() bool {
 }
 
 func (a Agent) hooks() hookjson.Config {
-	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events, Slots: a.Delivery().Slots}
+	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events, Slots: a.Delivery().Slots, Missing: a}
 }
 
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
@@ -81,12 +83,18 @@ func (Agent) SlotAnswer(event, text, summary string) any {
 	return agent.ContextAnswer(event, text, summary)
 }
 
+func (Agent) MissingAnswer(event, msg string) string { return agent.SystemMessage(event, msg) }
+
 // Delivery: Claude shows the model only a preview of a hook's text over
 // 10,000 UTF-16 units, but gets the text of every hook of an event: 40 hooks
 // of up to 9,000 each (measured with Claude Code 2.1.300).
 func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Claude Code", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 9000, Slots: 40}
 }
+
+// OldSlots: setups from before version 1 wrote 40 hooks per event, without
+// --of.
+func (Agent) OldSlots() int { return 40 }
 
 // Legacy: a hook without a slot, set up by an older version, is the only
 // one of its event, and gets one part.

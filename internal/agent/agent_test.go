@@ -93,6 +93,36 @@ func TestDelivery(t *testing.T) {
 	}
 }
 
+// A setup with fewer slots gets fewer parts; one with more gets no more
+// than the agent takes.
+func TestWithSlots(t *testing.T) {
+	d := agent.Delivery{Title: "Claude Code", Capacity: 360_000, Chunk: 9000, Slots: 40}
+	if got := d.WithSlots(20); got.Slots != 20 || got.Capacity != 180_000 {
+		t.Errorf("20 slots: %+v", got)
+	}
+	for _, n := range []int{0, 40, 64} {
+		if got := d.WithSlots(n); got != d {
+			t.Errorf("%d slots: %+v", n, got)
+		}
+	}
+	muse := agent.Delivery{Title: "Muse", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 13_000, ChunkJSON: true, Slots: 40}
+	if got := muse.WithSlots(2); got.Slots != 2 || got.Capacity != 360_000 {
+		t.Errorf("Muse, 2 slots: %+v", got)
+	}
+	if one := (agent.Delivery{Title: "Codex", Capacity: 1_000_000}); one.WithSlots(3) != one {
+		t.Errorf("an agent without slots: %+v", one.WithSlots(3))
+	}
+}
+
+func TestSystemMessage(t *testing.T) {
+	if got := agent.SystemMessage("SessionStart", "a <b> & \"c\""); got != `{"systemMessage":"a <b> & \"c\""}` {
+		t.Errorf("session start: %s", got)
+	}
+	if got := agent.SystemMessage("SubagentStart", "x"); got != "" {
+		t.Errorf("subagent: %s", got)
+	}
+}
+
 func TestSummaryListLimit(t *testing.T) {
 	for _, count := range []int{15, 16} {
 		t.Run(fmt.Sprint(count), func(t *testing.T) {
