@@ -12,6 +12,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
 	"github.com/atelpis/ctxtra/internal/chunk"
+	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
@@ -52,10 +53,15 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().
 
 // Status also reports a hook turned off with "enabled": false, for example
 // in the App's settings.
-func (a Agent) Status() agent.Status {
-	s := a.hooks().Status()
-	data, err := jsonorder.ReadFile(a.ConfigPath())
+func (a Agent) Status(bin string, known bool) agent.Status {
+	s := a.hooks().Status(bin, known)
+	b, err := fsutil.ReadBounded(a.ConfigPath(), agent.MaxConfig)
 	if err != nil {
+		return s
+	}
+	v, _ := jsonorder.Decode(b)
+	data, ok := v.(*jsonorder.Map)
+	if !ok {
 		return s
 	}
 	if v, _ := data.Get(hookName); v != nil {
@@ -68,6 +74,8 @@ func (a Agent) Status() agent.Status {
 	}
 	return s
 }
+
+func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
 
 // Answer injects the text as system messages, a step per part.
 // Antigravity has no message for the user.

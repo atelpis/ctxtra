@@ -9,6 +9,7 @@ exists .pi/agent/extensions/other.ts
 
 exec ctxtra doctor
 stdout 'pi: set up, runs .*/ctxtra \(ok\)'
+! stderr .
 
 exec ctxtra setup --remove --agent pi
 ! exists .pi/agent/extensions/ctxtra.ts

@@ -5,6 +5,8 @@
 package hookjson
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"slices"
@@ -52,6 +54,13 @@ type Config struct {
 	// Missing is the agent when its hook answer can show the user that the
 	// binary is gone; nil for none.
 	Missing agent.Missing
+	// Legacy is what a hook that an older version set up gets, from the hook
+	// and whether its handler has ContextLimit; nil when every older hook
+	// gets as much as a new one.
+	Legacy func(event string, h agent.Hook, limited bool) (agent.Delivery, bool)
+	// RepairNote follows the command that sets up the agent again, in
+	// Check's notices.
+	RepairNote string
 }
 
 func (c Config) key() string {
@@ -82,7 +91,7 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		if o.Remove {
 			again += " --remove"
 		}
-		return fmt.Errorf("%s: a ctxtra hook was changed by hand; left alone. Restore or delete it, then run %s --agent %s", c.Path, again, c.Agent)
+		return fmt.Errorf("%s: %s; left alone. Restore or delete it, then run %s --agent %s", c.Path, handEdited, again, c.Agent)
 	}
 	if !add && !c.hasOurs(hooks) {
 		return nil // nothing to remove: leave the file as it is
@@ -189,6 +198,10 @@ func (c Config) Commands() (map[string][]Command, error) {
 	if err != nil {
 		return nil, err
 	}
+	return c.commands(data), nil
+}
+
+func (c Config) commands(data *jsonorder.Map) map[string][]Command {
 	out := map[string][]Command{}
 	for _, ev := range c.Events {
 		for gi, e := range c.entries(data, ev.Name) {
@@ -205,7 +218,7 @@ func (c Config) Commands() (map[string][]Command, error) {
 			}
 		}
 	}
-	return out, nil
+	return out
 }
 
 // Command is one of our hook commands and its position in the file.
@@ -214,48 +227,96 @@ type Command struct {
 	Group, Handler int
 }
 
-// Status describes our entries and the binary they run.
-func (c Config) Status() agent.Status {
-	cmds, err := c.Commands()
+// Status describes our entries and the binary they run, with Check's
+// notices.
+func (c Config) Status(bin string, known bool) agent.Status {
+	data, err := c.read()
 	if err != nil {
 		return agent.Status{State: "unreadable: " + err.Error()}
 	}
-	var evs, bins []string
+	cmds := c.commands(data)
+	notices := c.check(data, cmds, bin, known)
+	var evs []string
 	for _, ev := range c.Events {
+		if len(cmds[ev.Name]) > 0 {
+			evs = append(evs, ev.Name)
+		}
+	}
+	if len(evs) == 0 {
+		return agent.Status{State: "not set up", OK: len(notices) == 0, Details: notices}
+	}
+	s := BinaryStatus(fmt.Sprintf("set up for %v", evs), c.binaries(cmds))
+	s.OK = s.OK && len(notices) == 0
+	s.Details = notices
+	return s
+}
+
+// Check is agent.Agent.Check for the hook file: the binaries the hooks
+// run, hooks of an older version, missing hooks, and hooks that are gone.
+func (c Config) Check(bin string, known bool) []string {
+	data, err := c.load()
+	if err != nil {
+		return []string{agent.UnreadableNotice(c.Path, err)}
+	}
+	return c.check(data, c.commands(data), bin, known)
+}
+
+func (c Config) check(data *jsonorder.Map, cmds map[string][]Command, bin string, known bool) []string {
+	repair := agent.Repair(c.Agent) + c.RepairNote
+	// Setup and --remove both leave such a file alone: only the user can
+	// end this notice.
+	if hooks, ok := data.Get(c.key()); ok {
+		if h, ok := hooks.(*jsonorder.Map); ok && c.changedByHand(h) {
+			return []string{fmt.Sprintf("%s: %s; restore or delete it, then %s", paths.Tilde(c.Path), handEdited, repair)}
+		}
+	}
+	bins := c.binaries(cmds)
+	if len(bins) == 0 {
+		if known {
+			return []string{agent.GoneNotice("ctxtra's hooks are", c.Path, c.Agent, repair)}
+		}
+		return nil
+	}
+	out := agent.BinaryNotices("the hooks run", bins, bin, repair)
+	for _, ev := range c.Events {
+		list := c.entries(data, ev.Name)
 		if len(cmds[ev.Name]) == 0 {
+			out = append(out, fmt.Sprintf("%s has no ctxtra hook; %s", ev.Name, repair))
 			continue
 		}
-		evs = append(evs, ev.Name)
+		legacy := false
+		for _, cmd := range cmds[ev.Name] {
+			if c.Legacy == nil {
+				break
+			}
+			h, _ := agent.ParseCommand(cmd.Text, c.Missing)
+			limited := c.ContextLimit == 0 || limit(data, list, cmd) == fmt.Sprint(c.ContextLimit)
+			if old, ok := c.Legacy(ev.Name, h, limited); ok {
+				if n := agent.LegacyNotice(old, repair); !slices.Contains(out, n) {
+					out = append(out, n)
+				}
+				legacy = true
+				break
+			}
+		}
+		if n, of, ok := c.slots(cmds[ev.Name]); !legacy && c.Slots > 0 && !ok {
+			out = append(out, fmt.Sprintf("%s has %d of the %d ctxtra hooks; %s", ev.Name, n, of, repair))
+		}
+	}
+	return out
+}
+
+// binaries are the binaries that cmds run, in file order.
+func (c Config) binaries(cmds map[string][]Command) []string {
+	var bins []string
+	for _, ev := range c.Events {
 		for _, cmd := range cmds[ev.Name] {
 			if h, _ := agent.ParseCommand(cmd.Text, c.Missing); !slices.Contains(bins, h.Binary) {
 				bins = append(bins, h.Binary)
 			}
 		}
 	}
-	if len(evs) == 0 {
-		return agent.Status{State: "not set up", OK: true}
-	}
-	s := BinaryStatus(fmt.Sprintf("set up for %v", evs), bins)
-	if c.ContextLimit > 0 {
-		data, _ := c.read()
-		for _, ev := range c.Events {
-			for _, cmd := range cmds[ev.Name] {
-				if limit(data, c.entries(data, ev.Name), cmd) != fmt.Sprint(c.ContextLimit) {
-					s.OK = false
-					s.Details = append(s.Details, fmt.Sprintf("%s: a ctxtra hook without additionalContextLimit %d, which cuts the text (run ctxtra setup)", ev.Name, c.ContextLimit))
-				}
-			}
-		}
-	}
-	if c.Slots > 0 {
-		for _, ev := range c.Events {
-			if n := c.slots(cmds[ev.Name]); n != c.Slots {
-				s.OK = false
-				s.Details = append(s.Details, fmt.Sprintf("%s: %d of the %d ctxtra hooks (run ctxtra setup)", ev.Name, n, c.Slots))
-			}
-		}
-	}
-	return s
+	return bins
 }
 
 // Limited reports whether event has one of our handlers, and each of them
@@ -300,19 +361,38 @@ func limit(data *jsonorder.Map, list []any, cmd Command) string {
 	return fmt.Sprint(v)
 }
 
-// slots is how many different slots cmds run, or 0 when one of them has no
-// slot, two have the same, or one says a slot count other than c.Slots. A
-// slot of an earlier version, without a count, has c.Slots.
-func (c Config) slots(cmds []Command) int {
+// slots is how many different slots below the count cmds run, and the
+// count. ok: they are the hooks of one setup, every hook with its own
+// slot, and as many hooks as the count that each one says. Hooks of an
+// earlier version, without a count, have c.Slots; a count of 0, which the
+// hook refuses, has none.
+func (c Config) slots(cmds []Command) (n, of int, ok bool) {
 	seen := map[int]bool{}
+	of, ok = -1, true
 	for _, cmd := range cmds {
 		h, _ := agent.ParseCommand(cmd.Text, c.Missing)
-		if h.Slot < 0 || seen[h.Slot] || h.Slots != 0 && h.Slots != c.Slots {
-			return 0
+		count := h.Slots
+		if h.Of && count == 0 {
+			ok = false
+			continue
+		}
+		if !h.Of {
+			count = c.Slots
+		}
+		if of >= 0 && count != of {
+			ok = false
+		}
+		of = max(of, count)
+		if h.Slot < 0 || h.Slot >= count || seen[h.Slot] {
+			ok = false
+			continue
 		}
 		seen[h.Slot] = true
 	}
-	return len(seen)
+	if of < 0 {
+		of = c.Slots
+	}
+	return len(seen), of, ok && len(cmds) == of
 }
 
 // BinaryStatus adds the binaries the hooks run, and whether they exist, to
@@ -323,9 +403,6 @@ func BinaryStatus(state string, bins []string) agent.Status {
 		st, ok := agent.CheckBinary(bin)
 		s.OK = s.OK && ok
 		s.State += fmt.Sprintf(", runs %s (%s)", paths.Tilde(bin), st)
-	}
-	if !s.OK {
-		s.State += "; run ctxtra setup"
 	}
 	return s
 }
@@ -374,11 +451,32 @@ func (c Config) entry(cmd string, ev Event) (entry, handler *jsonorder.Map) {
 }
 
 func (c Config) read() (*jsonorder.Map, error) {
-	data, err := jsonorder.ReadFile(c.Path)
+	data, err := c.load()
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", c.Path, err)
 	}
 	return data, nil
+}
+
+// load parses the file, an empty object when it is missing or blank. It
+// reads a regular file only, so a FIFO can't block it.
+func (c Config) load() (*jsonorder.Map, error) {
+	b, err := fsutil.ReadBounded(c.Path, agent.MaxConfig)
+	if errors.Is(err, os.ErrNotExist) || err == nil && len(bytes.TrimSpace(b)) == 0 {
+		return jsonorder.NewMap(), nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	v, err := jsonorder.Decode(b)
+	if err != nil {
+		return nil, err
+	}
+	o, ok := v.(*jsonorder.Map)
+	if !ok {
+		return nil, errors.New("expected a JSON object")
+	}
+	return o, nil
 }
 
 func (c Config) hasOurs(hooks *jsonorder.Map) bool {
@@ -434,6 +532,10 @@ func (c Config) ourCommand(v any) (string, bool) {
 	_, ok = agent.ParseCommand(cmd, c.Missing)
 	return cmd, ok
 }
+
+// handEdited is how setup and Check tell about a hook that changedByHand
+// finds.
+const handEdited = "a ctxtra hook was changed by hand"
 
 // changedByHand reports whether a command in hooks looks like one of this
 // agent's ctxtra hooks but isn't one of ours, for example after its answer

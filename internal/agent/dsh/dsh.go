@@ -68,7 +68,7 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 
 func (a Agent) setupPatch(o agent.Options, r *agent.Report) error {
 	path := a.ConfigPath()
-	old, err := os.ReadFile(path)
+	old, err := fsutil.ReadBounded(path, agent.MaxConfig)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -91,11 +91,12 @@ func (a Agent) setupPatch(o agent.Options, r *agent.Report) error {
 }
 
 // Status needs both the plugin and the row that loads it.
-func (a Agent) Status() agent.Status {
-	st := extfile.Status(a.PluginPath())
-	b, err := os.ReadFile(a.ConfigPath())
+func (a Agent) Status(bin string, known bool) agent.Status {
+	notices := a.Check(bin, known)
+	st := extfile.Status(a.PluginPath(), notices)
+	b, err := fsutil.ReadBounded(a.ConfigPath(), agent.MaxConfig)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return agent.Status{State: "unreadable: " + err.Error()}
+		return agent.Status{State: "unreadable: " + err.Error(), Details: notices}
 	}
 	loaded, ok := patchPlugin(string(b))
 	plugin := st.State != "not set up"
@@ -103,13 +104,40 @@ func (a Agent) Status() agent.Status {
 	case !ok && !plugin:
 		return st
 	case !ok:
-		return agent.Status{State: "plugin written, but cordis.patch.yml doesn't load it; run ctxtra setup"}
+		return agent.Status{State: "plugin written, but cordis.patch.yml doesn't load it", Details: notices}
 	case loaded != a.PluginPath():
-		return agent.Status{State: "cordis.patch.yml loads " + paths.Tilde(loaded) + "; run ctxtra setup"}
+		return agent.Status{State: "cordis.patch.yml loads " + paths.Tilde(loaded), Details: notices}
 	case !plugin:
-		return agent.Status{State: "cordis.patch.yml loads a missing plugin; run ctxtra setup"}
+		return agent.Status{State: "cordis.patch.yml loads a missing plugin", Details: notices}
 	}
 	return st
+}
+
+// Check needs both the plugin and the row that loads it. setup.json lists
+// the patch file, ConfigPath.
+func (a Agent) Check(bin string, known bool) []string {
+	repair := agent.Repair(a.Name())
+	b, err := fsutil.ReadBounded(a.ConfigPath(), agent.MaxConfig)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return []string{agent.UnreadableNotice(a.ConfigPath(), err)}
+	}
+	loaded, row := patchPlugin(string(b))
+	notices, plugin := extfile.CheckSetup(extfile.Ext{Path: a.PluginPath(), Agent: a.Name(), Noun: "plugin"}, bin, false)
+	switch {
+	case len(notices) > 0 && !plugin: // can't read the plugin
+	case !row && !plugin:
+		if known {
+			notices = append(notices, agent.GoneNotice("ctxtra's patch row is", a.ConfigPath(), a.Name(), repair))
+		}
+	case !row:
+		notices = append(notices, "the patch row that loads ctxtra's plugin is missing; "+repair)
+	case loaded != a.PluginPath():
+		notices = append(notices, fmt.Sprintf("%s loads %s, not ctxtra's plugin %s; %s", paths.Tilde(a.ConfigPath()),
+			paths.Tilde(loaded), paths.Tilde(a.PluginPath()), repair))
+	case !plugin:
+		notices = append(notices, fmt.Sprintf("the patch row loads ctxtra's plugin %s, which is missing; %s", paths.Tilde(a.PluginPath()), repair))
+	}
+	return notices
 }
 
 // Answer is the files and the list of skills as one text, which the plugin

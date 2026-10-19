@@ -35,6 +35,9 @@ runhook claude SubagentStart notes
 stdout '^\{\}$'
 ! exec ctxtra doctor
 stdout 'claude: .*MISSING'
+! stderr .
+! exec ctxtra files
+stderr '^claude: the hooks run ~/bin/ctxtra, which doesn''t exist; run ctxtra setup --agent claude$'
 
 -- .config/ctxtra/config.yaml --
 schema: ctxtra/v1

@@ -11,6 +11,7 @@ stdout 'nothing to change'
 
 exec ctxtra doctor
 stdout 'copilot: set up for \[sessionStart subagentStart\], runs .*/ctxtra \(ok\)'
+! stderr .
 
 runhook copilot sessionStart .
 stdout '"additionalContext":"[^"]*CTXMARK-ME'

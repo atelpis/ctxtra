@@ -46,7 +46,14 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 	return extfile.Setup(a.ConfigPath(), Extension(o.Binary), o, r)
 }
 
-func (a Agent) Status() agent.Status { return extfile.Status(a.ConfigPath()) }
+func (a Agent) Status(bin string, known bool) agent.Status {
+	return extfile.Status(a.ConfigPath(), a.Check(bin, known))
+}
+
+func (a Agent) Check(bin string, known bool) []string {
+	notices, _ := extfile.CheckSetup(extfile.Ext{Path: a.ConfigPath(), Agent: a.Name(), Noun: "extension"}, bin, known)
+	return notices
+}
 
 // Answer lists the files with their content, the skills by SKILL.md path
 // (Pi loads them as native skills), and a summary the extension shows the

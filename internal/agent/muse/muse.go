@@ -63,12 +63,17 @@ func (Agent) Detect() bool {
 // "schema_version": 1.
 func (a Agent) hooks() hookjson.Config {
 	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events,
-		Version: 1, VersionKey: "schema_version", Slots: a.Delivery().Slots, Missing: a}
+		Version: 1, VersionKey: "schema_version", Slots: a.Delivery().Slots, Missing: a,
+		Legacy: func(event string, h agent.Hook, _ bool) (agent.Delivery, bool) {
+			return a.Legacy(event, agent.Input{Slot: h.Slot, Slots: h.Slots})
+		}}
 }
 
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
 
-func (a Agent) Status() agent.Status { return a.hooks().Status() }
+func (a Agent) Status(bin string, known bool) agent.Status { return a.hooks().Status(bin, known) }
+
+func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
 
 // Answer is the whole text in one hook, for a hook without a slot, set up
 // by an older version.

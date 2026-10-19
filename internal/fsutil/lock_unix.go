@@ -17,7 +17,7 @@ func Lock(path string) (unlock func(), err error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := OpenRegular(path, os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, err
 	}
@@ -70,9 +70,10 @@ func lockFile(path string, how int, deadline time.Time) (*os.File, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	// A regular file only: opening a FIFO could block before the timeout.
+	f, err := OpenRegular(path, os.O_RDWR|os.O_CREATE, 0o600)
 	if errors.Is(err, os.ErrPermission) {
-		f, err = os.Open(path)
+		f, err = OpenRegular(path, os.O_RDONLY, 0)
 	}
 	if err != nil {
 		return nil, err

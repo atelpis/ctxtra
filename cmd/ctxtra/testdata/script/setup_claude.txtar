@@ -20,6 +20,7 @@ stdout 'nothing to change'
 exec ctxtra doctor
 stdout 'claude: set up for \[SessionStart SubagentStart\], runs .*/ctxtra \(ok\)'
 ! stdout 'of the 40 ctxtra hooks'
+! stderr .
 
 exec ctxtra setup --remove --agent claude
 stdout '^ctxtra setup --remove \(claude\): changed$'
@@ -28,11 +29,14 @@ cmp .claude/settings.json original.json
 exec ctxtra setup --remove --agent claude
 stdout 'nothing to change'
 
-# The single hook of an older version: doctor asks for setup, which puts
-# the 40 hooks in its place.
+# The single hook of an older version: doctor, and the notice after other
+# commands, ask for setup, which puts the 40 hooks in its place.
 expand single.json .claude/settings.json
 ! exec ctxtra doctor
-stdout 'SessionStart: 0 of the 40 ctxtra hooks \(run ctxtra setup\)'
+stdout '^    set up by an older ctxtra, with Claude Code''s limit of 9,000 characters; run ctxtra setup --agent claude$'
+! stderr .
+exec ctxtra files
+stderr '^claude: set up by an older ctxtra, with Claude Code''s limit of 9,000 characters; run ctxtra setup --agent claude$'
 exec ctxtra setup --agent claude
 stdout '^ctxtra setup \(claude\): changed$'
 cp .claude/settings.json got.json

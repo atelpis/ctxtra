@@ -425,8 +425,8 @@ When the binary that a hook runs is gone, Claude Code, Codex, Muse and Devin sho
 that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent claude with the new binary`
 (with the agent's name) at session start, and Pi shows it as a warning. This needs hooks and a Pi extension
 that this version of ctxtra or a later one set up: older ones add nothing, without a word, like the other
-agents. `ctxtra doctor` shows the missing binary. Setup leaves a config alone that has a ctxtra hook changed
-by hand, and says so, instead of adding a second hook next to it.
+agents. `ctxtra doctor` and the [setup notices](#setup-notices) show the missing binary. Setup leaves a
+config alone that has a ctxtra hook changed by hand, and says so, instead of adding a second hook next to it.
 
 ## Setup compatibility
 
@@ -470,6 +470,38 @@ Answers only grow: fields are added, never renamed or given a new meaning, and a
 reads is sent while that setup is supported. The hooks and plugins ignore fields they don't know. The
 arguments and event names that a released setup sends are accepted forever, and `ctxtra hook` ignores
 arguments it doesn't know, so an older binary still runs a newer setup.
+
+### Setup notices
+
+After every command but `hook`, `setup`, `doctor`, `help` and `version`, ctxtra prints a line on stderr for
+each setup that needs you, with the command that repairs it. The lines never change the exit code; `doctor`
+shows the same lines under each agent instead:
+
+| When | Notice |
+|---|---|
+| The binary in the setup is gone | `claude: the hooks run ~/Downloads/ctxtra-0.3/ctxtra, which doesn't exist; run ctxtra setup --agent claude` |
+| The setup runs another binary | `claude: the hooks run /usr/local/bin/ctxtra, not this ctxtra (/opt/homebrew/bin/ctxtra); to switch, run ctxtra setup --agent claude` |
+| An older version set it up, with less room | `codex: set up by an older ctxtra, with Codex's limit of 9,000 bytes; run ctxtra setup --agent codex (Codex will then ask you to trust the hooks again)` |
+| Part of the setup is missing | `claude: SessionStart has 3 of the 40 ctxtra hooks; run ctxtra setup --agent claude`, `dsh: the patch row that loads ctxtra's plugin is missing; run ctxtra setup --agent dsh` |
+| The Hermes plugin isn't enabled | `hermes: the ctxtra plugin is installed but not enabled; run hermes plugins enable ctxtra` |
+| A setup is gone from its file | `claude: ctxtra's hooks are gone from ~/.claude/settings.json; if that wasn't on purpose, run ctxtra setup --agent claude; if it was, ctxtra setup --remove --agent claude stops this notice` |
+| An agent was found since the last setup | `cursor: found since the last ctxtra setup; to add ctxtra to it, run ctxtra setup --agent cursor` |
+
+A new agent is told about once: ctxtra then adds it to `detected` in `~/.ctxtra/setup.json`, unless a setup
+is running or the file can't be written, and then tells again next time. `doctor` still lists it as not set
+up. Each command names its agent, so a repair doesn't set up agents you left out, and a command that changes
+Codex's hooks says that Codex will ask to trust them. The binary isn't compared when this ctxtra runs from a
+temporary folder (`go run`). Apart from that record, the notices only read files: regular files of at most
+16 MiB, so a FIFO or a huge file in place of a config is one line that it can't be checked, never a command
+that hangs.
+
+`setup` records in `~/.ctxtra/setup.json` where it set up each agent (`installed`, by config path, until
+`setup --remove` removes it) and every agent it found (`detected`, also those left out with `--agent`). The
+notices use it to tell a setup that is gone from one that never was, and to find new agents (and add the ones
+they told about to `detected`): without the file there are no such notices, and a broken one is one notice, `~/.ctxtra/setup.json is unreadable: notices
+about new or removed setups are off until the next ctxtra setup`. The file never decides a change of an
+agent config. One setup runs at a time (`~/.ctxtra/setup.lock`); `--dry-run` doesn't write the file. When
+setup can't write it, setup fails with exit code 1, and the config changes it made stay.
 
 ## Validation
 

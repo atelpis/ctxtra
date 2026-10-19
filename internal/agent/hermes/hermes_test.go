@@ -42,12 +42,12 @@ func TestSetup(t *testing.T) {
 		t.Error("absolute binary path in the plugin")
 	}
 	// Set up but not enabled in Hermes.
-	if st := a.Status(); st.OK || st.State != "set up, runs ~/go/bin/ctxtra (ok)" ||
-		!slices.Contains(st.Details, "plugin NOT ENABLED in ~/.hermes/config.yaml (run hermes plugins enable ctxtra)") {
+	if st := a.Status("", false); st.OK || st.State != "set up, runs ~/go/bin/ctxtra (ok)" ||
+		!slices.Equal(st.Details, []string{"the ctxtra plugin is installed but not enabled; run hermes plugins enable ctxtra"}) {
 		t.Errorf("status %+v", st)
 	}
 	testenv.Write(t, filepath.Join(h, ".hermes", "config.yaml"), "model: x\nplugins:\n  enabled: [other, ctxtra]\n")
-	if st := a.Status(); !st.OK || !slices.Contains(st.Details, "plugin enabled in ~/.hermes/config.yaml") {
+	if st := a.Status("", false); !st.OK || !slices.Contains(st.Details, "plugin enabled in ~/.hermes/config.yaml") {
 		t.Errorf("enabled: %+v", st)
 	}
 	r = agent.Report{}
@@ -55,11 +55,11 @@ func TestSetup(t *testing.T) {
 		t.Errorf("setup again: %+v, %v", r, err)
 	}
 	testenv.Write(t, filepath.Join(h, ".hermes", "config.yaml"), "plugins:\n  enabled: [ctxtra]\n  disabled: [ctxtra]\n")
-	if st := a.Status(); st.OK {
+	if st := a.Status("", false); st.OK {
 		t.Errorf("disabled: %+v", st)
 	}
 	testenv.Write(t, filepath.Join(h, ".hermes", "config.yaml"), "plugins: [\n")
-	if st := a.Status(); st.OK || !strings.HasPrefix(st.Details[0], "plugin state unknown: ~/.hermes/config.yaml: ") {
+	if st := a.Status("", false); st.OK || !strings.HasPrefix(st.Details[0], "can't tell whether the ctxtra plugin is enabled: ~/.hermes/config.yaml: ") {
 		t.Errorf("broken config: %+v", st)
 	}
 	// Plugins of older versions: version 2, without the protocol line, gets
@@ -68,23 +68,23 @@ func TestSetup(t *testing.T) {
 	old, _ := os.ReadFile(a.ConfigPath())
 	v2 := strings.Replace(strings.Replace(string(old), "# protocol: 3\n", "", 1), `"ctxtra_plugin": 3, "ctxtra_slots": SLOTS`, `"ctxtra_plugin": 2`, 1)
 	testenv.Write(t, a.ConfigPath(), v2)
-	if st := a.Status(); !st.OK {
+	if st := a.Status("", false); !st.OK {
 		t.Errorf("version 2: %+v", st)
 	}
 	testenv.Write(t, a.ConfigPath(), strings.Replace(v2, `, "ctxtra_plugin": 2`, "", 1))
-	if st := a.Status(); st.OK || st.Details[0] != "~/.hermes/plugins/ctxtra/__init__.py: from an older version of ctxtra, with Hermes's limit of 9,000 characters (run ctxtra setup)" {
+	if st := a.Status("", false); st.OK || st.Details[0] != "set up by an older ctxtra, with Hermes's limit of 9,000 characters; run ctxtra setup --agent hermes" {
 		t.Errorf("before version 2: %+v", st)
 	}
 	testenv.Write(t, a.ConfigPath(), string(old))
 	os.Remove(manifestPath())
-	if st := a.Status(); st.OK || st.Details[0] != "~/.hermes/plugins/ctxtra/plugin.yaml: MISSING (run ctxtra setup)" {
+	if st := a.Status("", false); st.OK || st.Details[0] != "~/.hermes/plugins/ctxtra/plugin.yaml is missing; run ctxtra setup --agent hermes" {
 		t.Errorf("no plugin.yaml: %+v", st)
 	}
 
 	// Remove deletes the folder, with the bytecode Python wrote.
 	testenv.Write(t, filepath.Join(plugin, "__pycache__", "__init__.cpython-314.pyc"), "")
-	if err := a.Setup(agent.Options{Remove: true}, &r); err != nil || a.Status().State != "not set up" {
-		t.Fatalf("remove: %v, %+v", err, a.Status())
+	if err := a.Setup(agent.Options{Remove: true}, &r); err != nil || a.Status("", false).State != "not set up" {
+		t.Fatalf("remove: %v, %+v", err, a.Status("", false))
 	}
 	if _, err := os.Stat(plugin); !os.IsNotExist(err) {
 		t.Errorf("plugin folder left: %v", err)

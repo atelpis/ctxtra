@@ -19,6 +19,7 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
+	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -62,7 +63,7 @@ func (a Agent) hooks() hookjson.Config {
 // Setup refuses a config with comments, which Devin allows: ctxtra writes
 // plain JSON and would drop them.
 func (a Agent) Setup(o agent.Options, r *agent.Report) error {
-	b, err := os.ReadFile(a.ConfigPath())
+	b, err := fsutil.ReadBounded(a.ConfigPath(), agent.MaxConfig)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -72,7 +73,9 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 	return a.hooks().Apply(o, r)
 }
 
-func (a Agent) Status() agent.Status { return a.hooks().Status() }
+func (a Agent) Status(bin string, known bool) agent.Status { return a.hooks().Status(bin, known) }
+
+func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
 
 func (Agent) Answer(event string, res *resolve.Result) any {
 	return agent.AdditionalContext(event, res)

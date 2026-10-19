@@ -6,6 +6,7 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/setup"
+	"github.com/atelpis/ctxtra/internal/state"
 )
 
 // binary finds the binary the hooks run; a variable so tests can replace it.
@@ -54,6 +55,11 @@ func setupCmd(stdio IO, o setup.Options) int {
 	}
 	for _, e := range r.Errors {
 		fmt.Fprintln(stdio.Err, e)
+	}
+	if r.Record != nil {
+		fmt.Fprintf(stdio.Err, "ctxtra setup: can't write %s: %v; the changes above stay, and the next setup writes it\n",
+			paths.Tilde(state.SetupsPath()), r.Record)
+		return 1
 	}
 	if len(r.Errors) > 0 {
 		return 1

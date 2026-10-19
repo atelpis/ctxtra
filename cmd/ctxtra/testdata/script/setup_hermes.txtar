@@ -12,11 +12,15 @@ exists .hermes/plugins/other/plugin.yaml
 
 ! exec ctxtra doctor
 stdout 'hermes: set up, runs .*/ctxtra \(ok\)'
-stdout 'plugin NOT ENABLED in ~/.hermes/config.yaml'
+stdout '^    the ctxtra plugin is installed but not enabled; run hermes plugins enable ctxtra$'
+! stderr .
+exec ctxtra files
+stderr '^hermes: the ctxtra plugin is installed but not enabled; run hermes plugins enable ctxtra$'
 
 cp enabled.yaml .hermes/config.yaml
 exec ctxtra doctor
 stdout 'plugin enabled in ~/.hermes/config.yaml'
+! stderr .
 
 exec ctxtra setup --agent hermes
 stdout '^ctxtra setup \(hermes\): nothing to change$'

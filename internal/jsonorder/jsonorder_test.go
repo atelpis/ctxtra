@@ -1,6 +1,9 @@
 package jsonorder
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestRoundTrip(t *testing.T) {
 	in := `{"z":1.50,"a":{"y":"<&>","b":[1,{"k":null}]},"m":true}`
@@ -29,5 +32,24 @@ func TestRoundTrip(t *testing.T) {
 func TestDecodeRejectsDuplicateKeys(t *testing.T) {
 	if _, err := Decode([]byte(`{"hooks": {}, "a": {"x": 1, "x": 2}}`)); err == nil {
 		t.Error("duplicate key accepted")
+	}
+}
+
+// The decoder's tokens stop at 10,000 levels of nesting, which bounds the
+// recursion of decodeValue: a deeper file is an error, not an exhausted
+// stack.
+func TestDecodeDepth(t *testing.T) {
+	const maxDepth = 10000
+	nested := func(n int) []byte {
+		return []byte(strings.Repeat("[", n) + strings.Repeat("]", n))
+	}
+	if _, err := Decode(nested(maxDepth)); err != nil {
+		t.Errorf("%d deep: %v", maxDepth, err)
+	}
+	if _, err := Decode(nested(maxDepth + 1)); err == nil {
+		t.Errorf("%d deep: no error", maxDepth+1)
+	}
+	if _, err := Decode([]byte(`{"a":` + string(nested(maxDepth)) + `}`)); err == nil {
+		t.Error("too deep in an object: no error")
 	}
 }

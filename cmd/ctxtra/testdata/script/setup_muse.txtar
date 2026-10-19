@@ -10,6 +10,7 @@ cmpenv got.json new.json
 
 exec ctxtra doctor
 stdout 'muse: set up for \[SessionStart SubagentStart\], runs .*/ctxtra \(ok\)'
+! stderr .
 
 exec ctxtra setup --remove --agent muse
 cmp .config/muse/settings.json schema-only.json

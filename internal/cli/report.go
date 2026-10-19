@@ -200,8 +200,10 @@ func (r report) doctor(dir string) int {
 	r.sizeWarnings(res, "  ")
 
 	fmt.Fprintln(r.Out, "\nhooks:")
+	setups, _, _ := state.LoadSetups()
+	bin := running()
 	for _, a := range registry.All() {
-		st := a.Status()
+		st := a.Status(bin, setups.Known(a.Name(), a.ConfigPath()))
 		ok = ok && st.OK
 		fmt.Fprintf(r.Out, "  %s: %s  (%s)\n", a.Name(), st.State, a.ConfigPath())
 		for _, d := range st.Details {

@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
 	"github.com/atelpis/ctxtra/internal/chunk"
+	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -30,6 +32,7 @@ var (
 	_ agent.Agent    = Agent{}
 	_ agent.Upgrader = Agent{}
 	_ agent.Missing  = Agent{}
+	_ agent.Retrust  = Agent{}
 )
 
 // events are not registered for resume: the resumed transcript already
@@ -71,8 +74,12 @@ func (Agent) Detect() bool {
 func (a Agent) hooks() hookjson.Config {
 	// The status message names the hook in Codex's /hooks review.
 	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events,
-		StatusMessage: "ctxtra: personal instructions", ContextLimit: contextLimit, Missing: a}
+		StatusMessage: "ctxtra: personal instructions", ContextLimit: contextLimit, Missing: a,
+		Legacy:     func(_ string, _ agent.Hook, limited bool) (agent.Delivery, bool) { return legacy(!limited) },
+		RepairNote: " (" + a.TrustNote() + " again)"}
 }
+
+func (Agent) TrustNote() string { return "Codex will then ask you to trust the hooks" }
 
 // Setup also asks the user to review the hooks whenever it changed them:
 // Codex keeps an old trust record but no longer runs a changed hook.
@@ -89,8 +96,8 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 // stores a hash whose format isn't documented, so a record shows that the
 // user trusted a hook at that position once, not that it is still current.
 // It also warns about a Codex too old for additionalContextLimit.
-func (a Agent) Status() agent.Status {
-	s := a.hooks().Status()
+func (a Agent) Status(bin string, known bool) agent.Status {
+	s := a.hooks().Status(bin, known)
 	if v := version(); v != "" && older(v, minVersion) {
 		s.Details = append(s.Details, fmt.Sprintf("WARNING: codex %s shows the model only about 10,000 characters of the text; update to %s or later", v, minVersion))
 	}
@@ -116,8 +123,8 @@ func (Agent) Answer(event string, res *resolve.Result) any {
 
 // MissingAnswer: setup with the new binary changes the hooks, which Codex
 // then asks the user to trust again.
-func (Agent) MissingAnswer(event, msg string) string {
-	return agent.SystemMessage(event, msg+" (Codex will then ask you to trust the hooks again)")
+func (a Agent) MissingAnswer(event, msg string) string {
+	return agent.SystemMessage(event, msg+" ("+a.TrustNote()+" again)")
 }
 
 // Delivery: Codex gets the text in full up to the hook's
@@ -133,8 +140,15 @@ func (Agent) Delivery() agent.Delivery {
 // limit unless the file shows that ctxtra's hooks for the event have the
 // new one: cut text is worse than files dropped with a message.
 func (a Agent) Legacy(event string, _ agent.Input) (agent.Delivery, bool) {
-	return agent.Delivery{Title: "Codex", Capacity: 9000, Unit: chunk.Bytes}, !a.hooks().Limited(event)
+	return legacy(!a.hooks().Limited(event))
 }
+
+func legacy(old bool) (agent.Delivery, bool) {
+	return agent.Delivery{Title: "Codex", Capacity: 9000, Unit: chunk.Bytes}, old
+}
+
+// Check reads hooks.json only: Status also runs codex --version.
+func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
 
 var reVersion = regexp.MustCompile(`\b(\d+)\.(\d+)\.(\d+)\b`)
 
@@ -180,14 +194,14 @@ var reStateHeader = regexp.MustCompile(`^\[hooks\.state\."((?:[^"\\]|\\.)*)"\]\s
 // that have a trusted_hash. It reads only that simple layout, which is what
 // Codex writes; comments are ignored.
 func trustRecords(path string) []string {
-	f, err := os.Open(path)
+	f, err := fsutil.OpenRegular(path, os.O_RDONLY, 0)
 	if err != nil {
 		return nil
 	}
 	defer f.Close()
 	var out []string
 	key := ""
-	sc := bufio.NewScanner(f)
+	sc := bufio.NewScanner(io.LimitReader(f, agent.MaxConfig))
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		switch {
