@@ -47,7 +47,8 @@ func TestSetup(t *testing.T) {
 }
 
 // Runs the extension in Node the way Pi calls it, with a binary that prints
-// more than Node's default 1 MiB output buffer, and with no binary.
+// more than Node's default 1 MiB output buffer, with no binary or one that
+// can't be run (a warning for the user), and with one that fails (nothing).
 func TestExtensionRuns(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node not found")
@@ -56,7 +57,7 @@ func TestExtensionRuns(t *testing.T) {
 	bin := filepath.Join(dir, "ctxtra")
 	const size = 2 << 20
 	testenv.Write(t, bin, `#!/bin/sh
-cat >/dev/null
+cat >"$0.in"
 printf '{"files":[{"path":"/a.md","content":"'
 head -c `+itoa(size)+` /dev/zero | tr '\0' x
 printf '"}],"skills":["/s/SKILL.md"],"message":"ctxtra: added 1 file"}'
@@ -100,8 +101,24 @@ console.log(JSON.stringify({ skills: discovered.skillPaths, files: files.length,
 	if r := run(bin); len(r.Skills) != 1 || r.Files != 2 || r.Size != size || len(r.Notes) != 1 || r.Notes[0] != "info: ctxtra: added 1 file" {
 		t.Errorf("large output: %+v", r)
 	}
-	if r := run(filepath.Join(dir, "missing")); len(r.Skills) != 0 || r.Files != 1 || len(r.Notes) != 0 {
-		t.Errorf("missing binary: %+v", r)
+	if in, _ := os.ReadFile(bin + ".in"); string(in) != `{"cwd":"/x","ctxtra_plugin":1}` {
+		t.Errorf("input %s", in)
+	}
+	warning := "warning: " + agent.MissingMessage("pi")
+	notExecutable := filepath.Join(dir, "plain")
+	testenv.Write(t, notExecutable, "#!/bin/sh\n")
+	for _, bin := range []string{filepath.Join(dir, "missing"), notExecutable} {
+		if r := run(bin); len(r.Skills) != 0 || r.Files != 1 || len(r.Notes) != 1 || r.Notes[0] != warning {
+			t.Errorf("%s: %+v", bin, r)
+		}
+	}
+	failing := filepath.Join(dir, "failing")
+	testenv.Write(t, failing, "#!/bin/sh\nexit 1\n")
+	if err := os.Chmod(failing, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if r := run(failing); len(r.Skills) != 0 || r.Files != 1 || len(r.Notes) != 0 {
+		t.Errorf("failing binary: %+v", r)
 	}
 }
 

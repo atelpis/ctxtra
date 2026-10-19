@@ -29,6 +29,7 @@ type Agent struct{}
 var (
 	_ agent.Agent    = Agent{}
 	_ agent.Upgrader = Agent{}
+	_ agent.Missing  = Agent{}
 )
 
 // events are not registered for resume: the resumed transcript already
@@ -70,7 +71,7 @@ func (Agent) Detect() bool {
 func (a Agent) hooks() hookjson.Config {
 	// The status message names the hook in Codex's /hooks review.
 	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events,
-		StatusMessage: "ctxtra: personal instructions", ContextLimit: contextLimit}
+		StatusMessage: "ctxtra: personal instructions", ContextLimit: contextLimit, Missing: a}
 }
 
 // Setup also asks the user to review the hooks whenever it changed them:
@@ -111,6 +112,12 @@ func (a Agent) Status() agent.Status {
 
 func (Agent) Answer(event string, res *resolve.Result) any {
 	return agent.AdditionalContext(event, res)
+}
+
+// MissingAnswer: setup with the new binary changes the hooks, which Codex
+// then asks the user to trust again.
+func (Agent) MissingAnswer(event, msg string) string {
+	return agent.SystemMessage(event, msg+" (Codex will then ask you to trust the hooks again)")
 }
 
 // Delivery: Codex gets the text in full up to the hook's

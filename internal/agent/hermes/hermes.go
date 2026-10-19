@@ -30,14 +30,20 @@ type Agent struct{}
 var (
 	_ agent.Agent    = Agent{}
 	_ agent.Upgrader = Agent{}
+	_ agent.OldSlots = Agent{}
 )
 
 // pluginName is the plugin's name in plugin.yaml and in plugins.enabled.
 const pluginName = "ctxtra"
 
-// pluginVersion is sent by the plugin as ctxtra_plugin in the hook input.
-// Plugins of older versions send none.
-const pluginVersion = 2
+// pluginVersion is sent by the plugin as ctxtra_plugin in the hook input,
+// and is its protocol line. Version 2 was the first with a callback per
+// part; version 3 also sends ctxtra_slots. Plugins of older versions send
+// none.
+const pluginVersion = 3
+
+// firstSlotted is the first plugin version with a callback per part.
+const firstSlotted = 2
 
 const enableNote = "hermes: the plugin runs only after you enable it: run `hermes plugins enable " + pluginName +
 	"`. It applies from the next session."
@@ -112,16 +118,19 @@ func removeDir() {
 	os.Remove(pluginDir())
 }
 
-// Status adds whether plugin.yaml is in place, the plugin is this
-// version's, and it is enabled.
+// Status adds whether plugin.yaml is in place, the plugin gets as much as
+// this version's, and it is enabled. A plugin of an older version that does
+// is fine.
 func (a Agent) Status() agent.Status {
 	s := extfile.Status(a.ConfigPath())
 	if s.State == "not set up" {
 		return s
 	}
-	if b, err := os.ReadFile(a.ConfigPath()); err == nil && !isPlugin(string(b)) {
-		s.OK = false
-		s.Details = append(s.Details, paths.Tilde(a.ConfigPath())+": written by another version of ctxtra (run ctxtra setup)")
+	if v, ok := extfile.Protocol(a.ConfigPath()); ok {
+		if old, legacy := a.Legacy("", agent.Input{Plugin: v}); legacy {
+			s.OK = false
+			s.Details = append(s.Details, fmt.Sprintf("%s: from an older version of ctxtra, with %s (run ctxtra setup)", paths.Tilde(a.ConfigPath()), old.Over()))
+		}
 	}
 	if b, err := os.ReadFile(manifestPath()); err != nil || !strings.HasPrefix(string(b), extfile.Python.Mark()) {
 		s.OK = false
@@ -193,10 +202,14 @@ func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Hermes", Capacity: min(1_000_000, slots*size), Chunk: size, Slots: slots}
 }
 
-// Legacy: a plugin of an older version adds the text with one callback,
+// OldSlots: a plugin of version 2, which doesn't send ctxtra_slots,
+// registers 125 callbacks.
+func (Agent) OldSlots() int { return 125 }
+
+// Legacy: a plugin from before version 2 adds the text with one callback,
 // which gets as much as Hermes doesn't spill.
 func (Agent) Legacy(_ string, in agent.Input) (agent.Delivery, bool) {
-	return agent.Delivery{Title: "Hermes", Capacity: min(partChars, spillChars())}, in.Plugin < pluginVersion
+	return agent.Delivery{Title: "Hermes", Capacity: min(partChars, spillChars())}, in.Plugin < firstSlotted
 }
 
 // spillChars is hooks.output_spill.max_chars in config.yaml, read the way
@@ -239,16 +252,8 @@ func spillChars() int {
 }
 
 // Plugin is the plugin code that runs bin.
-func Plugin(bin string) string { return extfile.Content(extfile.Python, bin, pluginBody) }
-
-// isPlugin reports whether code is Plugin for the binary it names.
-func isPlugin(code string) bool {
-	for line := range strings.Lines(code) {
-		if bin, ok := strings.CutPrefix(strings.TrimRight(line, "\n"), "# binary: "); ok {
-			return code == Plugin(agent.ExpandShellPath(bin))
-		}
-	}
-	return false
+func Plugin(bin string) string {
+	return extfile.Content(extfile.Python, bin, pluginVersion, pluginBody)
 }
 
 var manifest = extfile.Python.Mark() + `
@@ -260,7 +265,10 @@ provides_hooks: [pre_llm_call]
 `
 
 // pluginBody runs the binary on the first turn of each session, subagents'
-// sessions included, with a 10 second timeout. Hermes adds the text to that
+// sessions included, with a 10 second timeout, and reads at most 64 MiB of
+// its output, like the other plugins. The binary runs in a session of its
+// own, so the timeout also ends what it started, and the timeout covers
+// writing its input too. Hermes adds the text to that
 // turn's user message and sends it again with that message on every later
 // turn, also after a resume. ctxtra logs a subagent's session as a
 // "subagent" event, other sessions as "pre_llm_call". Hermes runs the
@@ -270,7 +278,10 @@ var pluginBody = `# Written by ctxtra setup. Adds the instruction files and skil
 # ctxtra binds to the session's folder. Safe to delete; ` + "`ctxtra setup --remove`" + ` removes it.
 import json
 import os
+import select
+import signal
 import subprocess
+import time
 
 BIN = %s
 
@@ -278,6 +289,8 @@ BIN = %s
 # gives the text in parts, and callback K adds part K. A session's parts are
 # kept from its first callback to its last.
 SLOTS = ` + strconv.Itoa(slots) + `
+TIMEOUT = 10
+MAX_OUTPUT = 64 * 1024 * 1024
 _parts = {}
 
 
@@ -292,16 +305,69 @@ def _cwd():
 
 def _run(event):
     try:
-        out = subprocess.run(
+        data = json.dumps(
+            {"cwd": _cwd(), "ctxtra_plugin": ` + strconv.Itoa(pluginVersion) + `, "ctxtra_slots": SLOTS}, ensure_ascii=False
+        ).encode("utf-8")
+        proc = subprocess.Popen(
             [BIN, "hook", "hermes", event],
-            input=json.dumps({"cwd": _cwd(), "ctxtra_plugin": ` + strconv.Itoa(pluginVersion) + `}),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        ).stdout
-        parts = json.loads(out).get("chunks")
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
     except Exception:
         return []
+    deadline = time.monotonic() + TIMEOUT
+    try:
+        # A binary that doesn't read its input, or a process that it started
+        # and that keeps stdout open, can block a write or a read: the
+        # deadline holds for each.
+        in_fd, out_fd = proc.stdin.fileno(), proc.stdout.fileno()
+        os.set_blocking(in_fd, False)
+        sent = 0
+        out = bytearray()
+        while True:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return []
+            writing = [] if proc.stdin.closed else [in_fd]
+            readable, writable, _ = select.select([out_fd], writing, [], left)
+            if not readable and not writable:
+                return []
+            if writable:
+                try:
+                    sent += os.write(in_fd, data[sent:])
+                except BlockingIOError:
+                    pass
+                except BrokenPipeError:
+                    sent = len(data)
+                if sent >= len(data):
+                    proc.stdin.close()
+            if readable:
+                b = os.read(out_fd, 1 << 16)
+                if not b:
+                    break
+                out += b
+                if len(out) > MAX_OUTPUT:
+                    return []
+        if proc.wait(timeout=max(deadline - time.monotonic(), 0.001)) != 0:
+            return []
+        parts = json.loads(bytes(out)).get("chunks")
+    except Exception:
+        return []
+    finally:
+        try:
+            proc.stdin.close()
+        except Exception:
+            pass
+        # Before the binary is reaped, its process group can't be another's.
+        if proc.returncode is None:
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except Exception:
+                pass
+            proc.wait()
+        proc.stdout.close()
     if not isinstance(parts, list) or not all(isinstance(p, str) for p in parts):
         return []
     return parts

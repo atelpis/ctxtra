@@ -208,9 +208,9 @@ console.log(JSON.stringify({ name: plugin.name, withService, failing, without })
 	}
 	// Nothing for resume; the subagent's run is logged as one.
 	calls, _ := os.ReadFile(bin + ".calls")
-	want := "hook dsh startup {\"cwd\":\"/wd\"}\nhook dsh subagent {\"cwd\":\"/wd\"}\nhook dsh compact {\"cwd\":\"/wd\"}\n" +
-		"hook dsh startup {\"cwd\":\"/a\"}\nhook dsh subagent {\"cwd\":\"/a\"}\nhook dsh compact {\"cwd\":\"/b\"}\n" +
-		"hook dsh startup {\"cwd\":\"/a\"}\nhook dsh subagent {\"cwd\":\"/a\"}\nhook dsh compact {\"cwd\":\"/b\"}\n"
+	want := "hook dsh startup {\"cwd\":\"/wd\",\"ctxtra_plugin\":1}\nhook dsh subagent {\"cwd\":\"/wd\",\"ctxtra_plugin\":1}\nhook dsh compact {\"cwd\":\"/wd\",\"ctxtra_plugin\":1}\n" +
+		"hook dsh startup {\"cwd\":\"/a\",\"ctxtra_plugin\":1}\nhook dsh subagent {\"cwd\":\"/a\",\"ctxtra_plugin\":1}\nhook dsh compact {\"cwd\":\"/b\",\"ctxtra_plugin\":1}\n" +
+		"hook dsh startup {\"cwd\":\"/a\",\"ctxtra_plugin\":1}\nhook dsh subagent {\"cwd\":\"/a\",\"ctxtra_plugin\":1}\nhook dsh compact {\"cwd\":\"/b\",\"ctxtra_plugin\":1}\n"
 	if string(calls) != want {
 		t.Errorf("calls:\n%s", calls)
 	}

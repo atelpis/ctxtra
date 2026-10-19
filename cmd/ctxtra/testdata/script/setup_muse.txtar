@@ -41,7 +41,16 @@ exists xdg/muse/settings.json
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart --slot 0..39; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart --slot 0 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{\\\"systemMessage\\\":\\\"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent muse with the new binary\\\"}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart --slot 1..39 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]
@@ -52,7 +61,7 @@ exists xdg/muse/settings.json
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SubagentStart --slot 0..39; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SubagentStart --slot 0..39 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]
@@ -99,7 +108,16 @@ exists xdg/muse/settings.json
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart --slot 0..39; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart --slot 0 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{\\\"systemMessage\\\":\\\"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent muse with the new binary\\\"}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SessionStart --slot 1..39 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]
@@ -110,7 +128,7 @@ exists xdg/muse/settings.json
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SubagentStart --slot 0..39; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook muse SubagentStart --slot 0..39 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]

@@ -25,6 +25,8 @@ var (
 	_ agent.Agent    = Agent{}
 	_ agent.Slotted  = Agent{}
 	_ agent.Upgrader = Agent{}
+	_ agent.Missing  = Agent{}
+	_ agent.OldSlots = Agent{}
 )
 
 // events: SessionStart also runs on resume, without a matcher. Muse replaces
@@ -61,7 +63,7 @@ func (Agent) Detect() bool {
 // "schema_version": 1.
 func (a Agent) hooks() hookjson.Config {
 	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events,
-		Version: 1, VersionKey: "schema_version", Slots: a.Delivery().Slots}
+		Version: 1, VersionKey: "schema_version", Slots: a.Delivery().Slots, Missing: a}
 }
 
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
@@ -77,6 +79,9 @@ func (Agent) Answer(event string, res *resolve.Result) any {
 func (Agent) SlotAnswer(event, text, summary string) any {
 	return agent.ContextAnswer(event, text, clip(summary))
 }
+
+// MissingAnswer: Muse shows systemMessage like Claude Code.
+func (Agent) MissingAnswer(event, msg string) string { return agent.SystemMessage(event, msg) }
 
 // maxSummary is the most of the summary in a hook answer, in bytes of
 // JSON. Muse counts the whole answer, not only the text: with 13,000 bytes
@@ -158,6 +163,10 @@ func omitted(line string) (int, bool) {
 func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Muse", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 13_000, ChunkJSON: true, Slots: 40}
 }
+
+// OldSlots: setups from before version 1 wrote 40 hooks per event, without
+// --of.
+func (Agent) OldSlots() int { return 40 }
 
 // Legacy: a hook without a slot, set up by an older version, is the only
 // one of its event, and gets one part.

@@ -4,9 +4,11 @@
 package pi
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/extfile"
@@ -71,13 +73,19 @@ func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Pi", Capacity: 1_000_000}
 }
 
+// protocol is the version of the extension, which it sends as ctxtra_plugin.
+const protocol = 1
+
 // Extension is the extension that runs bin.
-func Extension(bin string) string { return extfile.Content(extfile.TypeScript, bin, extensionBody) }
+func Extension(bin string) string {
+	return extfile.Content(extfile.TypeScript, bin, protocol, extensionBody)
+}
 
 // extensionBody runs the binary asynchronously, so Pi's event loop never
 // waits on it, with a 10 second timeout and room for the largest output
-// ctxtra can produce (1,000,000 characters, up to 4 MB, JSON-escaped).
-const extensionBody = `// Written by ctxtra setup. Adds the instruction files and skills that
+// ctxtra can produce (1,000,000 characters, up to 4 MB, JSON-escaped). When
+// the binary can't be run, it warns the user once per session.
+var extensionBody = `// Written by ctxtra setup. Adds the instruction files and skills that
 // ctxtra binds to the current folder. Safe to delete; ` + "`ctxtra setup --remove`" + ` removes it.
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
@@ -85,12 +93,14 @@ import { join } from "node:path";
 
 const bin = %s;
 
+const missing = {};
+
 function run(ev: string, cwd: string): Promise<any> {
 	return new Promise((resolve) => {
 		try {
 			const child = execFile(bin, ["hook", "pi", ev], { encoding: "utf8", timeout: 10000, maxBuffer: 64 * 1024 * 1024 },
-				(err, stdout) => {
-					if (err) return resolve({});
+				(err: any, stdout) => {
+					if (err) return resolve(err.code === "ENOENT" || err.code === "EACCES" ? missing : {});
 					try {
 						resolve(JSON.parse(stdout));
 					} catch {
@@ -98,7 +108,7 @@ function run(ev: string, cwd: string): Promise<any> {
 					}
 				});
 			child.stdin?.on("error", () => {});
-			child.stdin?.end(JSON.stringify({ cwd }));
+			child.stdin?.end(JSON.stringify({ cwd, ctxtra_plugin: ` + strconv.Itoa(protocol) + ` }));
 		} catch {
 			resolve({});
 		}
@@ -108,8 +118,10 @@ function run(ev: string, cwd: string): Promise<any> {
 export default function ctxtra(pi: any) {
 	// Tells the user once per session what ctxtra added.
 	pi.on("session_start", async (_event: any, ctx: any) => {
-		const message = (await run("session_start", ctx.cwd)).message;
-		if (message && ctx.hasUI) ctx.ui.notify(message, "info");
+		const answer = await run("session_start", ctx.cwd);
+		if (!ctx.hasUI) return;
+		if (answer === missing) ctx.ui.notify(` + string(missingMessage) + `, "warning");
+		else if (answer.message) ctx.ui.notify(answer.message, "info");
 	});
 	// Skills are loaded as native Pi skills, also available as /skill: commands.
 	pi.on("resources_discover", async (event: any) => ({ skillPaths: (await run("resources_discover", event.cwd)).skills ?? [] }));
@@ -123,3 +135,5 @@ export default function ctxtra(pi: any) {
 	});
 }
 `
+
+var missingMessage, _ = json.Marshal(agent.MissingMessage("pi"))

@@ -216,8 +216,10 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 }
 
 // slots FILE: rewrites a Claude or Muse hook file so that each run of
-// entries that differ only in their slot, 0 to N-1 in order, is one entry
-// with "--slot 0..N-1", for cmp. It fails on slots out of order.
+// entries that differ only in their slot, A to B in order, is one entry
+// with "--slot A..B", for cmp. A run of one entry stays as it is: slot 0 of
+// a session start, which has the message for a missing binary. Slots count
+// up from 0 in each event; it fails on slots out of order.
 func collapseSlots(ts *testscript.TestScript, neg bool, args []string) {
 	if neg || len(args) != 1 {
 		ts.Fatalf("usage: slots FILE")
@@ -225,7 +227,7 @@ func collapseSlots(ts *testscript.TestScript, neg bool, args []string) {
 	path := ts.MkAbs(args[0])
 	data, err := jsonorder.ReadFile(path)
 	ts.Check(err)
-	re := regexp.MustCompile(` --slot (\d+);`)
+	re := regexp.MustCompile(` --slot (\d+)( --of \d+)?;`)
 	hv, _ := data.Get("hooks")
 	hooks, ok := hv.(*jsonorder.Map)
 	if !ok {
@@ -235,11 +237,15 @@ func collapseSlots(ts *testscript.TestScript, neg bool, args []string) {
 		v, _ := hooks.Get(ev)
 		list, _ := v.([]any)
 		var kept []any
+		var first any
 		var runStart, prev string
-		n := 0
+		n, next := 0, 0
 		flush := func() {
-			if n > 0 {
-				e, err := jsonorder.Decode([]byte(strings.Replace(runStart, " --slot N;", fmt.Sprintf(" --slot 0..%d;", n-1), 1)))
+			switch {
+			case n == 1:
+				kept = append(kept, first)
+			case n > 1:
+				e, err := jsonorder.Decode([]byte(strings.Replace(runStart, " --slot N", fmt.Sprintf(" --slot %d..%d", next-n, next-1), 1)))
 				ts.Check(err)
 				kept = append(kept, e)
 			}
@@ -254,18 +260,19 @@ func collapseSlots(ts *testscript.TestScript, neg bool, args []string) {
 				kept = append(kept, e)
 				continue
 			}
-			norm := re.ReplaceAllString(string(b), " --slot N;")
+			norm := re.ReplaceAllString(string(b), " --slot N$2;")
 			if n > 0 && norm != prev {
 				flush()
 			}
-			if m[1] != fmt.Sprint(n) {
-				ts.Fatalf("%s: %s: slot %s where %d belongs", path, ev, m[1], n)
+			if m[1] != fmt.Sprint(next) {
+				ts.Fatalf("%s: %s: slot %s where %d belongs", path, ev, m[1], next)
 			}
 			if n == 0 {
-				runStart = norm
+				runStart, first = norm, e
 			}
 			prev = norm
 			n++
+			next++
 		}
 		flush()
 		hooks.Set(ev, kept)
@@ -292,7 +299,7 @@ func hookCommand(ts *testscript.TestScript, path, event string) string {
 	for _, g := range cfg.Hooks[event] {
 		for _, h := range append(g.Hooks, g.handler) {
 			if strings.Contains(h.Command, " hook ") && strings.Contains(h.Command, "ctxtra") &&
-				(!strings.Contains(h.Command, " --slot ") || strings.Contains(h.Command, " --slot 0;")) {
+				(!strings.Contains(h.Command, " --slot ") || strings.Contains(h.Command, " --slot 0;") || strings.Contains(h.Command, " --slot 0 ")) {
 				found = append(found, h.Command)
 			}
 		}

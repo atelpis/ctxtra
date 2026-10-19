@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/extfile"
@@ -82,8 +83,11 @@ func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "OpenCode", Capacity: 1_000_000}
 }
 
+// protocol is the version of the plugin, which it sends as ctxtra_plugin.
+const protocol = 1
+
 // Plugin is the plugin that runs bin.
-func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, pluginBody) }
+func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, protocol, pluginBody) }
 
 // pluginBody runs the binary asynchronously, like Pi's extension, with a 10
 // second timeout and room for the largest output ctxtra can produce.
@@ -98,7 +102,7 @@ func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin,
 // background service, so the skills found at setup are updated when a new
 // session gets a different list; OpenCode applies them from the next
 // request.
-const pluginBody = `// Written by ctxtra setup. Adds the instruction files and skills that
+var pluginBody = `// Written by ctxtra setup. Adds the instruction files and skills that
 // ctxtra binds to the session's folder. Safe to delete; ` + "`ctxtra setup --remove`" + ` removes it.
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
@@ -122,7 +126,7 @@ function run(ev: string, cwd: string): Promise<Answer> {
 					}
 				});
 			child.stdin?.on("error", () => {});
-			child.stdin?.end(JSON.stringify({ cwd }));
+			child.stdin?.end(JSON.stringify({ cwd, ctxtra_plugin: ` + strconv.Itoa(protocol) + ` }));
 		} catch {
 			resolve({});
 		}

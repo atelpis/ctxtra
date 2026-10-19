@@ -104,3 +104,27 @@ func TestLegacy(t *testing.T) {
 		t.Errorf("hand-written hook: %v, %+v", old, d)
 	}
 }
+
+// Codex trusts a hook by a hash of its entry: the commands must stay
+// byte-identical across versions. Only the session start's tells the user
+// that the binary is gone.
+func TestCommands(t *testing.T) {
+	h := testenv.Home(t)
+	var r agent.Report
+	if err := (Agent{}).Setup(agent.Options{Binary: filepath.Join(h, "go", "bin", "ctxtra")}, &r); err != nil {
+		t.Fatal(err)
+	}
+	cmds, err := Agent{}.hooks().Commands()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ev, want := range map[string]string{
+		"SessionStart": `/bin/sh -c 'f="$HOME/go/bin/ctxtra"; if [ -x "$f" ]; then exec "$f" hook codex SessionStart; else /bin/cat >/dev/null 2>&1; ` +
+			`echo "{\"systemMessage\":\"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent codex with the new binary (Codex will then ask you to trust the hooks again)\"}"; fi'`,
+		"SubagentStart": `/bin/sh -c 'f="$HOME/go/bin/ctxtra"; if [ -x "$f" ]; then exec "$f" hook codex SubagentStart; else /bin/cat >/dev/null 2>&1; echo "{}"; fi'`,
+	} {
+		if len(cmds[ev]) != 1 || cmds[ev][0].Text != want {
+			t.Errorf("%s: %+v\nwant %s", ev, cmds[ev], want)
+		}
+	}
+}

@@ -21,8 +21,7 @@ func Home(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Setenv("HOME", h)
-	for _, k := range []string{"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR", "OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "HERMES_HOME",
-		"DSH_HOME", "DEVIN_PROJECT_DIR"} {
+	for _, k := range AgentVars {
 		t.Setenv(k, "")
 	}
 	// Git variables that point git at another repository, index or config:
@@ -39,6 +38,14 @@ func Home(t *testing.T) string {
 	t.Setenv("GIT_COMMITTER_NAME", "t")
 	t.Setenv("GIT_COMMITTER_EMAIL", "t@example.com")
 	return h
+}
+
+// AgentVars are cleared by Home: every variable that ctxtra or an agent's
+// config folder reads (a test in internal/agent/registry checks the code
+// against this list).
+var AgentVars = []string{
+	"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "COPILOT_HOME", "PI_CODING_AGENT_DIR",
+	"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "HERMES_HOME", "DSH_HOME", "DEVIN_PROJECT_DIR",
 }
 
 // GitLocationVars are cleared by Home. gitrepo clears the same list for

@@ -396,12 +396,22 @@ old it gets. The file stays after the hooks ended: a session start deletes the f
 for a minute, never one that a hook used more recently. When the folder can't be written, for example
 in a sandbox, each hook resolves the session on its own. Claude Code orders the texts by when the hooks
 end, so each hook waits for the one before it, up to 2 seconds; the labels keep the text correct in any
-order.
+order. Each hook's command says how many hooks its setup has (`--slot 3 --of 40`, and `ctxtra_slots` from
+the Hermes plugin), and the text is split into at most that many parts.
 
 Hooks that an older version of ctxtra set up keep working after an upgrade, with what they got then: one
 hook of up to 9,000 characters in Claude Code, 13,000 bytes in Muse, about 9,000 bytes in Codex (unless
 `hooks.json` shows ctxtra's hooks for the event with `additionalContextLimit`), and one callback of up to 9,000 characters in Hermes (an older plugin).
 Files over that are dropped, and the message at session start and the log say to run `ctxtra setup`.
+`ctxtra hook` ignores command-line arguments it doesn't know, so hooks that a later version set up still run
+after a downgrade.
+
+When the binary that a hook runs is gone, Claude Code, Codex, Muse and Devin show `ctxtra: the ctxtra binary
+that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent claude with the new binary`
+(with the agent's name) at session start, and Pi shows it as a warning. This needs hooks and a Pi extension
+that this version of ctxtra or a later one set up: older ones add nothing, without a word, like the other
+agents. `ctxtra doctor` shows the missing binary. Setup leaves a config alone that has a ctxtra hook changed
+by hand, and says so, instead of adding a second hook next to it.
 
 ## Validation
 
