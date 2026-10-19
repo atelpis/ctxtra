@@ -39,7 +39,7 @@ func TestAgentsAreComplete(t *testing.T) {
 				t.Errorf("%s: answer %s (%v)", name, b, err)
 			}
 		}
-		if st := a.Status(); !st.OK || st.State != "not set up" {
+		if st := a.Status("", false); !st.OK || st.State != "not set up" {
 			t.Errorf("%s: status %+v", name, st)
 		}
 		inHome(t, h, a)

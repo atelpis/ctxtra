@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -82,6 +83,12 @@ func Run(args []string, stdio IO, version string) int {
 		// for the agent and stays as it is.
 		stdio.Out, stdio.Err = term.Writer{W: stdio.Out}, term.Writer{W: stdio.Err}
 	}
+	notices := !slices.Contains(quiet, cmd)
+	defer func() {
+		if notices {
+			setupNotices(stdio.Err)
+		}
+	}()
 	switch cmd {
 	case "-h", "--help":
 		fmt.Fprint(stdio.Out, usage)
@@ -143,6 +150,7 @@ func Run(args []string, stdio IO, version string) int {
 			return r.doctor(dir)
 		}
 	}
+	notices = false
 	fmt.Fprintf(stdio.Err, "unknown command %q\n\n%s", cmd, usage)
 	return 2
 }

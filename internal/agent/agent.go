@@ -26,8 +26,15 @@ type Agent interface {
 	// Setup adds ctxtra's hooks, or removes them with o.Remove, and adds
 	// what it changed to r.
 	Setup(o Options, r *Report) error
-	// Status describes the current setup, for doctor.
-	Status() Status
+	// Status describes the current setup, for doctor, with Check's notices
+	// as details.
+	Status(bin string, known bool) Status
+	// Check returns what the user should do about this agent's setup, a line
+	// each without the agent's name, from its files only: it runs nothing.
+	// known is whether setup.json lists the agent's current config path as
+	// set up, so a setup that is gone is told from one that never was. bin
+	// is the running binary, "" when it can't be compared.
+	Check(bin string, known bool) []string
 	// Answer is the hook output for event. res is nil when there is nothing
 	// to add, for example after an error.
 	Answer(event string, res *resolve.Result) any
@@ -127,6 +134,14 @@ type Skipper interface {
 // false for a hook of this version.
 type Upgrader interface {
 	Legacy(event string, in Input) (d Delivery, ok bool)
+}
+
+// Retrust is an agent that runs a changed hook only after the user trusts
+// it again (Codex): a notice whose command changes its hooks says so.
+type Retrust interface {
+	// TrustNote is what the user is asked then, as a clause: "Codex will
+	// then ask you to trust the hooks".
+	TrustNote() string
 }
 
 // Missing is an agent whose hook answer can show the user a message.

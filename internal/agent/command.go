@@ -91,8 +91,9 @@ func SlotCommand(bin, agent, event string, slot, slots int, m Missing) string {
 // Hook is what one of our hook commands runs.
 type Hook struct {
 	Binary, Agent, Event string
-	Slot                 int // --slot, or -1 without one
-	Slots                int // --of, or 0 without one
+	Slot                 int  // --slot, or -1 without one
+	Slots                int  // --of, or 0 without one
+	Of                   bool // whether the command has --of, also --of 0
 }
 
 // ParseCommand returns what cmd runs, and whether it is one of our hook
@@ -119,7 +120,7 @@ func ParseCommand(cmd string, m Missing) (Hook, bool) {
 			if err != nil {
 				return Hook{}, false
 			}
-			h.Slots = n
+			h.Slots, h.Of = n, true
 		}
 		if i == 0 {
 			answer := strings.ReplaceAll(g[6], `\"`, `"`)

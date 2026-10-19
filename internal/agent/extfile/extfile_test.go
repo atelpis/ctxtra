@@ -1,10 +1,14 @@
 package extfile
 
 import (
+	"io/fs"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
@@ -46,5 +50,65 @@ func TestProtocol(t *testing.T) {
 	}
 	if _, ok := Protocol(filepath.Join(h, "missing")); ok {
 		t.Error("missing file: ok")
+	}
+}
+
+// CheckSetup tells about the binary that the extension runs, an older
+// protocol that gets less, and an extension that is gone.
+func TestCheckSetup(t *testing.T) {
+	h := testenv.Home(t)
+	e := Ext{Path: filepath.Join(h, "ext", "ctxtra.ts"), Agent: "pi", Noun: "extension",
+		Legacy: func(v int) (agent.Delivery, bool) { return agent.Delivery{Title: "Pi", Capacity: 9000}, v < 1 }}
+	if n, ours := CheckSetup(e, "", false); n != nil || ours {
+		t.Errorf("not set up: %q, %v", n, ours)
+	}
+	if n, _ := CheckSetup(e, "", true); len(n) != 1 || !strings.HasPrefix(n[0], "ctxtra's extension is gone from ~/ext/ctxtra.ts") {
+		t.Errorf("gone: %q", n)
+	}
+	testenv.Write(t, e.Path, Content(TypeScript, filepath.Join(h, "gone", "ctxtra"), 1, "const bin = %s;\n"))
+	if n, ours := CheckSetup(e, "", false); !ours || len(n) != 1 || n[0] != "the extension runs ~/gone/ctxtra, which doesn't exist; run ctxtra setup --agent pi" {
+		t.Errorf("missing binary: %q, %v", n, ours)
+	}
+	testenv.Write(t, e.Path, "// @ctxtra-managed\nconst bin = 1;\n")
+	if n, _ := CheckSetup(e, "", false); !slices.Equal(n, []string{
+		"~/ext/ctxtra.ts doesn't say which binary it runs; run ctxtra setup --agent pi",
+		"set up by an older ctxtra, with Pi's limit of 9,000 characters; run ctxtra setup --agent pi",
+	}) {
+		t.Errorf("unknown version: %q", n)
+	}
+}
+
+// A plugin with CRLF line ends, as a checkout or an editor may write it,
+// still says its binary and protocol: no notice.
+func TestCRLF(t *testing.T) {
+	for _, c := range testenv.Clients(t) {
+		if c.ID != "v1" || c.Protocol == 0 {
+			continue
+		}
+		h := testenv.Home(t)
+		bin := filepath.Join(h, "real", "ctxtra")
+		testenv.Write(t, bin, "#!/bin/sh\n")
+		if err := os.Chmod(bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		c.Load(t, h, bin)
+		var plugin string
+		filepath.WalkDir(h, func(p string, d fs.DirEntry, err error) error {
+			if ext := filepath.Ext(p); err == nil && (ext == ".ts" || ext == ".mjs" || ext == ".py") {
+				plugin = p
+			}
+			return err
+		})
+		b, err := os.ReadFile(plugin)
+		if err != nil {
+			t.Fatalf("%s: %v", c.Agent, err)
+		}
+		testenv.Write(t, plugin, strings.ReplaceAll(string(b), "\n", "\r\n"))
+		if n, ours := CheckSetup(Ext{Path: plugin, Agent: c.Agent, Noun: "plugin"}, "", false); len(n) != 0 || !ours {
+			t.Errorf("%s: %q, %v", c.Agent, n, ours)
+		}
+		if v, ok := Protocol(plugin); !ok || v != c.Protocol {
+			t.Errorf("%s: protocol %d, %v", c.Agent, v, ok)
+		}
 	}
 }

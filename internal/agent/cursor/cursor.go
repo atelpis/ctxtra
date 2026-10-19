@@ -46,7 +46,9 @@ func HookSetUp() bool {
 
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
 
-func (a Agent) Status() agent.Status { return a.hooks().Status() }
+func (a Agent) Status(bin string, known bool) agent.Status { return a.hooks().Status(bin, known) }
+
+func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
 
 func (Agent) Answer(_ string, res *resolve.Result) any {
 	text := res.Render()

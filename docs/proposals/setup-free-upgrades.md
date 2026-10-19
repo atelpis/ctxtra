@@ -510,7 +510,7 @@ Ships **before the first public release**: users of that release must already ha
 would only get new-agent notices after a re-run.
 
 **Where:** `internal/cli/cli.go`, `Run`: after a command other than `hook`, `help`, `-h`, `--help`,
-`version` and `setup`, call `setupNotices(stdio.Err)`. It prints one line per problem to stderr, through the
+`version`, `setup` and `doctor` (which shows the same lines under each agent), call `setupNotices(stdio.Err)`. It prints one line per problem to stderr, through the
 same `term.Writer` as other output, and never changes the exit code. A failure of the check itself (an
 unreadable file) is one short line, never an error.
 
@@ -562,7 +562,10 @@ Check(bin string, known bool) []string
   config path is listed, so a Codex profile in another `CODEX_HOME` that was never set up is not reported as
   "gone"; it is reported, at most, as "not set up here" by `doctor`.
 - `detected`: every agent that `Detect()` found at a setup, also those left out with `--agent`. Agents found
-  later and in neither `installed` nor `detected` are "new".
+  later and in neither `installed` nor `detected` are "new". A new agent's notice shows once: after printing
+  it, the CLI adds the agent to `detected`, with a try-lock on `setup.lock` and an atomic write, and skips the
+  write silently when setup holds the lock or the write fails (the notice then shows again). This is the only
+  write outside `setup`; `installed` is written by `setup` only.
 - One lock, `~/.ctxtra/setup.lock`, is held for the whole `setup` run: the agent config changes and the
   `setup.json` update. Two setups (or a setup and a removal) at once run one after the other, so the
   configs and `setup.json` can't disagree, and two runs can't edit the same agent config at once. The file

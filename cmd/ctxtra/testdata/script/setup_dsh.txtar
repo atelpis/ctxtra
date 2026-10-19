@@ -12,6 +12,7 @@ cmp .dsh/cordis.patch.yml want-patch-expanded.yml
 
 exec ctxtra doctor
 stdout 'dsh: set up, runs .*/ctxtra \(ok\)'
+! stderr .
 
 # Setup again changes nothing.
 exec ctxtra setup --agent dsh

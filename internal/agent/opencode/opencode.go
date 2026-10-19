@@ -55,7 +55,14 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 	return extfile.Setup(a.ConfigPath(), Plugin(o.Binary), o, r)
 }
 
-func (a Agent) Status() agent.Status { return extfile.Status(a.ConfigPath()) }
+func (a Agent) Status(bin string, known bool) agent.Status {
+	return extfile.Status(a.ConfigPath(), a.Check(bin, known))
+}
+
+func (a Agent) Check(bin string, known bool) []string {
+	notices, _ := extfile.CheckSetup(extfile.Ext{Path: a.ConfigPath(), Agent: a.Name(), Noun: "plugin"}, bin, known)
+	return notices
+}
 
 // Answer is the files as one text for the system prompt, and the skills with
 // their SKILL.md body: OpenCode's skill tool gives the model the body the

@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/atelpis/ctxtra/internal/agent"
+	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
@@ -59,7 +61,7 @@ func TestApplyKeepsOtherEntries(t *testing.T) {
 	if strings.Index(s, "other-tool") > strings.Index(s, "hook claude SessionStart") {
 		t.Errorf("want [other, ours]:\n%s", s)
 	}
-	if st := c.Status(); !st.OK || st.State != "set up for [SessionStart SubagentStart], runs ~/go/bin/ctxtra (ok)" {
+	if st := c.Status("", false); !st.OK || st.State != "set up for [SessionStart SubagentStart], runs ~/go/bin/ctxtra (ok)" {
 		t.Errorf("status %+v", st)
 	}
 	// Idempotent.
@@ -172,7 +174,7 @@ func TestBinaryMoved(t *testing.T) {
 	if err := os.Remove(old.Binary); err != nil {
 		t.Fatal(err)
 	}
-	if st := c.Status(); st.OK || !strings.Contains(st.State, "runs ~/go/bin/ctxtra (MISSING)") {
+	if st := c.Status("", false); st.OK || !strings.Contains(st.State, "runs ~/go/bin/ctxtra (MISSING)") {
 		t.Errorf("status %+v", st)
 	}
 	if err := c.Apply(agent.Options{Binary: "/opt/homebrew/bin/ctxtra"}, &r); err != nil {
@@ -308,7 +310,7 @@ func TestSlots(t *testing.T) {
 	b, _ := os.ReadFile(c.Path)
 	after := strings.Replace(string(b), `"SubagentStart": [`, `"SubagentStart": [{"hooks": [{"type": "command", "command": "late-tool"}]}, `, 1)
 	testenv.Write(t, c.Path, after)
-	if st := c.Status(); st.OK || !strings.Contains(strings.Join(st.Details, "\n"), "SessionStart: 0 of the 4 ctxtra hooks (run ctxtra setup)") {
+	if st := c.Status("", false); st.OK || !strings.Contains(strings.Join(st.Details, "\n"), "SessionStart has 0 of the 4 ctxtra hooks; run ctxtra setup --agent claude") {
 		t.Errorf("old single entry: %+v", st)
 	}
 	r = agent.Report{}
@@ -334,7 +336,7 @@ func TestSlots(t *testing.T) {
 	if strings.Count(s, `"matcher": "startup"`) != 4 {
 		t.Errorf("want the matcher in each SessionStart entry:\n%s", s)
 	}
-	if st := c.Status(); !st.OK || st.State != "set up for [SessionStart SubagentStart], runs ~/go/bin/ctxtra (ok)" {
+	if st := c.Status("", false); !st.OK || st.State != "set up for [SessionStart SubagentStart], runs ~/go/bin/ctxtra (ok)" {
 		t.Errorf("status %+v", st)
 	}
 	r = agent.Report{}
@@ -343,7 +345,7 @@ func TestSlots(t *testing.T) {
 	}
 	// A slot removed by hand: doctor says so, and setup puts it back.
 	testenv.Write(t, c.Path, strings.Replace(s, "SessionStart --slot 2 --of 4;", "SessionStart --slot 1 --of 4;", 1))
-	if st := c.Status(); st.OK {
+	if st := c.Status("", false); st.OK {
 		t.Errorf("slot 2 missing: %+v", st)
 	}
 	if err := c.Apply(on, &r); err != nil {
@@ -363,7 +365,11 @@ func TestSlots(t *testing.T) {
 
 func TestContextLimit(t *testing.T) {
 	h := testenv.Home(t)
-	c := Config{Agent: "codex", Path: filepath.Join(h, ".codex", "hooks.json"), Events: events, ContextLimit: 250000}
+	c := Config{Agent: "codex", Path: filepath.Join(h, ".codex", "hooks.json"), Events: events, ContextLimit: 250000,
+		Legacy: func(_ string, _ agent.Hook, limited bool) (agent.Delivery, bool) {
+			return agent.Delivery{Title: "Codex", Capacity: 9000, Unit: chunk.Bytes}, !limited
+		},
+		RepairNote: " (and trust)"}
 	var r agent.Report
 	if err := c.Apply(fakeBinary(t, h), &r); err != nil {
 		t.Fatal(err)
@@ -372,7 +378,7 @@ func TestContextLimit(t *testing.T) {
 	if strings.Count(string(b), `"additionalContextLimit": 250000`) != 2 {
 		t.Errorf("limits:\n%s", b)
 	}
-	if st := c.Status(); !st.OK || len(st.Details) != 0 {
+	if st := c.Status("", false); !st.OK || len(st.Details) != 0 {
 		t.Errorf("status %+v", st)
 	}
 	if !c.Limited("SessionStart") || !c.Limited("SubagentStart") {
@@ -382,16 +388,16 @@ func TestContextLimit(t *testing.T) {
 	// doctor says so, and setup adds it.
 	testenv.Write(t, c.Path, strings.Replace(string(b), `,
             "additionalContextLimit": 250000`, "", 1))
-	if st := c.Status(); st.OK || len(st.Details) != 1 ||
-		st.Details[0] != "SessionStart: a ctxtra hook without additionalContextLimit 250000, which cuts the text (run ctxtra setup)" {
+	if st := c.Status("", false); st.OK || len(st.Details) != 1 ||
+		st.Details[0] != "set up by an older ctxtra, with Codex's limit of 9,000 bytes; run ctxtra setup --agent codex (and trust)" {
 		t.Errorf("without the limit: %+v", st)
 	}
 	if c.Limited("SessionStart") || !c.Limited("SubagentStart") {
 		t.Error("limited without the limit")
 	}
 	r = agent.Report{}
-	if err := c.Apply(fakeBinary(t, h), &r); err != nil || len(r.Changes) != 1 || !c.Status().OK {
-		t.Errorf("setup: %+v, %v, %+v", r, err, c.Status())
+	if err := c.Apply(fakeBinary(t, h), &r); err != nil || len(r.Changes) != 1 || !c.Status("", false).OK {
+		t.Errorf("setup: %+v, %v, %+v", r, err, c.Status("", false))
 	}
 	// Without a ctxtra hook for the event, or without the file, nothing
 	// shows the limit.
@@ -436,12 +442,12 @@ func TestMissingMessage(t *testing.T) {
 	if strings.Count(s, "hook claude") != 6 || strings.Contains(s, "--slot 0;") {
 		t.Errorf("not updated in place:\n%s", s)
 	}
-	if st := c.Status(); !st.OK {
+	if st := c.Status("", false); !st.OK {
 		t.Errorf("status %+v", st)
 	}
 	// A slot count other than the agent's is a problem for doctor.
 	testenv.Write(t, c.Path, strings.ReplaceAll(s, "--of 3;", "--of 5;"))
-	if st := c.Status(); st.OK {
+	if st := c.Status("", false); st.OK {
 		t.Errorf("--of 5 with 3 slots: %+v", st)
 	}
 
@@ -534,5 +540,109 @@ func TestChangedByHand(t *testing.T) {
 	var r agent.Report
 	if err := c.Apply(on, &r); err != nil {
 		t.Errorf("another tool's command: %v", err)
+	}
+}
+
+// Check tells what to do: an event without our hook, slots that are
+// missing, and hooks that are gone from a file that setup.json lists. A
+// file it can't parse is one notice.
+func TestCheck(t *testing.T) {
+	h := testenv.Home(t)
+	on := fakeBinary(t, h)
+	c := Config{Agent: "claude", Path: filepath.Join(h, ".claude", "settings.json"), Events: events, Slots: 4}
+	if n := c.Check("", true); len(n) != 1 || !strings.HasPrefix(n[0], "ctxtra's hooks are gone from ~/.claude/settings.json") {
+		t.Errorf("gone: %q", n)
+	}
+	if n := c.Check("", false); len(n) != 0 {
+		t.Errorf("never set up: %q", n)
+	}
+	var r agent.Report
+	if err := c.Apply(on, &r); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(c.Path)
+	var data map[string]map[string][]any
+	if err := json.Unmarshal(b, &data); err != nil {
+		t.Fatal(err)
+	}
+	data["hooks"]["SessionStart"] = data["hooks"]["SessionStart"][:3]
+	delete(data["hooks"], "SubagentStart")
+	b, _ = json.Marshal(data)
+	testenv.Write(t, c.Path, string(b))
+	want := []string{"SessionStart has 3 of the 4 ctxtra hooks; run ctxtra setup --agent claude", "SubagentStart has no ctxtra hook; run ctxtra setup --agent claude"}
+	if n := c.Check("", false); !slices.Equal(n, want) {
+		t.Errorf("incomplete: %q", n)
+	}
+	testenv.Write(t, c.Path, "{")
+	if n := c.Check("", false); len(n) != 1 || !strings.HasPrefix(n[0], "can't check the setup in ~/.claude/settings.json: ") {
+		t.Errorf("broken: %q", n)
+	}
+}
+
+// A ctxtra hook edited by hand: setup and --remove leave the file alone, so
+// Check says to restore or delete it, set up or not in setup.json.
+func TestCheckChangedByHand(t *testing.T) {
+	h := testenv.Home(t)
+	c := Config{Agent: "cursor", Path: filepath.Join(h, ".cursor", "hooks.json"), Events: []Event{{Name: "sessionStart"}}, Flat: true, Version: 1}
+	var r agent.Report
+	if err := c.Apply(fakeBinary(t, h), &r); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(c.Path)
+	testenv.Write(t, c.Path, strings.Replace(string(b), `echo \"{}\"`, `echo \"{ }\"`, 1))
+	want := []string{"~/.cursor/hooks.json: a ctxtra hook was changed by hand; restore or delete it, then run ctxtra setup --agent cursor"}
+	for _, known := range []bool{true, false} {
+		if n := c.Check("", known); !slices.Equal(n, want) {
+			t.Errorf("known %v: %q", known, n)
+		}
+	}
+}
+
+// Slots must be below the count each hook says, and there must be as many
+// hooks as that count: a slot past it is a part that never arrives.
+func TestCheckSlotRange(t *testing.T) {
+	h := testenv.Home(t)
+	c := Config{Agent: "claude", Path: filepath.Join(h, ".claude", "settings.json"), Events: events[:1], Slots: 4}
+	var r agent.Report
+	if err := c.Apply(fakeBinary(t, h), &r); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(c.Path)
+	if n := c.Check("", false); len(n) != 0 {
+		t.Fatalf("fresh: %q", n)
+	}
+	testenv.Write(t, c.Path, strings.Replace(string(b), "--slot 3 --of 4", "--slot 4 --of 4", 1))
+	if n := c.Check("", false); !slices.Equal(n, []string{"SessionStart has 3 of the 4 ctxtra hooks; run ctxtra setup --agent claude"}) {
+		t.Errorf("slot 4 of 4: %q", n)
+	}
+	// Hooks that say 5 slots, of which 4 are there.
+	testenv.Write(t, c.Path, strings.ReplaceAll(string(b), "--of 4", "--of 5"))
+	if n := c.Check("", false); !slices.Equal(n, []string{"SessionStart has 4 of the 5 ctxtra hooks; run ctxtra setup --agent claude"}) {
+		t.Errorf("4 hooks of 5: %q", n)
+	}
+}
+
+// Hooks with --of 0, which the hook refuses, are a broken setup.
+func TestCheckOfZero(t *testing.T) {
+	h := testenv.Home(t)
+	c := Config{Agent: "claude", Path: filepath.Join(h, ".claude", "settings.json"), Events: events[:1], Slots: 4}
+	var r agent.Report
+	if err := c.Apply(fakeBinary(t, h), &r); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(c.Path)
+	testenv.Write(t, c.Path, strings.ReplaceAll(string(b), "--of 4", "--of 0"))
+	if n := c.Check("", false); !slices.Equal(n, []string{"SessionStart has 0 of the 4 ctxtra hooks; run ctxtra setup --agent claude"}) {
+		t.Errorf("--of 0: %q", n)
+	}
+}
+
+// A file nested too deep to decode is one notice, not a crash.
+func TestCheckDeepFile(t *testing.T) {
+	h := testenv.Home(t)
+	c := Config{Agent: "cursor", Path: filepath.Join(h, ".cursor", "hooks.json"), Events: []Event{{Name: "sessionStart"}}, Flat: true}
+	testenv.Write(t, c.Path, `{"hooks":`+strings.Repeat("[", 1<<20)+strings.Repeat("]", 1<<20)+`}`)
+	if n := c.Check("", false); len(n) != 1 || !strings.HasPrefix(n[0], "can't check the setup in ~/.cursor/hooks.json: ") {
+		t.Errorf("deep: %q", n)
 	}
 }

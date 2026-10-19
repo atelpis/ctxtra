@@ -47,13 +47,13 @@ func TestSetupAndStatus(t *testing.T) {
 	if err := a.Setup(agent.Options{Binary: bin}, &r); err != nil || len(r.Notes) != 1 {
 		t.Fatalf("setup: %v, notes %v", err, r.Notes)
 	}
-	st := a.Status()
+	st := a.Status("", false)
 	if st.OK || len(st.Details) != 2 || !strings.Contains(st.Details[0], "NOT TRUSTED") {
 		t.Errorf("status %+v", st)
 	}
 	key := a.ConfigPath() + ":session_start:0:0"
 	testenv.Write(t, filepath.Join(h, ".codex", "config.toml"), "[hooks.state.\""+key+"\"]\ntrusted_hash = \"x\"\n")
-	if st := a.Status(); !strings.Contains(st.Details[0], "trust record present") || !strings.Contains(st.Details[1], "NOT TRUSTED") {
+	if st := a.Status("", false); !strings.Contains(st.Details[0], "trust record present") || !strings.Contains(st.Details[1], "NOT TRUSTED") {
 		t.Errorf("status %+v", st)
 	}
 	r = agent.Report{}
@@ -71,7 +71,7 @@ func TestVersion(t *testing.T) {
 	t.Cleanup(func() { version = orig })
 	for v, warn := range map[string]bool{"0.144.3": true, "0.99.0": true, "0.145.0": false, "0.162.1": false, "1.0.0": false} {
 		version = func() string { return v }
-		st := Agent{}.Status()
+		st := Agent{}.Status("", false)
 		if got := slices.ContainsFunc(st.Details, func(d string) bool { return strings.Contains(d, "update to 0.145.0") }); got != warn {
 			t.Errorf("%s: warning %v, want %v: %v", v, got, warn, st.Details)
 		}

@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"go.yaml.in/yaml/v3"
 
@@ -77,7 +78,7 @@ func (Agent) Detect() bool {
 // ctxtra didn't write are left alone, and then neither file changes.
 func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 	for _, p := range []string{a.ConfigPath(), manifestPath()} {
-		if err := extfile.Check(p); err != nil {
+		if err := extfile.Owned(p); err != nil {
 			return err
 		}
 	}
@@ -97,7 +98,8 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 	if err := extfile.Setup(manifestPath(), manifest, o, r); err != nil {
 		return err
 	}
-	if on, _ := enabled(); !on {
+	doc, _ := readConfig()
+	if on, _ := enabled(doc); !on {
 		r.Notes = append(r.Notes, enableNote)
 	}
 	return nil
@@ -118,48 +120,56 @@ func removeDir() {
 	os.Remove(pluginDir())
 }
 
-// Status adds whether plugin.yaml is in place, the plugin gets as much as
-// this version's, and it is enabled. A plugin of an older version that does
-// is fine.
-func (a Agent) Status() agent.Status {
-	s := extfile.Status(a.ConfigPath())
-	if s.State == "not set up" {
-		return s
-	}
-	if v, ok := extfile.Protocol(a.ConfigPath()); ok {
-		if old, legacy := a.Legacy("", agent.Input{Plugin: v}); legacy {
-			s.OK = false
-			s.Details = append(s.Details, fmt.Sprintf("%s: from an older version of ctxtra, with %s (run ctxtra setup)", paths.Tilde(a.ConfigPath()), old.Over()))
-		}
-	}
-	if b, err := os.ReadFile(manifestPath()); err != nil || !strings.HasPrefix(string(b), extfile.Python.Mark()) {
-		s.OK = false
-		s.Details = append(s.Details, paths.Tilde(manifestPath())+": MISSING (run ctxtra setup)")
-	}
-	cfg := paths.Tilde(filepath.Join(dir(), "config.yaml"))
-	switch on, err := enabled(); {
-	case err != nil:
-		s.OK = false
-		s.Details = append(s.Details, fmt.Sprintf("plugin state unknown: %v", err))
-	case on:
-		s.Details = append(s.Details, "plugin enabled in "+cfg)
-	default:
-		s.OK = false
-		s.Details = append(s.Details, fmt.Sprintf("plugin NOT ENABLED in %s (run hermes plugins enable %s)", cfg, pluginName))
+// Status adds where the plugin is enabled.
+func (a Agent) Status(bin string, known bool) agent.Status {
+	s := extfile.Status(a.ConfigPath(), a.Check(bin, known))
+	doc, _ := readConfig()
+	if on, _ := enabled(doc); on && s.State != "not set up" {
+		s.Details = append(s.Details, "plugin enabled in "+paths.Tilde(configPath()))
 	}
 	return s
 }
 
-// enabled reports whether config.yaml lists the plugin in plugins.enabled
-// and not in plugins.disabled, which wins in Hermes.
-func enabled() (bool, error) {
-	path := filepath.Join(dir(), "config.yaml")
-	b, err := fsutil.ReadBounded(path, 4<<20)
-	if errors.Is(err, os.ErrNotExist) {
-		return false, nil
+// Check adds plugin.yaml, and whether the plugin is enabled: a plugin that
+// isn't is set up, but Hermes doesn't load it. A plugin of an older version
+// that gets as much as this version's is fine.
+func (a Agent) Check(bin string, known bool) []string {
+	config := sync.OnceValues(readConfig)
+	notices, ours := extfile.CheckSetup(extfile.Ext{Path: a.ConfigPath(), Agent: a.Name(), Noun: "plugin",
+		Legacy: func(v int) (agent.Delivery, bool) {
+			doc, _ := config()
+			return legacy(v, doc)
+		}}, bin, known)
+	if !ours {
+		return notices
 	}
-	if err != nil {
-		return false, err
+	switch b, err := fsutil.ReadBounded(manifestPath(), agent.MaxConfig); {
+	case errors.Is(err, os.ErrNotExist):
+		notices = append(notices, fmt.Sprintf("%s is missing; %s", paths.Tilde(manifestPath()), agent.Repair(a.Name())))
+	case err != nil:
+		notices = append(notices, agent.UnreadableNotice(manifestPath(), err))
+	case !strings.HasPrefix(string(b), extfile.Python.Mark()):
+		notices = append(notices, fmt.Sprintf("%s isn't ctxtra's: delete it, then %s", paths.Tilde(manifestPath()), agent.Repair(a.Name())))
+	}
+	doc, err := config()
+	on := false
+	if err == nil {
+		on, err = enabled(doc)
+	}
+	switch {
+	case err != nil:
+		notices = append(notices, fmt.Sprintf("can't tell whether the ctxtra plugin is enabled: %v", err))
+	case !on:
+		notices = append(notices, "the ctxtra plugin is installed but not enabled; run hermes plugins enable "+pluginName)
+	}
+	return notices
+}
+
+// enabled reports whether config.yaml, doc, lists the plugin in
+// plugins.enabled and not in plugins.disabled, which wins in Hermes.
+func enabled(doc *yaml.Node) (bool, error) {
+	if doc == nil {
+		return false, nil
 	}
 	var cfg struct {
 		Plugins struct {
@@ -167,8 +177,8 @@ func enabled() (bool, error) {
 			Disabled []string `yaml:"disabled"`
 		} `yaml:"plugins"`
 	}
-	if err := yaml.Unmarshal(b, &cfg); err != nil {
-		return false, fmt.Errorf("%s: %w", paths.Tilde(path), err)
+	if err := doc.Decode(&cfg); err != nil {
+		return false, fmt.Errorf("%s: %w", paths.Tilde(configPath()), err)
 	}
 	return slices.Contains(cfg.Plugins.Enabled, pluginName) && !slices.Contains(cfg.Plugins.Disabled, pluginName), nil
 }
@@ -198,7 +208,8 @@ const (
 // start and end, but each callback's text on its own and in order (measured
 // with Hermes v2026.9.24). A lower max_chars makes the parts smaller.
 func (Agent) Delivery() agent.Delivery {
-	size := min(partChars, spillChars())
+	doc, _ := readConfig()
+	size := min(partChars, spillChars(doc))
 	return agent.Delivery{Title: "Hermes", Capacity: min(1_000_000, slots*size), Chunk: size, Slots: slots}
 }
 
@@ -209,16 +220,39 @@ func (Agent) OldSlots() int { return 125 }
 // Legacy: a plugin from before version 2 adds the text with one callback,
 // which gets as much as Hermes doesn't spill.
 func (Agent) Legacy(_ string, in agent.Input) (agent.Delivery, bool) {
-	return agent.Delivery{Title: "Hermes", Capacity: min(partChars, spillChars())}, in.Plugin < firstSlotted
+	doc, _ := readConfig()
+	return legacy(in.Plugin, doc)
 }
 
-// spillChars is hooks.output_spill.max_chars in config.yaml, read the way
-// Hermes reads it: a whole number of at least 1, else 10,000. With spilling
-// turned off, it is the largest int.
-func spillChars() int {
-	const fallback = 10_000
-	b, err := fsutil.ReadBounded(filepath.Join(dir(), "config.yaml"), 4<<20)
+func legacy(plugin int, doc *yaml.Node) (agent.Delivery, bool) {
+	return agent.Delivery{Title: "Hermes", Capacity: min(partChars, spillChars(doc))}, plugin < firstSlotted
+}
+
+func configPath() string { return filepath.Join(dir(), "config.yaml") }
+
+// readConfig parses config.yaml, for spillChars and enabled; nil when there
+// is none.
+func readConfig() (*yaml.Node, error) {
+	b, err := fsutil.ReadBounded(configPath(), 4<<20)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	var doc yaml.Node
+	if err == nil {
+		err = yaml.Unmarshal(b, &doc)
+	}
 	if err != nil {
+		return nil, fmt.Errorf("%s: %w", paths.Tilde(configPath()), err)
+	}
+	return &doc, nil
+}
+
+// spillChars is hooks.output_spill.max_chars in config.yaml, doc, read the
+// way Hermes reads it: a whole number of at least 1, else 10,000. With
+// spilling turned off, it is the largest int.
+func spillChars(doc *yaml.Node) int {
+	const fallback = 10_000
+	if doc == nil {
 		return fallback
 	}
 	var cfg struct {
@@ -229,7 +263,7 @@ func spillChars() int {
 			} `yaml:"output_spill"`
 		} `yaml:"hooks"`
 	}
-	if yaml.Unmarshal(b, &cfg) != nil {
+	if doc.Decode(&cfg) != nil {
 		return fallback
 	}
 	sp := cfg.Hooks.Spill

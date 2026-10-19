@@ -12,6 +12,7 @@ stdout 'nothing to change'
 
 exec ctxtra doctor
 stdout 'devin: set up for \[SessionStart\], runs .*/ctxtra \(ok\)'
+! stderr .
 
 runhook devin SessionStart repo
 stdout '"additionalContext":"[^"]*CTXMARK-ME","hookEventName":"SessionStart"'

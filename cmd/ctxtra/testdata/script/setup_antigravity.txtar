@@ -11,6 +11,7 @@ stdout 'nothing to change'
 
 exec ctxtra doctor
 stdout 'antigravity: set up for \[SessionStart\], runs .*/ctxtra \(ok\)  '
+! stderr .
 
 # Turned off in the App's settings: setup leaves it off, doctor says so.
 expand off.json .gemini/config/hooks.json

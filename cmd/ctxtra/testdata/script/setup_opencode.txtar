@@ -9,6 +9,7 @@ exists .config/opencode/plugins/other.ts
 
 exec ctxtra doctor
 stdout 'opencode: set up, runs .*/ctxtra \(ok\)'
+! stderr .
 
 exec ctxtra setup --remove --agent opencode
 ! exists .config/opencode/plugins/ctxtra.ts

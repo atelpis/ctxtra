@@ -5,6 +5,7 @@ package fsutil
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -81,5 +82,31 @@ func TestLockMoved(t *testing.T) {
 		t.Fatal("no lock after the holder released it")
 	} else {
 		u()
+	}
+}
+
+// A FIFO in place of a lock file is refused at once, also one that can
+// only be read, which opening for reading would wait on.
+func TestLockFIFO(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "setup.lock")
+	if err := syscall.Mkfifo(p, 0o400); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan []error)
+	go func() {
+		_, a := Lock(p)
+		_, b := LockTimeout(p, 0)
+		_, c := LockShared(p, time.Second)
+		done <- []error{a, b, c}
+	}()
+	select {
+	case errs := <-done:
+		for i, err := range errs {
+			if err == nil {
+				t.Errorf("lock %d of a FIFO: no error", i)
+			}
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("locking a FIFO blocks")
 	}
 }

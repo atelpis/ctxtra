@@ -24,7 +24,7 @@ func TestSetup(t *testing.T) {
 	if err := a.Setup(agent.Options{Binary: bin}, &r); err != nil {
 		t.Fatal(err)
 	}
-	if st := a.Status(); !st.OK || st.State != "set up, runs ~/go/bin/ctxtra (ok)" {
+	if st := a.Status("", false); !st.OK || st.State != "set up, runs ~/go/bin/ctxtra (ok)" {
 		t.Errorf("status %+v", st)
 	}
 	if b, _ := os.ReadFile(a.ConfigPath()); !strings.Contains(string(b), `const bin = join(homedir(), "go/bin/ctxtra");`) {
@@ -33,8 +33,8 @@ func TestSetup(t *testing.T) {
 	if !strings.Contains(Extension("/opt/my tools/ctxtra"), `const bin = "/opt/my tools/ctxtra";`) {
 		t.Error("absolute binary path in the extension")
 	}
-	if err := a.Setup(agent.Options{Remove: true}, &r); err != nil || a.Status().State != "not set up" {
-		t.Fatalf("remove: %v, %+v", err, a.Status())
+	if err := a.Setup(agent.Options{Remove: true}, &r); err != nil || a.Status("", false).State != "not set up" {
+		t.Fatalf("remove: %v, %+v", err, a.Status("", false))
 	}
 	// A Pi extension that isn't ours is left alone.
 	testenv.Write(t, a.ConfigPath(), "someone else's")
