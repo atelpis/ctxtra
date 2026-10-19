@@ -6,7 +6,7 @@ exec ctxtra setup --agent claude
 # A missing bound file is skipped and reported to the user.
 runhook claude SessionStart notes
 stdout 'CTXMARK-PERSONAL'
-stdout '"systemMessage":"ctxtra: added 2 files \(me.md, notes.md\); 1 not found \(run ctxtra doctor\)"'
+stdout '"systemMessage":"✓ ctxtra added 2 instructions; 1 not found \(run ctxtra doctor\)\\nInstructions:\\n- me.md\\n- notes.md"'
 stderr 'ctxtra: bound file not found: .*/ctx/gone.md'
 
 # Outside git, repos don't match; global and dirs do.

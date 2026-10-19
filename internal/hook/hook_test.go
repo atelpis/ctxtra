@@ -70,7 +70,7 @@ func TestOutputPerAgent(t *testing.T) {
 		t.Errorf("antigravity: %v", ag)
 	}
 	// The user sees a summary at session start, not for subagents.
-	if m := run("claude", "SessionStart", input); m["systemMessage"] != "ctxtra: added 1 file (a.md) and 1 skill (deploy)" {
+	if m := run("claude", "SessionStart", input); m["systemMessage"] != "✓ ctxtra added 1 instruction and 1 skill\nInstructions:\n- a.md\nSkills:\n- deploy" {
 		t.Errorf("summary: %v", m["systemMessage"])
 	}
 	if m := run("claude", "SubagentStart", input); m["systemMessage"] != nil || m["hookSpecificOutput"] == nil {

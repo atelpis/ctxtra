@@ -61,7 +61,7 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestCtxtraSkill` | The ctxtra skill that `ctxtra skill install` binds is listed like any other skill, and its body reaches the model only when the agent loads it |
 | `TestCoexist` | Another tool's session-start hook keeps working next to ctxtra's and after `setup --remove` |
 | `TestUntrustedHookAddsNothing` | Codex without hook trust: the session works and gets nothing from ctxtra |
-| `TestUserMessage` | Claude and Muse get the one-line message for the user from the hook |
+| `TestUserMessage` | Claude and Muse get the summary message for the user from the hook |
 | `TestOutsideGit` | Outside git, only `global` and `dirs` bindings apply |
 | `TestResume` | Copilot and Muse: a resumed session has the current version of the files, once |
 | `TestCapacity` | About 315K characters of bound files (a third for Copilot), Unicode and emoji included, reach the model at session start: every line once, in config order (parts that arrive out of order are put back by their labels). Agents that get the text from several hooks resolve the files once |

@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -26,16 +27,16 @@ func TestSummary(t *testing.T) {
 	}
 	skills := []resolve.Hit{{Name: "deploy"}, {Name: "review"}}
 	for want, res := range map[string]*resolve.Result{
-		"ctxtra: added 2 files (a.md, b.md)":                        {Files: files("a.md", "b.md")},
-		"ctxtra: added 1 file (a.md) and 2 skills (deploy, review)": {Files: files("a.md"), Skills: skills},
-		"ctxtra: added 5 files (a.md, b.md, c.md, +2 more)":         {Files: files("a.md", "b.md", "c.md", "d.md", "e.md")},
-		"ctxtra: added 1 file (a.md); 1 not found, dropped b.md, c.md (over budget.max-chars), 1 problem (run ctxtra doctor)": {
+		"✓ ctxtra added 2 instructions\nInstructions:\n- a.md\n- b.md":                                  {Files: files("a.md", "b.md")},
+		"✓ ctxtra added 1 instruction and 2 skills\nInstructions:\n- a.md\nSkills:\n- deploy\n- review": {Files: files("a.md"), Skills: skills},
+		"✓ ctxtra added 5 instructions\nInstructions:\n- a.md\n- b.md\n- c.md\n- d.md\n- e.md":          {Files: files("a.md", "b.md", "c.md", "d.md", "e.md")},
+		"✓ ctxtra added 1 instruction; 1 not found, dropped b.md, c.md (over budget.max-chars), 1 problem (run ctxtra doctor)\nInstructions:\n- a.md": {
 			Files: files("a.md"), Missing: []string{"x"}, Dropped: over(files("b.md", "c.md"), "budget.max-chars"), Problems: []string{"p"}},
-		"ctxtra: added 1 file (a.md); dropped b.md, c.md, d.md, +1 more (over Claude Code's limit of 360,000 characters), dropped z.md (over budget.max-chars) (run ctxtra doctor)": {
+		"✓ ctxtra added 1 instruction; dropped b.md, c.md, d.md, +1 more (over Claude Code's limit of 360,000 characters), dropped z.md (over budget.max-chars) (run ctxtra doctor)\nInstructions:\n- a.md": {
 			Files: files("a.md"), Dropped: append(over(files("b.md", "c.md", "d.md", "e.md"), "Claude Code's limit of 360,000 characters"),
 				over(files("z.md"), "budget.max-chars")...)},
-		"ctxtra: added nothing; 2 problems (run ctxtra doctor)": {Problems: []string{"p", "q"}},
-		"ctxtra: added 1 file (a.md)\nctxtra: team last checked 9 days ago\nctxtra: n2": {
+		"ctxtra added nothing; 2 problems (run ctxtra doctor)": {Problems: []string{"p", "q"}},
+		"✓ ctxtra added 1 instruction\nInstructions:\n- a.md\nctxtra: team last checked 9 days ago\nctxtra: n2": {
 			Files: files("a.md"), Notices: []string{"team last checked 9 days ago", "n2"}},
 	} {
 		if got := agent.Summary(res); got != want {
@@ -89,5 +90,25 @@ func TestDelivery(t *testing.T) {
 	small.Fit(res)
 	if len(res.Files) != 1 {
 		t.Errorf("files %d with 40 parts of 5,000", len(res.Files))
+	}
+}
+
+func TestSummaryListLimit(t *testing.T) {
+	for _, count := range []int{15, 16} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			res := &resolve.Result{}
+			for i := 1; i <= count; i++ {
+				name := fmt.Sprintf("item-%02d", i)
+				res.Files = append(res.Files, resolve.Hit{Path: "/notes/" + name + ".md"})
+				res.Skills = append(res.Skills, resolve.Hit{Name: name})
+			}
+			got := agent.Summary(res)
+			if !strings.Contains(got, "\n- item-15.md") || !strings.Contains(got+"\n", "\n- item-15\n") {
+				t.Fatalf("missing fifteenth entries: %q", got)
+			}
+			if strings.Contains(got, "item-16") || strings.Count(got, "\n- +1 more") != 2*(count-15) {
+				t.Fatalf("incorrect overflow: %q", got)
+			}
+		})
 	}
 }

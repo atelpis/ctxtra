@@ -23,8 +23,18 @@ that adds the text to the first message of each session.
 DSH's command hooks need an extra package, so setup writes a plugin, `~/.dsh/ctxtra.mjs`, and adds the row that
 loads it to `~/.dsh/cordis.patch.yml`, which applies to every profile.
 
-At session start, Claude Code, Codex, Muse and Pi also show you a one-line summary, for example
-`ctxtra: added 2 files (english.md, go-style.md) and 1 skill (deploy)`, and the number of problems
+At session start, Claude Code, Codex, Muse and Pi also show you a summary, for example:
+
+```text
+✓ ctxtra added 2 instructions and 1 skill
+Instructions:
+- english.md
+- go-style.md
+Skills:
+- deploy
+```
+
+Each list shows up to 15 names, followed by `+N more` when needed. Muse may show fewer names to fit its message size limit. The summary also reports problems
 found, if any. The session-start hooks of Cursor, Copilot and Antigravity, and OpenCode, Hermes and DSH plugins, can't
 show a message.
 
