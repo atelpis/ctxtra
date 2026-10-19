@@ -69,8 +69,9 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestCapacitySubagent` | The same text reaches a subagent in full, and the main agent still has it once after tool calls |
 | `TestOverCapacity` | Above the agent's capacity (see `capacity` in [capacity_test.go](capacity_test.go)), whole files are dropped from the end: the files before them arrive in full, the dropped one not at all; the log and the user message name it |
 | `TestCopilotCompactionDropsText` | Documents a known Copilot limit: after Copilot compacts a long conversation, the hook's text is gone and the hook doesn't run again. Fails when Copilot changes that |
-| `TestUpgradeWithoutSetup` | Claude, Codex, Muse and Hermes with the hooks or plugin that a version before version 1 wrote (`testdata/clients/pre-v1` at the repository root, with the binary under test linked at `$HOME/bin/ctxtra`): the session gets what those hooks got then, files over that are dropped whole, and the log (and the user message, where the agent shows one) says to run `ctxtra setup` |
+| `TestUpgradeFromRelease` | Every agent with each setup that a release wrote (`testdata/clients/<id>/<agent>` at the repository root, with the binary under test linked at `$HOME/bin/ctxtra`), with text below, near and above what that setup can carry from this binary (`carries` in [upgrade_test.go](upgrade_test.go)): every file up to that amount, files over it dropped whole, and the log (and the user message, where the agent shows one) says to run `ctxtra setup` only when a setup now would carry more |
 | `TestCodexTrustTUI` | Interactive Codex in tmux: one "Trust all and continue" in the hook review trusts ctxtra's hooks, which set a finite `additionalContextLimit`; the session gets the text in full; `setup` run again asks for no new trust. Needs tmux |
+| `TestCodexUpgradeKeepsTrust` | Interactive Codex in tmux: after the user trusted ctxtra's hooks, a newer binary at the same path asks for no new trust, and the session gets the text in full. Needs tmux |
 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped
 with the reason for the others. A declared capability that stops working fails the test.
@@ -80,7 +81,7 @@ Not covered here, and checked by hand before a release:
 - What the interactive TUI shows (the session-start message on screen), `/clear`, `/compact`, and resume in
   Claude, Codex, Pi and OpenCode. These need a pseudo-terminal runner.
 - Codex hook trust through `/hooks`. The other tests run Codex with `--dangerously-bypass-hook-trust`;
-  `TestCodexTrustTUI` covers the startup hook review only.
+  `TestCodexTrustTUI` and `TestCodexUpgradeKeepsTrust` cover the startup hook review only.
 - Cursor (Agent CLI and desktop app): its model protocol can't be mocked. [cursorkit](cursorkit) checks it by
   hand with the real model: `go run ./cursorkit prepare -dir DIR -chars N [-delay D]` makes a test folder
   whose project hook binds a file with random codewords, `go run ./cursorkit cli -dir DIR` runs a CLI chat,

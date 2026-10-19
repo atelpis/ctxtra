@@ -319,28 +319,6 @@ func (c Config) binaries(cmds map[string][]Command) []string {
 	return bins
 }
 
-// Limited reports whether event has one of our handlers, and each of them
-// has additionalContextLimit ContextLimit. It is false when the file can't
-// be read.
-func (c Config) Limited(event string) bool {
-	data, err := c.read()
-	if err != nil {
-		return false
-	}
-	list, found := c.entries(data, event), false
-	for gi, e := range list {
-		for hi, h := range handlers(e) {
-			if cmd, ok := c.ourCommand(commandOf(h)); ok {
-				if limit(data, list, Command{cmd, gi, hi}) != fmt.Sprint(c.ContextLimit) {
-					return false
-				}
-				found = true
-			}
-		}
-	}
-	return found
-}
-
 // limit is the additionalContextLimit of the handler of cmd, as written.
 func limit(data *jsonorder.Map, list []any, cmd Command) string {
 	if data == nil || cmd.Group >= len(list) {
@@ -363,27 +341,22 @@ func limit(data *jsonorder.Map, list []any, cmd Command) string {
 
 // slots is how many different slots below the count cmds run, and the
 // count. ok: they are the hooks of one setup, every hook with its own
-// slot, and as many hooks as the count that each one says. Hooks of an
-// earlier version, without a count, have c.Slots; a count of 0, which the
-// hook refuses, has none.
+// slot, and as many hooks as the count that each one says. A count of 0,
+// which the hook refuses, has none.
 func (c Config) slots(cmds []Command) (n, of int, ok bool) {
 	seen := map[int]bool{}
 	of, ok = -1, true
 	for _, cmd := range cmds {
 		h, _ := agent.ParseCommand(cmd.Text, c.Missing)
-		count := h.Slots
-		if h.Of && count == 0 {
+		if h.Slots == 0 {
 			ok = false
 			continue
 		}
-		if !h.Of {
-			count = c.Slots
-		}
-		if of >= 0 && count != of {
+		if of >= 0 && h.Slots != of {
 			ok = false
 		}
-		of = max(of, count)
-		if h.Slot < 0 || h.Slot >= count || seen[h.Slot] {
+		of = max(of, h.Slots)
+		if h.Slot >= h.Slots || seen[h.Slot] {
 			ok = false
 			continue
 		}

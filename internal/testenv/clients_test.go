@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -35,10 +36,8 @@ func TestClients(t *testing.T) {
 			t.Errorf("%s/%s: %d files, %v", c.ID, c.Agent, n, err)
 		}
 	}
-	for _, id := range []string{"pre-v1", "v1"} {
-		if !ids[id] {
-			t.Errorf("no %s fixtures", id)
-		}
+	if !ids["0.1"] {
+		t.Error("no 0.1 fixtures")
 	}
 	for _, p := range []string{"/home/a b", "/home/\tx", "/home/ü", `/home/"x"`, "/home/$x", "/home/../x", ""} {
 		if CheckPath(p) == nil {
@@ -47,5 +46,33 @@ func TestClients(t *testing.T) {
 	}
 	if err := CheckPath("/var/folders/q4/b_w7/T/Test-1.x/001"); err != nil {
 		t.Error(err)
+	}
+}
+
+// Every release in releases.json names a tag and, for each agent, a client
+// fixture that exists. A missing or empty file has no releases.
+func TestReleases(t *testing.T) {
+	releases, err := Releases(filepath.Join(ClientsDir(), "releases.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tag := regexp.MustCompile(`^v\d+\.\d+\.\d+$`)
+	for r, agents := range releases {
+		if !tag.MatchString(r) || len(agents) == 0 {
+			t.Errorf("release %q: %v", r, agents)
+		}
+		for agent, id := range agents {
+			if _, err := os.Stat(filepath.Join(ClientsDir(), id, agent, "client.json")); err != nil {
+				t.Errorf("%s: %s: no fixture %s: %v", r, agent, id, err)
+			}
+		}
+	}
+	dir := t.TempDir()
+	Write(t, filepath.Join(dir, "empty.json"), "\n")
+	Write(t, filepath.Join(dir, "bad.json"), `{"v0.1.0": ["claude"]}`)
+	for name, ok := range map[string]bool{"missing.json": true, "empty.json": true, "bad.json": false} {
+		if r, err := Releases(filepath.Join(dir, name)); (err == nil) != ok || len(r) != 0 {
+			t.Errorf("%s: %v, %v", name, r, err)
+		}
 	}
 }

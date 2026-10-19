@@ -51,6 +51,76 @@ func TestCodexTrustTUI(t *testing.T) {
 	})
 }
 
+// An upgrade replaces the binary at the path that the hooks run, as go
+// install does: Codex still trusts ctxtra's hooks, so it doesn't ask to
+// review them again, and the session gets every line of the bound files.
+func TestCodexUpgradeKeepsTrust(t *testing.T) {
+	forEachAgent(t, nil, func(t *testing.T, a Agent) {
+		if a.Name() != "codex" {
+			t.Skip("Codex only")
+		}
+		tmux := tmuxBin(t)
+		s := newSession(t, a)
+		repo := s.Repo("dev/svc", "", nil)
+		files := capacityFiles(s)
+		bin := s.Path("bin/ctxtra")
+		b, err := os.ReadFile(ctxtraBin)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.Write("bin/ctxtra", string(b))
+		if err := os.Chmod(bin, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		ctxtra := func(args ...string) string {
+			t.Helper()
+			cmd := exec.Command(bin, args...)
+			cmd.Dir, cmd.Env = s.Home, s.Env()
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("ctxtra %s: %v\n%s", strings.Join(args, " "), err, out)
+			}
+			return string(out)
+		}
+		ctxtra("setup", "--agent", "codex")
+		if hooks, _ := os.ReadFile(s.Path(".codex/hooks.json")); !strings.Contains(string(hooks), `\"$HOME/bin/ctxtra\"`) {
+			t.Fatalf("the hooks don't run $HOME/bin/ctxtra:\n%s", hooks)
+		}
+
+		m := mock.New(t)
+		run := codexTUIScript(t, s, a, repo, m.URL())
+		tui := startTUI(t, tmux, run)
+		if !tui.untilReady(t) {
+			t.Fatal("Codex didn't ask to review the hooks")
+		}
+		tui.prompt(t, m, 0)
+		complete(t, "main[first]", firstMain(t, m, 0), files...)
+		tui.stop()
+
+		before := ctxtra("version")
+		newer := s.Path("tmp/ctxtra-newer")
+		build := exec.Command("go", "build", "-ldflags", "-X main.version=e2e-newer", "-o", newer, "./cmd/ctxtra")
+		build.Dir = ".."
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("building ctxtra: %v\n%s", err, out)
+		}
+		if err := os.Rename(newer, bin); err != nil {
+			t.Fatal(err)
+		}
+		if after := strings.TrimSpace(ctxtra("version")); after != "e2e-newer" || after == strings.TrimSpace(before) {
+			t.Fatalf("version %q after the upgrade, %q before", after, before)
+		}
+		seen := len(m.Requests())
+		tui = startTUI(t, tmux, run)
+		if tui.untilReady(t) {
+			t.Error("Codex asked to review the hooks again after the upgrade")
+		}
+		tui.prompt(t, m, seen)
+		complete(t, "main[after the upgrade]", firstMain(t, m, seen), files...)
+		tui.stop()
+	})
+}
+
 // checkCodexLimits checks that ctxtra's hooks set a finite
 // additionalContextLimit, in tokens, that covers the capacity at about 4
 // characters per token.

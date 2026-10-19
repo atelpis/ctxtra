@@ -60,3 +60,44 @@ func (f *Fixture) LoadClient(dir string) {
 		f.t.Fatal(err)
 	}
 }
+
+// Client is a client fixture, with the limits from its client.json that the
+// e2e tests use. testenv.Client in the main module has the whole file.
+type Client struct {
+	ID, Agent, Dir string
+	// Slots is how many hooks or callbacks of an event the client runs, 0
+	// without slots.
+	Slots int
+	// Limit is the most text that the client lets the agent show, nil for
+	// none.
+	Limit *struct {
+		Value int
+		Unit  string
+	}
+}
+
+// Clients are the client fixtures in root, testdata/clients at the
+// repository root, by id, then agent.
+func Clients(root string) ([]Client, error) {
+	files, err := filepath.Glob(filepath.Join(root, "*", "*", "client.json"))
+	if err != nil || len(files) == 0 {
+		return nil, fmt.Errorf("no client fixtures in %s (%v)", root, err)
+	}
+	var out []Client
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		c := Client{Dir: filepath.Dir(f)}
+		if err := json.Unmarshal(b, &c); err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		c.ID = filepath.Base(filepath.Dir(c.Dir))
+		if c.Agent != filepath.Base(c.Dir) {
+			return nil, fmt.Errorf("%s: agent %q", f, c.Agent)
+		}
+		out = append(out, c)
+	}
+	return out, nil
+}

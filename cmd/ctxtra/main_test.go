@@ -153,8 +153,9 @@ func expandFile(ts *testscript.TestScript, neg bool, args []string) {
 // agent's config for EVENT, with the hook input the agent sends for a
 // session in DIR, and makes its output available to stdout/stderr. For Pi,
 // OpenCode, Hermes and DSH, whose extensions aren't shell commands, it runs
-// the binary named in the extension the way the extension does. Antigravity
-// gets its own input and working folder.
+// the binary named in the extension the way the extension does, with the
+// protocol version and Hermes's slot count that it sends. Antigravity gets
+// its own input and working folder.
 func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) != 3 {
 		ts.Fatalf("usage: runhook AGENT EVENT DIR")
@@ -185,12 +186,18 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	case "pi", "opencode", "hermes", "dsh":
 		path := map[string]string{"pi": ".pi/agent/extensions/ctxtra.ts", "opencode": ".config/opencode/plugins/ctxtra.ts",
 			"hermes": ".hermes/plugins/ctxtra/__init__.py", "dsh": ".dsh/ctxtra.mjs"}[agent]
-		m := regexp.MustCompile(`(?m)^(?://|#) binary: (.+)$`).FindStringSubmatch(ts.ReadFile(filepath.Join(home, path)))
-		if m == nil {
-			ts.Fatalf("no binary in %s", path)
+		ext := ts.ReadFile(filepath.Join(home, path))
+		m := regexp.MustCompile(`(?m)^(?://|#) binary: (.+)$`).FindStringSubmatch(ext)
+		v := regexp.MustCompile(`(?m)^(?://|#) protocol: (\d+)$`).FindStringSubmatch(ext)
+		if m == nil || v == nil {
+			ts.Fatalf("no binary or protocol in %s", path)
 		}
 		bin := strings.Replace(m[1], "$HOME", home, 1)
-		input, _ = json.Marshal(map[string]string{"cwd": dir})
+		in := map[string]any{"cwd": dir, "ctxtra_plugin": json.Number(v[1])}
+		if n := regexp.MustCompile(`(?m)^SLOTS = (\d+)$`).FindStringSubmatch(ext); n != nil {
+			in["ctxtra_slots"] = json.Number(n[1])
+		}
+		input, _ = json.Marshal(in)
 		cmd = exec.Command(bin, "hook", agent, event)
 	default:
 		ts.Fatalf("runhook: unknown agent %q", agent)

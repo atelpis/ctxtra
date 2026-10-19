@@ -1,1 +1,0 @@
-{"agent": "codex", "limit": {"value": 9000, "unit": "bytes"}, "reads": "hookSpecificOutput.additionalContext", "events": ["SessionStart", "SubagentStart"]}

@@ -414,19 +414,16 @@ end, so each hook waits for the one before it, up to 2 seconds; the labels keep 
 order. Each hook's command says how many hooks its setup has (`--slot 3 --of 40`, and `ctxtra_slots` from
 the Hermes plugin), and the text is split into at most that many parts.
 
-Hooks that an older version of ctxtra set up keep working after an upgrade, with what they got then: one
-hook of up to 9,000 characters in Claude Code, 13,000 bytes in Muse, about 9,000 bytes in Codex (unless
-`hooks.json` shows ctxtra's hooks for the event with `additionalContextLimit`), and one callback of up to 9,000 characters in Hermes (an older plugin).
-Files over that are dropped, and the message at session start and the log say to run `ctxtra setup`.
-`ctxtra hook` ignores command-line arguments it doesn't know, so hooks that a later version set up still run
-after a downgrade.
+A Claude Code or Muse hook without `--slot K --of N`, a Hermes plugin that doesn't send `ctxtra_slots`, and
+a plugin that doesn't send `ctxtra_plugin` add nothing, and the log says why: no release writes such a
+setup, and without the slot count each hook would get the whole text. `ctxtra hook` ignores command-line arguments it doesn't know, so hooks that a later
+version set up still run after a downgrade.
 
 When the binary that a hook runs is gone, Claude Code, Codex, Muse and Devin show `ctxtra: the ctxtra binary
 that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent claude with the new binary`
-(with the agent's name) at session start, and Pi shows it as a warning. This needs hooks and a Pi extension
-that this version of ctxtra or a later one set up: older ones add nothing, without a word, like the other
-agents. `ctxtra doctor` and the [setup notices](#setup-notices) show the missing binary. Setup leaves a
-config alone that has a ctxtra hook changed by hand, and says so, instead of adding a second hook next to it.
+(with the agent's name) at session start, and Pi shows it as a warning. The other agents add nothing, without
+a word. `ctxtra doctor` and the [setup notices](#setup-notices) show the missing binary. Setup leaves a config
+alone that has a ctxtra hook changed by hand, and says so, instead of adding a second hook next to it.
 
 ## Setup compatibility
 
@@ -436,13 +433,17 @@ plugin files (the events they send, their input fields, the answer fields they r
 arguments of `ctxtra hook`. A new version changes only the binary, and the binary keeps serving every setup
 that a released version wrote with what that setup was promised.
 
-Version 1 of the contract is what the first public release writes. Each distinct setup gets an immutable
-fixture in `testdata/clients/<id>/<agent>`, with `client.json`: the most text the agent shows in full with
-that setup, in all and in one part (set by the setup, or measured in the agent), and the answer field that
-its hooks read; no separate contract number is stored. `internal/setup/contract_test.go` fails when what
-setup writes differs from `internal/setup/testdata/contract`, and `internal/cli/contract_test.go` runs every
-hook command of every fixture, with text below, near and above what the fixture can carry from the binary
-under test.
+The contract holds from 0.1, the first public release, on. Setups written before 0.1 aren't supported:
+`ctxtra doctor` says what to delete or set up again. Each distinct setup gets an immutable fixture in
+`testdata/clients/<id>/<agent>`, named after the release that first wrote it (`0.1` for v0.1.0), with
+`client.json`: the most text the agent shows in full with that setup, in all and in one part (set by the
+setup, or measured in the agent), and the answer field that its hooks read; no separate contract number is
+stored. `testdata/clients/releases.json` maps each
+release to its fixture per agent. `internal/setup/contract_test.go` fails when what setup writes differs
+from `internal/setup/testdata/contract`, and `internal/cli/contract_test.go` runs every hook command of
+every fixture, with text below, near and above what the fixture can carry from the binary under test.
+`TestUpgradeFromRelease` in `e2e` does the same with the real agents, plugins included. The steps of a
+release are in [release.md](release.md).
 
 | Kind | Example | Old setups | Allowed |
 |---|---|---|---|
@@ -481,7 +482,7 @@ shows the same lines under each agent instead:
 |---|---|
 | The binary in the setup is gone | `claude: the hooks run ~/Downloads/ctxtra-0.3/ctxtra, which doesn't exist; run ctxtra setup --agent claude` |
 | The setup runs another binary | `claude: the hooks run /usr/local/bin/ctxtra, not this ctxtra (/opt/homebrew/bin/ctxtra); to switch, run ctxtra setup --agent claude` |
-| An older version set it up, with less room | `codex: set up by an older ctxtra, with Codex's limit of 9,000 bytes; run ctxtra setup --agent codex (Codex will then ask you to trust the hooks again)` |
+| An older version set it up, with less room (after a capacity change) | `codex: set up by an older ctxtra, with Codex's limit of 1,000,000 bytes; run ctxtra setup --agent codex (Codex will then ask you to trust the hooks again)` |
 | Part of the setup is missing | `claude: SessionStart has 3 of the 40 ctxtra hooks; run ctxtra setup --agent claude`, `dsh: the patch row that loads ctxtra's plugin is missing; run ctxtra setup --agent dsh` |
 | The Hermes plugin isn't enabled | `hermes: the ctxtra plugin is installed but not enabled; run hermes plugins enable ctxtra` |
 | A setup is gone from its file | `claude: ctxtra's hooks are gone from ~/.claude/settings.json; if that wasn't on purpose, run ctxtra setup --agent claude; if it was, ctxtra setup --remove --agent claude stops this notice` |

@@ -32,6 +32,21 @@ func capacity(agent string) int {
 	return 1_000_000
 }
 
+// slots is how many hooks or callbacks per event a setup of the agent has,
+// and the largest part of ASCII text that ctxtra gives one of them; 0, 0 for
+// the agents that get the text from one.
+func slots(agent string) (n, part int) {
+	switch agent {
+	case "claude":
+		return 40, 9000
+	case "muse":
+		return 40, 13_000
+	case "hermes":
+		return 125, 9000
+	}
+	return 0, 0
+}
+
 // slotted are the agents that get the text from several hooks or callbacks
 // of one session start: ctxtra resolves the files once for all of them.
 var slotted = []string{"claude", "muse", "hermes"}

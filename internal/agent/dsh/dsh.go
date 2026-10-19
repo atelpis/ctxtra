@@ -23,7 +23,10 @@ import (
 // Agent is DeepSeek Harness.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent        = Agent{}
+	_ agent.PluginClient = Agent{}
+)
 
 func (Agent) Name() string { return "dsh" }
 
@@ -154,6 +157,8 @@ func (Agent) Delivery() agent.Delivery {
 
 // protocol is the version of the plugin, which it sends as ctxtra_plugin.
 const protocol = 1
+
+func (Agent) Protocol() int { return protocol }
 
 // Plugin is the plugin that runs bin.
 func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, protocol, pluginBody) }

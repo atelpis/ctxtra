@@ -58,9 +58,10 @@ func TestCommandIsStable(t *testing.T) {
 	}
 }
 
-// Setup recognizes the forms it writes and wrote, with the answers for a
-// missing binary that it writes: the message only in slot 0, or in a hook
-// without slots, at session start. A command edited by hand isn't ours.
+// Setup recognizes the form it writes, with the answers for a missing
+// binary that it writes: the message only in slot 0, or in a hook without
+// slots, at session start. Another form, or a command edited by hand, isn't
+// ours.
 func TestParseCommand(t *testing.T) {
 	const pre = `/bin/sh -c 'f="/opt/ctxtra"; if [ -x "$f" ]; then exec "$f" hook claude `
 	msg := strings.ReplaceAll(agent.SystemMessage("SessionStart", agent.MissingMessage("claude")), `"`, `\"`)
@@ -69,10 +70,12 @@ func TestParseCommand(t *testing.T) {
 		agent.SlotCommand("/opt/ctxtra", "claude", "SessionStart", 1, 40, message{}): true,
 		agent.Command("/opt/ctxtra", "claude", "SessionStart", message{}):            true,
 		agent.Command("/opt/ctxtra", "claude", "SubagentStart", message{}):           true,
-		// Earlier versions: {} with /bin/cat or cat, slots without --of.
-		pre + `SessionStart --slot 0 --of 40; else /bin/cat >/dev/null 2>&1; echo "{}"; fi'`: true,
-		pre + `SessionStart --slot 3; else /bin/cat >/dev/null 2>&1; echo "{}"; fi'`:         true,
-		pre + `SessionStart; else cat >/dev/null 2>&1; echo "{}"; fi'`:                       true,
+		// Forms that setup doesn't write: {} where it writes the message,
+		// cat without its path, --slot without --of and the other way round.
+		pre + `SessionStart --slot 0 --of 40; else /bin/cat >/dev/null 2>&1; echo "{}"; fi'`: false,
+		pre + `SessionStart; else cat >/dev/null 2>&1; echo "{}"; fi'`:                       false,
+		pre + `SessionStart --slot 3; else /bin/cat >/dev/null 2>&1; echo "{}"; fi'`:         false,
+		pre + `SessionStart --of 40; else /bin/cat >/dev/null 2>&1; echo "{}"; fi'`:          false,
 		// The message where setup doesn't write it, or edited.
 		pre + `SessionStart --slot 1 --of 40; else /bin/cat >/dev/null 2>&1; echo "` + msg + `"; fi'`: false,
 		pre + `SubagentStart; else /bin/cat >/dev/null 2>&1; echo "` + msg + `"; fi'`:                 false,

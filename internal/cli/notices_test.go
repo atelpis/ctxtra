@@ -146,24 +146,6 @@ func TestNewCodexNotice(t *testing.T) {
 	wantNotices(t, "new Codex", "codex: found since the last ctxtra setup; to add ctxtra to it, run ctxtra setup --agent codex (Codex will then ask you to trust the hooks)")
 }
 
-// Setups by versions before 1 get less: the notice says how much.
-func TestLegacyNotices(t *testing.T) {
-	h, bin := noticeHome(t)
-	real := fakeBin(t, filepath.Join(h, "real", "ctxtra"))
-	for _, c := range testenv.Clients(t) {
-		if c.ID == "pre-v1" {
-			os.Remove(bin) // each fixture links it
-			c.Load(t, h, real)
-		}
-	}
-	testenv.Write(t, filepath.Join(h, ".hermes", "config.yaml"), "plugins:\n  enabled: [ctxtra]\n")
-	wantNotices(t, "pre-v1",
-		"claude: set up by an older ctxtra, with Claude Code's limit of 9,000 characters; run ctxtra setup --agent claude",
-		"codex: set up by an older ctxtra, with Codex's limit of 9,000 bytes; run ctxtra setup --agent codex (Codex will then ask you to trust the hooks again)",
-		"muse: set up by an older ctxtra, with Muse's limit of 13,000 bytes; run ctxtra setup --agent muse",
-		"hermes: set up by an older ctxtra, with Hermes's limit of 9,000 characters; run ctxtra setup --agent hermes")
-}
-
 // Without setup.json there are no notices about new or gone setups; a
 // broken one says so once, and is then as if missing.
 func TestSetupsFile(t *testing.T) {

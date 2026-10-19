@@ -19,7 +19,10 @@ import (
 // Agent is Pi.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent        = Agent{}
+	_ agent.PluginClient = Agent{}
+)
 
 func (Agent) Name() string { return "pi" }
 
@@ -82,6 +85,8 @@ func (Agent) Delivery() agent.Delivery {
 
 // protocol is the version of the extension, which it sends as ctxtra_plugin.
 const protocol = 1
+
+func (Agent) Protocol() int { return protocol }
 
 // Extension is the extension that runs bin.
 func Extension(bin string) string {

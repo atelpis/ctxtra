@@ -5,6 +5,7 @@ package hook
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -50,10 +51,17 @@ func Run(harness, event string, in io.Reader, out, errOut io.Writer) int {
 	return RunSlot(harness, event, -1, in, out, errOut)
 }
 
-// RunSlot is Run for hook slot of an agent.Slotted, or for no slot when it
-// is below 0. Other agents ignore the slot.
+// RunSlot is Run for hook slot of an agent.Slotted, of a setup with as many
+// slots as the agent has, or for no slot when it is below 0. Other agents
+// ignore the slot.
 func RunSlot(harness, event string, slot int, in io.Reader, out, errOut io.Writer) int {
-	return RunArgs(harness, event, Args{Slot: slot}, in, out, errOut)
+	args := Args{Slot: slot}
+	if a, ok := registry.Get(harness); ok && slot >= 0 {
+		if _, ok := a.(agent.Slotted); ok {
+			args.Slots = a.Delivery().Slots
+		}
+	}
+	return RunArgs(harness, event, args, in, out, errOut)
 }
 
 // RunArgs is Run with the hook's options.
@@ -113,7 +121,7 @@ func RunArgs(harness, event string, args Args, in io.Reader, out, errOut io.Writ
 			fmt.Fprintln(out, empty)
 			return 0
 		}
-		if slots == 0 {
+		if _, ok := a.(agent.Slotted); !ok {
 			slots = n
 		}
 	}
@@ -133,7 +141,12 @@ func RunArgs(harness, event string, args Args, in io.Reader, out, errOut io.Writ
 			return 0
 		}
 	}
-	d, upgrade := delivery(a, event, input)
+	d, upgrade, err := delivery(a, event, input)
+	if err != nil {
+		logEntry(Entry{Ts: ts, Harness: harness, Event: event, Dir: dir, Error: err.Error()})
+		fmt.Fprintln(out, empty)
+		return 0
+	}
 	if sl, ok := a.(agent.Slotted); ok && slot >= 0 {
 		// A slot of a setup with more slots than this version has, after a
 		// downgrade.
@@ -155,19 +168,27 @@ func RunArgs(harness, event string, args Args, in io.Reader, out, errOut io.Writ
 
 // delivery is what the hook that in describes gets: what a hook that an
 // older version set up got then, with a notice that says to run setup, or
-// the agent's Delivery in the slots that its setup has. A setup that
-// doesn't say has agent.OldSlots.
-func delivery(a agent.Agent, event string, in agent.Input) (d agent.Delivery, upgrade string) {
+// the agent's Delivery in the slots that its setup has. A hook of an agent
+// with slots that doesn't say how many its setup has, or one of a plugin
+// that doesn't say its version, is an error.
+func delivery(a agent.Agent, event string, in agent.Input) (d agent.Delivery, upgrade string, err error) {
 	if u, ok := a.(agent.Upgrader); ok {
 		if old, ok := u.Legacy(event, in); ok {
-			return old, fmt.Sprintf("the hook is from an older version of ctxtra, with %s; run ctxtra setup", old.Over())
+			return old, fmt.Sprintf("the hook is from an older version of ctxtra, with %s; run ctxtra setup", old.Over()), nil
 		}
 	}
-	n := in.Slots
-	if o, ok := a.(agent.OldSlots); ok && n == 0 {
-		n = o.OldSlots()
+	d = a.Delivery()
+	_, slotted := a.(agent.Slotted)
+	_, plugin := a.(agent.PluginClient)
+	switch {
+	case slotted && (in.Slot < 0 || in.Slots == 0):
+		return d, "", errors.New("bad hook arguments: the hook has no --slot K --of N")
+	case plugin && in.Plugin <= 0:
+		return d, "", errors.New("bad hook input: no ctxtra_plugin")
+	case d.Slots > 0 && in.Slots == 0:
+		return d, "", errors.New("bad hook input: no ctxtra_slots")
 	}
-	return a.Delivery().WithSlots(n), ""
+	return d.WithSlots(in.Slots), "", nil
 }
 
 // session resolves what a session in dir gets, with the files that d

@@ -29,10 +29,9 @@ import (
 type Agent struct{}
 
 var (
-	_ agent.Agent    = Agent{}
-	_ agent.Upgrader = Agent{}
-	_ agent.Missing  = Agent{}
-	_ agent.Retrust  = Agent{}
+	_ agent.Agent   = Agent{}
+	_ agent.Missing = Agent{}
+	_ agent.Retrust = Agent{}
 )
 
 // events are not registered for resume: the resumed transcript already
@@ -75,7 +74,6 @@ func (a Agent) hooks() hookjson.Config {
 	// The status message names the hook in Codex's /hooks review.
 	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events,
 		StatusMessage: "ctxtra: personal instructions", ContextLimit: contextLimit, Missing: a,
-		Legacy:     func(_ string, _ agent.Hook, limited bool) (agent.Delivery, bool) { return legacy(!limited) },
 		RepairNote: " (" + a.TrustNote() + " again)"}
 }
 
@@ -132,19 +130,6 @@ func (a Agent) MissingAnswer(event, msg string) string {
 // 0.162.1).
 func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Codex", Capacity: contextLimit * 4, Unit: chunk.Bytes}
-}
-
-// Legacy: a hook without additionalContextLimit, set up by an older
-// version, shows the model about 2,500 tokens of 4 bytes, with some room for
-// how Codex rounds. The hook finds out from hooks.json, and takes the old
-// limit unless the file shows that ctxtra's hooks for the event have the
-// new one: cut text is worse than files dropped with a message.
-func (a Agent) Legacy(event string, _ agent.Input) (agent.Delivery, bool) {
-	return legacy(!a.hooks().Limited(event))
-}
-
-func legacy(old bool) (agent.Delivery, bool) {
-	return agent.Delivery{Title: "Codex", Capacity: 9000, Unit: chunk.Bytes}, old
 }
 
 // Check reads hooks.json only: Status also runs codex --version.

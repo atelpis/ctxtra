@@ -47,17 +47,13 @@ type slotAnswer struct {
 // runSlots runs all 40 slots of claude's event at once, like Claude does.
 func runSlots(t *testing.T, event, input string) []slotAnswer {
 	t.Helper()
-	return runSlotsOf(t, event, input, 0)
+	return runSlotsOf(t, event, input, 40)
 }
 
-// runSlotsOf is runSlots for a setup with --of slots, or 40 slots without
-// --of when slots is 0.
+// runSlotsOf is runSlots for a setup with --of slots.
 func runSlotsOf(t *testing.T, event, input string, slots int) []slotAnswer {
 	t.Helper()
-	out := make([]slotAnswer, max(slots, 40))
-	if slots > 0 {
-		out = out[:slots]
-	}
+	out := make([]slotAnswer, slots)
 	var wg sync.WaitGroup
 	for k := range out {
 		wg.Go(func() {
@@ -182,7 +178,7 @@ func age(t *testing.T, d string) {
 func TestSnapshot(t *testing.T) {
 	h, r := bigSession(t, 1000)
 	p := payload{Cwd: r, SessionID: "s2", Source: "startup"}
-	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", 0, p, r))
+	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", 40, p, r))
 	calls := 0
 	mk := func() snapshot { calls++; return snapshot{Parts: []string{fmt.Sprint(calls)}} }
 	at, s, err := shared(d, 0, mk)
@@ -347,7 +343,7 @@ func TestSnapshotGeneration(t *testing.T) {
 	h, r := bigSession(t, 1000)
 	input := `{"cwd": "` + r + `", "session_id": "same", "source": "clear"}`
 	p := payload{Cwd: r, SessionID: "same", Source: "clear"}
-	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", 0, p, r))
+	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", 40, p, r))
 	RunSlot("claude", "SessionStart", 0, strings.NewReader(input), io.Discard, io.Discard)
 	testenv.Write(t, filepath.Join(h, "big.md"), "NEW-GENERATION-CONTEXT")
 	if got := runSlots(t, "SessionStart", input); strings.Contains(got[0].text, "NEW-GENERATION-CONTEXT") || !strings.Contains(got[0].text, "big L00000") {
@@ -374,7 +370,7 @@ func TestOverlappingGenerations(t *testing.T) {
 	h, r := bigSession(t, 30_000)
 	input := `{"cwd": "` + r + `", "session_id": "same", "source": "resume"}`
 	p := payload{Cwd: r, SessionID: "same", Source: "resume"}
-	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", 0, p, r))
+	d := filepath.Join(h, ".ctxtra", "slots", slotKey("claude", "SessionStart", 40, p, r))
 	claude, _ := registry.Get("claude")
 	var want []string
 	for k := range 10 {

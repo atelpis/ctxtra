@@ -19,34 +19,17 @@ import (
 // must stay the same across versions.
 const commandTemplate = `/bin/sh -c 'f="%s"; if [ -x "$f" ]; then exec "$f" hook %s %s; else /bin/cat >/dev/null 2>&1; echo %s; fi'`
 
-// oldTemplates are earlier forms of commandTemplate, which printed {} when
-// the binary was gone. Setup still recognizes them, so it updates such an
-// entry in place instead of adding a second one.
-var oldTemplates = []string{
-	`/bin/sh -c 'f="%s"; if [ -x "$f" ]; then exec "$f" hook %s %s; else /bin/cat >/dev/null 2>&1; echo "{}"; fi'`,
-	`/bin/sh -c 'f="%s"; if [ -x "$f" ]; then exec "$f" hook %s %s; else cat >/dev/null 2>&1; echo "{}"; fi'`,
-}
-
 // wordRe is a shell word that missingWord writes: a double-quoted string
 // whose only escapes are \".
 const wordRe = `"((?:[^"\\$` + "`" + `'\n]|\\")*)"`
 
-// commandRes match commandTemplate and oldTemplates with any binary path, so
-// setup recognizes its own entries also after the binary moved. The event
-// can have a slot (SlotCommand), and a slot of an earlier version has no
-// --of.
-var commandRes = func() []*regexp.Regexp {
-	var out []*regexp.Regexp
-	for _, t := range append([]string{commandTemplate}, oldTemplates...) {
-		p := strings.Split(t, "%s")
-		re := "^" + regexp.QuoteMeta(p[0]) + `([^"]+)` + regexp.QuoteMeta(p[1]) + `(\S+)` + regexp.QuoteMeta(p[2]) +
-			`(\S+)(?: --slot (\d+)(?: --of (\d+))?)?` + regexp.QuoteMeta(p[3])
-		if len(p) == 5 {
-			re += wordRe + regexp.QuoteMeta(p[4])
-		}
-		out = append(out, regexp.MustCompile(re+"$"))
-	}
-	return out
+// commandRe matches commandTemplate with any binary path, so setup
+// recognizes its own entries also after the binary moved. The event can
+// have a slot (SlotCommand).
+var commandRe = func() *regexp.Regexp {
+	p := strings.Split(commandTemplate, "%s")
+	return regexp.MustCompile("^" + regexp.QuoteMeta(p[0]) + `([^"]+)` + regexp.QuoteMeta(p[1]) + `(\S+)` + regexp.QuoteMeta(p[2]) +
+		`(\S+)(?: --slot (\d+) --of (\d+))?` + regexp.QuoteMeta(p[3]) + wordRe + regexp.QuoteMeta(p[4]) + "$")
 }()
 
 // MissingMessage is what the hook of agent tells the user when the binary
@@ -91,46 +74,32 @@ func SlotCommand(bin, agent, event string, slot, slots int, m Missing) string {
 // Hook is what one of our hook commands runs.
 type Hook struct {
 	Binary, Agent, Event string
-	Slot                 int  // --slot, or -1 without one
-	Slots                int  // --of, or 0 without one
-	Of                   bool // whether the command has --of, also --of 0
+	Slot                 int // --slot, or -1 without one
+	Slots                int // --of, or 0 without one
 }
 
 // ParseCommand returns what cmd runs, and whether it is one of our hook
-// commands: a form that setup writes or wrote, which prints {} when the
-// binary is gone, or exactly the message that setup writes for m. Setup
-// replaces and removes the entries that are ours, so a command edited by
-// hand isn't one.
+// commands: the form that setup writes, which prints exactly what setup
+// writes for m when the binary is gone. Setup replaces and removes the
+// entries that are ours, so a command edited by hand isn't one.
 func ParseCommand(cmd string, m Missing) (Hook, bool) {
-	for i, re := range commandRes {
-		g := re.FindStringSubmatch(cmd)
-		if g == nil {
-			continue
-		}
-		h := Hook{Binary: ExpandShellPath(g[1]), Agent: g[2], Event: g[3], Slot: -1}
-		if g[4] != "" {
-			n, err := strconv.Atoi(g[4])
-			if err != nil {
-				return Hook{}, false
-			}
-			h.Slot = n
-		}
-		if g[5] != "" {
-			n, err := strconv.Atoi(g[5])
-			if err != nil {
-				return Hook{}, false
-			}
-			h.Slots, h.Of = n, true
-		}
-		if i == 0 {
-			answer := strings.ReplaceAll(g[6], `\"`, `"`)
-			if answer != "{}" && answer != missingAnswer(m, h.Agent, h.Event, h.Slot) {
-				return Hook{}, false
-			}
-		}
-		return h, true
+	g := commandRe.FindStringSubmatch(cmd)
+	if g == nil {
+		return Hook{}, false
 	}
-	return Hook{}, false
+	h := Hook{Binary: ExpandShellPath(g[1]), Agent: g[2], Event: g[3], Slot: -1}
+	if g[4] != "" {
+		slot, err1 := strconv.Atoi(g[4])
+		slots, err2 := strconv.Atoi(g[5])
+		if err1 != nil || err2 != nil {
+			return Hook{}, false
+		}
+		h.Slot, h.Slots = slot, slots
+	}
+	if strings.ReplaceAll(g[6], `\"`, `"`) != missingAnswer(m, h.Agent, h.Event, h.Slot) {
+		return Hook{}, false
+	}
+	return h, true
 }
 
 // ShellPath is bin as the hook command writes it.

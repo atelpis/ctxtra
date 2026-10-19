@@ -62,20 +62,7 @@ func TestSetup(t *testing.T) {
 	if st := a.Status("", false); st.OK || !strings.HasPrefix(st.Details[0], "can't tell whether the ctxtra plugin is enabled: ~/.hermes/config.yaml: ") {
 		t.Errorf("broken config: %+v", st)
 	}
-	// Plugins of older versions: version 2, without the protocol line, gets
-	// as much as this one; one from before version 2 doesn't.
 	testenv.Write(t, filepath.Join(h, ".hermes", "config.yaml"), "plugins:\n  enabled: [ctxtra]\n")
-	old, _ := os.ReadFile(a.ConfigPath())
-	v2 := strings.Replace(strings.Replace(string(old), "# protocol: 3\n", "", 1), `"ctxtra_plugin": 3, "ctxtra_slots": SLOTS`, `"ctxtra_plugin": 2`, 1)
-	testenv.Write(t, a.ConfigPath(), v2)
-	if st := a.Status("", false); !st.OK {
-		t.Errorf("version 2: %+v", st)
-	}
-	testenv.Write(t, a.ConfigPath(), strings.Replace(v2, `, "ctxtra_plugin": 2`, "", 1))
-	if st := a.Status("", false); st.OK || st.Details[0] != "set up by an older ctxtra, with Hermes's limit of 9,000 characters; run ctxtra setup --agent hermes" {
-		t.Errorf("before version 2: %+v", st)
-	}
-	testenv.Write(t, a.ConfigPath(), string(old))
 	os.Remove(manifestPath())
 	if st := a.Status("", false); st.OK || st.Details[0] != "~/.hermes/plugins/ctxtra/plugin.yaml is missing; run ctxtra setup --agent hermes" {
 		t.Errorf("no plugin.yaml: %+v", st)
