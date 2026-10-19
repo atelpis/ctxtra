@@ -12,7 +12,7 @@ stdout 'CTXMARK-NOTES'
 stdout 'CTXMARK-OWN'
 ! stdout 'CTXMARK-TEAM'
 ! stdout 'CTXMARK-DOT'
-stdout '"systemMessage":"ctxtra: added 2 files \(me.md, own.md\); 2 problems \(run ctxtra doctor\)"'
+stdout '"systemMessage":"✓ ctxtra added 2 instructions; 2 problems \(run ctxtra doctor\)\\nInstructions:\\n- me.md\\n- own.md"'
 
 ! exec ctxtra files notes
 stderr 'problem: .*~/dev/team/team.md is in ~/dev/team, which has the remote github.com/acme/team and is not a trusted source; skipped. If only you push to the repository: ctxtra add --trust ~/dev/team; else pin it: add the file with ctxtra add'

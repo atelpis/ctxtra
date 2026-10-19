@@ -8,7 +8,7 @@ import (
 	"github.com/atelpis/ctxtra/e2e/mock"
 )
 
-// The agent gets ctxtra's one-line message for the user at session
+// The agent gets ctxtra's message for the user at session
 // start. This checks the agent accepted the message from the hook; whether
 // the TUI shows it needs an interactive run.
 func TestUserMessage(t *testing.T) {
@@ -20,7 +20,7 @@ func TestUserMessage(t *testing.T) {
 		s.Setup()
 		r := s.Run(repo, driver.Options{})
 		r.First(mock.Main).Has("PERSONAL")
-		want := "ctxtra: added 1 file (me.md); 1 not found (run ctxtra doctor)"
+		want := "✓ ctxtra added 1 instruction; 1 not found (run ctxtra doctor)\nInstructions:\n- me.md"
 		if got := a.UserMessages(s.Home, r.Stdout); !slices.Equal(got, []string{want}) {
 			t.Errorf("user messages %q, want [%q]", got, want)
 		}

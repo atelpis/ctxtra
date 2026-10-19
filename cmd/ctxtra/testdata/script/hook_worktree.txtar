@@ -12,7 +12,7 @@ stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
 ! stdout 'CTXMARK-OTHER'
 stdout 'for this repository, ~/dev/svc, and all its worktrees'
 stdout '<name>deploy</name>'
-stdout '"systemMessage":"ctxtra: added 3 files \(work.md, svc.md, me.md\) and 1 skill \(deploy\)"'
+stdout '"systemMessage":"✓ ctxtra added 3 instructions and 1 skill\\nInstructions:\\n- work.md\\n- svc.md\\n- me.md\\nSkills:\\n- deploy"'
 
 runhook claude SubagentStart elsewhere/svc-feature
 stdout '"hookEventName":"SubagentStart"'
@@ -21,12 +21,12 @@ stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
 
 runhook codex SessionStart elsewhere/svc-feature
 stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
-stdout '"systemMessage":"ctxtra: added 3 files'
+stdout '"systemMessage":"✓ ctxtra added 3 instructions'
 
 runhook muse SessionStart elsewhere/svc-feature
 stdout '"hookEventName":"SessionStart"'
 stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
-stdout '"systemMessage":"ctxtra: added 3 files'
+stdout '"systemMessage":"✓ ctxtra added 3 instructions'
 
 runhook muse SubagentStart elsewhere/svc-feature
 stdout '"hookEventName":"SubagentStart"'
@@ -37,7 +37,7 @@ stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
 runhook pi before_agent_start elsewhere/svc-feature
 stdout '"files":\[\{"path":"[^"]*/ctx/work.md".*\{"path":"[^"]*/ctx/svc.md".*\{"path":"[^"]*/ctx/me.md"'
 stdout '"skills":\["[^"]*/skills/deploy/SKILL.md"\]'
-stdout '"message":"ctxtra: added 3 files'
+stdout '"message":"✓ ctxtra added 3 instructions'
 
 # OpenCode gets files as system text, skills as native skills with their body.
 runhook opencode context elsewhere/svc-feature
@@ -48,7 +48,7 @@ stdout '"skills":\[\{"name":"deploy","description":"Deploy the service.","path":
 # Antigravity gets the text as a system message, without one for the user.
 runhook antigravity SessionStart elsewhere/svc-feature
 stdout '^\{"injectSteps":\[\{"systemMessage":\{"systemMessage":".*CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL.*<name>deploy</name>'
-! stdout 'ctxtra: added'
+! stdout '✓ ctxtra added'
 
 # Hermes gets files and the skill list as text, like Claude, in parts.
 runhook hermes pre_llm_call elsewhere/svc-feature

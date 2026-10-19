@@ -7,6 +7,7 @@ package agent
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/chunk"
@@ -135,30 +136,31 @@ func ContextAnswer(event, text, summary string) any {
 	return out
 }
 
-// summaryNames is how many names Summary lists per kind before "+N more".
+// summaryNames limits inline name lists in diagnostics.
 const summaryNames = 3
 
-// Summary is a one-line message for the user about what the session got:
-// files by base name and skills by name, then one line per notice. It is ""
+// Summary lists the instructions and skills the session got, followed by notices. It is ""
 // when ctxtra added nothing and has nothing to say.
 func Summary(res *resolve.Result) string {
 	if res == nil {
 		return ""
 	}
-	var added, issues []string
+	var added, issues, lists []string
 	if n := len(res.Files); n > 0 {
 		names := make([]string, n)
 		for i, h := range res.Files {
 			names[i] = filepath.Base(h.Path)
 		}
-		added = append(added, plural(n, "file")+" "+nameList(names))
+		added = append(added, plural(n, "instruction"))
+		lists = append(lists, summaryList("Instructions", names))
 	}
 	if n := len(res.Skills); n > 0 {
 		names := make([]string, n)
 		for i, h := range res.Skills {
 			names[i] = h.Name
 		}
-		added = append(added, plural(n, "skill")+" "+nameList(names))
+		added = append(added, plural(n, "skill"))
+		lists = append(lists, summaryList("Skills", names))
 	}
 	if n := len(res.Missing); n > 0 {
 		issues = append(issues, fmt.Sprintf("%d not found", n))
@@ -170,12 +172,15 @@ func Summary(res *resolve.Result) string {
 	if len(added) == 0 && len(issues) == 0 && len(res.Notices) == 0 {
 		return ""
 	}
-	s := "ctxtra: added nothing"
+	s := "ctxtra added nothing"
 	if len(added) > 0 {
-		s = "ctxtra: added " + strings.Join(added, " and ")
+		s = "✓ ctxtra added " + strings.Join(added, " and ")
 	}
 	if len(issues) > 0 {
 		s += "; " + strings.Join(issues, ", ") + " (run ctxtra doctor)"
+	}
+	for _, list := range lists {
+		s += "\n" + list
 	}
 	for _, n := range res.Notices {
 		s += "\nctxtra: " + n
@@ -200,9 +205,21 @@ func dropped(hits []resolve.Hit) []string {
 	return out
 }
 
-// nameList is "(a, b, c)", or "(a, b, c, +2 more)" for more than
-// summaryNames names.
-func nameList(names []string) string { return "(" + Names(names) + ")" }
+// summaryList shows at most 15 names, one per line.
+func summaryList(title string, names []string) string {
+	const limit = 15
+	listed := make([]string, len(names))
+	for i, name := range names {
+		if strings.ContainsAny(name, "\r\n") || strings.HasPrefix(name, "+") && strings.HasSuffix(name, " more") {
+			name = strconv.Quote(name)
+		}
+		listed[i] = name
+	}
+	if len(names) > limit {
+		listed = append(listed[:limit:limit], fmt.Sprintf("+%d more", len(names)-limit))
+	}
+	return title + ":\n- " + strings.Join(listed, "\n- ")
+}
 
 // Names is "a, b, c", or "a, b, c, +2 more" for more than three names.
 func Names(names []string) string {

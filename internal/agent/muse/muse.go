@@ -4,9 +4,12 @@
 package muse
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
@@ -81,8 +84,50 @@ func (Agent) SlotAnswer(event, text, summary string) any {
 // dropped (measured with Muse 1.4.10).
 const maxSummary = 2000
 
-// clip cuts summary to maxSummary.
+// clip omits list entries before truncating diagnostics to fit maxSummary.
 func clip(summary string) string {
+	for chunk.JSON.Len(summary) > maxSummary {
+		lines := strings.Split(summary, "\n")
+		longest := -1
+		inList := false
+		for i, line := range lines {
+			if line == "Instructions:" || line == "Skills:" {
+				inList = true
+				continue
+			}
+			if !strings.HasPrefix(line, "- ") {
+				inList = false
+			}
+			if !inList {
+				continue
+			}
+			if _, ok := omitted(line); ok {
+				continue
+			}
+			if longest < 0 || chunk.JSON.Len(line) > chunk.JSON.Len(lines[longest]) {
+				longest = i
+			}
+		}
+		if longest < 0 {
+			break
+		}
+		end := longest + 1
+		for end < len(lines) && strings.HasPrefix(lines[end], "- ") {
+			end++
+		}
+		count := 1
+		if end > longest+1 {
+			if n, ok := omitted(lines[end-1]); ok {
+				count += n
+				lines = append(lines[:end-1], lines[end:]...)
+				end--
+			}
+		}
+		lines = append(lines[:longest], lines[longest+1:]...)
+		end--
+		lines = append(lines[:end], append([]string{fmt.Sprintf("- +%d more", count)}, lines[end:]...)...)
+		summary = strings.Join(lines, "\n")
+	}
 	if chunk.JSON.Len(summary) <= maxSummary {
 		return summary
 	}
@@ -93,6 +138,14 @@ func clip(summary string) string {
 		}
 	}
 	return summary
+}
+
+func omitted(line string) (int, bool) {
+	if !strings.HasPrefix(line, "- +") || !strings.HasSuffix(line, " more") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(line, "- +"), " more"))
+	return n, err == nil && n > 0
 }
 
 // Delivery: Muse drops all of a hook's text, without a word, above 15,040
