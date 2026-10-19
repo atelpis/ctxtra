@@ -1,0 +1,1 @@
+{"agent": "hermes", "slots": 125, "protocol": 3, "events": ["pre_llm_call", "subagent"]}

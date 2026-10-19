@@ -214,6 +214,10 @@ The CLI tests in `cmd/ctxtra/testdata/script` run the built binary: `setup`, the
 and the hook commands that `setup` writes, the way an agent runs them. Run one with
 `go test ./cmd/ctxtra -run TestScript/<name>`.
 
+The contract tests keep upgrades free of `ctxtra setup` (see [the spec](docs/spec.md#setup-compatibility)):
+`internal/setup/contract_test.go` compares what setup writes with `internal/setup/testdata/contract`, and
+`internal/cli/contract_test.go` runs the hooks of every setup in `testdata/clients` that a version wrote.
+
 Layout:
 
 - `cmd/ctxtra`: the binary.

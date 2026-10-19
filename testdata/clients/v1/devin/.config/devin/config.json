@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook devin SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{\\\"systemMessage\\\":\\\"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent devin with the new binary\\\"}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -428,6 +428,49 @@ that this version of ctxtra or a later one set up: older ones add nothing, witho
 agents. `ctxtra doctor` shows the missing binary. Setup leaves a config alone that has a ctxtra hook changed
 by hand, and says so, instead of adding a second hook next to it.
 
+## Setup compatibility
+
+What `ctxtra setup` writes is a contract between the agents and the `ctxtra` binary: the hook entries
+(events, matchers, command lines, the slot count, timeouts, other keys such as `additionalContextLimit`), the
+plugin files (the events they send, their input fields, the answer fields they read, their constants), and the
+arguments of `ctxtra hook`. A new version changes only the binary, and the binary keeps serving every setup
+that a released version wrote with what that setup was promised.
+
+Version 1 of the contract is what the first public release writes. Each distinct setup gets an immutable
+fixture in `testdata/clients/<id>/<agent>`, with `client.json`: the most text the agent shows in full with
+that setup, in all and in one part (set by the setup, or measured in the agent), and the answer field that
+its hooks read; no separate contract number is stored. `internal/setup/contract_test.go` fails when what
+setup writes differs from `internal/setup/testdata/contract`, and `internal/cli/contract_test.go` runs every
+hook command of every fixture, with text below, near and above what the fixture can carry from the binary
+under test.
+
+| Kind | Example | Old setups | Allowed |
+|---|---|---|---|
+| Server-only | a new answer field; a new notice; a smaller part size for an agent with one hook | unchanged: what they were promised | always |
+| Additive | a new event for a new feature; a new plugin field handler | unchanged, without the new feature | yes, with a release note and a `doctor` line |
+| Capacity | more slots; a higher Codex limit; a plugin version that carries more text | keep what they were promised, through `Legacy`, with a notice | rarely, with the checklist below |
+| Breaking | an old setup gets less than it was promised, or fails | worse | never |
+
+A change is server-only only if every fixture keeps its promised delivery. For example, a smaller part size
+for Claude Code is a breaking change for 40-slot setups unless the number of parts still fits their slots
+(`Delivery.Fits` checks both size and parts).
+
+Checklist for an additive or capacity change, in the same pull request:
+
+- for a capacity change: a `Legacy` case that recognizes the older setup from what it sends or from the
+  value written in its config (not from "differs from the current value"), with a test;
+- the files in `internal/setup/testdata/contract`, updated with `go test ./internal/setup -run TestContract
+  -update`, and a new fixture in `testdata/clients` with the same files and its `client.json` (`TestContract`
+  fails until one fixture has them);
+- a release-notes line: "Run `ctxtra setup --agent <agents>` after this upgrade: <reason>" (plus "Codex will
+  ask you to trust the hooks again" when Codex is affected);
+- for an additive change, a line in `doctor` that names the feature an old setup doesn't have.
+
+Answers only grow: fields are added, never renamed or given a new meaning, and a field that a released setup
+reads is sent while that setup is supported. The hooks and plugins ignore fields they don't know. The
+arguments and event names that a released setup sends are accepted forever, and `ctxtra hook` ignores
+arguments it doesn't know, so an older binary still runs a newer setup.
+
 ## Validation
 
 Problems never make ctxtra add more than the config says:

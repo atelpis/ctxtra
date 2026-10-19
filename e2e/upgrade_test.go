@@ -11,16 +11,9 @@ import (
 	"github.com/atelpis/ctxtra/e2e/mock"
 )
 
-// oldSetup is the config that the previous version of ctxtra wrote for the
-// agents whose hooks of that version get less text, by file in the home
-// folder: testdata/upgrade has the files as it wrote them, with CTXTRA_BIN
-// for the binary.
-var oldSetup = map[string]map[string]string{
-	"claude": {".claude/settings.json": "claude-settings.json"},
-	"codex":  {".codex/hooks.json": "codex-hooks.json"},
-	"muse":   {".config/muse/settings.json": "muse-settings.json"},
-	"hermes": {".hermes/plugins/ctxtra/__init__.py": "hermes-plugin.py", ".hermes/plugins/ctxtra/plugin.yaml": "hermes-plugin.yaml"},
-}
+// preV1 is the client fixtures of the versions before version 1, for the
+// agents whose hooks of those versions get less text.
+const preV1 = "../testdata/clients/pre-v1"
 
 // After an upgrade without ctxtra setup, the hooks of the previous version
 // run this one: they get as much as they got then, with whole files dropped
@@ -28,8 +21,8 @@ var oldSetup = map[string]map[string]string{
 // setup.
 func TestUpgradeWithoutSetup(t *testing.T) {
 	forEachAgent(t, nil, func(t *testing.T, a Agent) {
-		files, ok := oldSetup[a.Name()]
-		if !ok {
+		dir := filepath.Join(preV1, a.Name())
+		if _, err := os.Stat(dir); err != nil {
 			t.Skip("the previous version's hooks get the same text")
 		}
 		s := newSession(t, a)
@@ -37,13 +30,7 @@ func TestUpgradeWithoutSetup(t *testing.T) {
 		small := writeBig(s, "ctx/small.md", "S", 3_000, false)
 		big := writeBig(s, "ctx/big.md", "B", 30_000, false)
 		s.Config(global("me", "~/ctx/small.md", "~/ctx/big.md"))
-		for rel, name := range files {
-			b, err := os.ReadFile(filepath.Join("testdata", "upgrade", name))
-			if err != nil {
-				t.Fatal(err)
-			}
-			s.Write(rel, strings.ReplaceAll(string(b), "CTXTRA_BIN", s.Bin))
-		}
+		s.LoadClient(dir)
 		r := s.Run(repo, driver.Options{})
 		text := r.First(mock.Main).text
 		complete(t, "main[first]", text, small)

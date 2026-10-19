@@ -1,0 +1,1 @@
+{"agent": "antigravity", "part": {"value": 48900, "unit": "bytes"}, "limit": {"value": 686000, "unit": "bytes"}, "reads": "injectSteps[].systemMessage.systemMessage", "events": ["SessionStart"]}

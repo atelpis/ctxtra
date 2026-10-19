@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"CTXTRA_BIN\"; if [ -x \"$f\" ]; then exec \"$f\" hook codex SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook codex SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10,
             "statusMessage": "ctxtra: personal instructions"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"CTXTRA_BIN\"; if [ -x \"$f\" ]; then exec \"$f\" hook codex SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook codex SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10,
             "statusMessage": "ctxtra: personal instructions"
           }
