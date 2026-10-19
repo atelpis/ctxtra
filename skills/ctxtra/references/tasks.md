@@ -27,8 +27,9 @@ every step.
    wherever it is cloned, in every worktree; `dirs` for a folder on this computer. Check the pattern
    rules in `ctxtra help config`: `x/**` also matches `x`, and a pattern without `/**` matches only that
    folder.
-3. List each file and skill folder by name. Globs aren't supported. A skill folder needs a `SKILL.md`
-   with a `description` in its frontmatter.
+3. List files and skill folders by name or use quoted glob patterns. Use `ctxtra files` or `ctxtra show`
+   to check the expansion. Local globs include new matching files immediately; pinned-source globs change
+   after accepting a commit. A skill folder needs a `SKILL.md` with a `description` in its frontmatter.
 4. A new binding in the config: `ctxtra bind NAME --global|--dir PATTERN|--repo REMOTE --file FILE
    --skill FOLDER` (the flags can repeat). Quote patterns, or the shell expands them. It writes only a
    binding whose files exist and are trusted, and says what is wrong otherwise. For anything else, edit

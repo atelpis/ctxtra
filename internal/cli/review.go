@@ -64,10 +64,10 @@ func (s *sources) review(r *source.Repo, src config.Source, commit string, full 
 	u.add(after, newGen)
 
 	s.selectorWarnings(src, before, after, oldGen, newGen)
-	// Problems in the source's binding files that the new commit brings.
+	// Problems introduced by the proposed source version.
 	for _, p := range after.Problems {
-		if strings.Contains(p, paths.Tilde(newGen)) && !slices.Contains(before.Problems, strings.ReplaceAll(p, paths.Tilde(newGen), paths.Tilde(oldGen))) {
-			fmt.Fprintf(s.Out, "  ERROR: %s\n", strings.ReplaceAll(p, paths.Tilde(newGen)+"/", config.Scheme+src.Name+"/"))
+		if (strings.Contains(p, paths.Tilde(newGen)) || strings.Contains(p, config.Scheme+src.Name+"/")) && !slices.Contains(before.Problems, strings.ReplaceAll(p, paths.Tilde(newGen), paths.Tilde(oldGen))) {
+			fmt.Fprintf(s.Out, "  ERROR: %s\n", source.Sanitize(strings.ReplaceAll(p, paths.Tilde(newGen)+"/", config.Scheme+src.Name+"/")))
 		}
 	}
 
