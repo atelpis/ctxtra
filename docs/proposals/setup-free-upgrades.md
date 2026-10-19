@@ -372,7 +372,7 @@ func TestContract(t *testing.T) {
   path (`dsh.patchBlock`), which becomes `@@HOME@@/.dsh/ctxtra.mjs`. A plain text replacement is enough
   only for paths that need no escaping in JSON, YAML, TypeScript or Python. `ValidBinaryPath` still allows
   tabs and carriage returns, so the exporter and the loader reject a home folder or binary path with any
-  character outside `[A-Za-z0-9._/-]`; test home folders meet that. The loader also checks that each JSON and
+  character outside `[A-Za-z0-9_./-]` (`_` because macOS temporary folders have it). The loader also checks that each JSON and
   YAML file still parses.
 - `PATH` is an empty folder during the test (as `setup_test.go` does), so `Detect` can't find agents
   installed on the machine. `~/.ctxtra` (backups, `setup.json`) is not part of the contract and is left out;

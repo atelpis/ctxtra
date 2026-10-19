@@ -1,0 +1,1 @@
+{"agent": "claude", "slots": 1, "part": {"value": 10000, "unit": "utf16"}, "reads": "hookSpecificOutput.additionalContext", "events": ["SessionStart", "SubagentStart"]}

@@ -1,0 +1,6 @@
+# @ctxtra-managed
+# Written by ctxtra setup. Safe to delete; `ctxtra setup --remove` removes it.
+name: ctxtra
+version: "1"
+description: Adds the instruction files and skills that ctxtra binds to the session's folder.
+provides_hooks: [pre_llm_call]

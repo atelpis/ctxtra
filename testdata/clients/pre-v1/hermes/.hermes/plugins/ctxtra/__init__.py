@@ -1,12 +1,12 @@
 # @ctxtra-managed
-# binary: CTXTRA_BIN
+# binary: @@HOME@@/bin/ctxtra
 # Written by ctxtra setup. Adds the instruction files and skills that
 # ctxtra binds to the session's folder. Safe to delete; `ctxtra setup --remove` removes it.
 import json
 import os
 import subprocess
 
-BIN = "CTXTRA_BIN"
+BIN = "@@HOME@@/bin/ctxtra"
 
 
 def _cwd():

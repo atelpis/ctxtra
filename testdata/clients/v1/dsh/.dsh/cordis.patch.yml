@@ -1,0 +1,5 @@
+# >>> ctxtra: loads ctxtra's plugin; `ctxtra setup --remove` removes it
+- insert:
+    - id: ctxtra
+      name: "@@HOME@@/.dsh/ctxtra.mjs"
+# <<< ctxtra

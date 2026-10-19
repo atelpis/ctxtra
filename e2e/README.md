@@ -69,6 +69,7 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestCapacitySubagent` | The same text reaches a subagent in full, and the main agent still has it once after tool calls |
 | `TestOverCapacity` | Above the agent's capacity (see `capacity` in [capacity_test.go](capacity_test.go)), whole files are dropped from the end: the files before them arrive in full, the dropped one not at all; the log and the user message name it |
 | `TestCopilotCompactionDropsText` | Documents a known Copilot limit: after Copilot compacts a long conversation, the hook's text is gone and the hook doesn't run again. Fails when Copilot changes that |
+| `TestUpgradeWithoutSetup` | Claude, Codex, Muse and Hermes with the hooks or plugin that a version before version 1 wrote (`testdata/clients/pre-v1` at the repository root, with the binary under test linked at `$HOME/bin/ctxtra`): the session gets what those hooks got then, files over that are dropped whole, and the log (and the user message, where the agent shows one) says to run `ctxtra setup` |
 | `TestCodexTrustTUI` | Interactive Codex in tmux: one "Trust all and continue" in the hook review trusts ctxtra's hooks, which set a finite `additionalContextLimit`; the session gets the text in full; `setup` run again asks for no new trust. Needs tmux |
 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped

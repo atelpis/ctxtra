@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook cursor sessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+        "timeout": 10
+      }
+    ]
+  }
+}
