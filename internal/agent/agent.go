@@ -115,11 +115,11 @@ type Slotted interface {
 	SlotAnswer(event, text, summary string) any
 }
 
-// OldSlots is an agent with slots whose setups from before version 1 don't
-// say how many slots they have (--of, ctxtra_slots). OldSlots is the count
-// that all of them have, which stays when Delivery().Slots changes.
-type OldSlots interface {
-	OldSlots() int
+// PluginClient is an agent whose hook runs from ctxtra's plugin (Pi,
+// OpenCode, DSH, Hermes), which sends its protocol version as
+// ctxtra_plugin. Protocol is the version that setup writes.
+type PluginClient interface {
+	Protocol() int
 }
 
 // Skipper is an agent whose hook can also run in another agent's session,
@@ -157,7 +157,7 @@ type Input struct {
 	CursorVersion string // set by Cursor, also when it runs another agent's hooks
 	Slot          int    // the hook's --slot, or -1 without one
 	// Slots is how many slots the setup has: the hook's --of, or the
-	// plugin's ctxtra_slots (Hermes); 0 when it doesn't say (OldSlots).
+	// plugin's ctxtra_slots (Hermes); 0 when it doesn't say.
 	Slots int
 	// Plugin is the version of the plugin that runs ctxtra (Pi, OpenCode,
 	// DSH, Hermes), 0 when it doesn't say.

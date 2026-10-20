@@ -3,6 +3,7 @@ package testenv
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -165,4 +166,24 @@ func CheckPath(p string) error {
 		return fmt.Errorf("path %q has characters other than A-Z, a-z, 0-9, _, ., / and -, or ..", p)
 	}
 	return nil
+}
+
+// Releases is testdata/clients/releases.json at path: for each release tag,
+// the id of the client fixture of each agent that the release sets up. A
+// missing or empty file has no releases.
+func Releases(path string) (map[string]map[string]string, error) {
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) || err == nil && len(bytes.TrimSpace(b)) == 0 {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out map[string]map[string]string
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&out); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	return out, nil
 }

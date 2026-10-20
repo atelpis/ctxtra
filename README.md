@@ -53,16 +53,15 @@ asks once more after a hook changed, for example after an upgrade that changes t
 Hermes loads the plugin only after you enable it once (`hermes plugins enable ctxtra`).
 `ctxtra setup --remove` removes them.
 
-After an upgrade, run `ctxtra setup`. Codex then asks once to trust the changed hooks, and Hermes needs the
-plugin reloaded, or Hermes restarted, if it is running. Until then, hooks set up by an older version get only
-as much text as they got then: files over that are dropped, and the message at session start and the log
-say to run setup. If the binary moves, run `ctxtra setup` again, and trust the hooks again in Codex;
-`doctor` shows which binary the hooks run and whether it exists. Every other command says so too: a line on
-stderr per agent whose setup needs you (a missing or other binary, an older setup with less room, a setup
-that is incomplete or gone, an agent found since the last setup), with the command that repairs it (see
-[the spec](docs/spec.md#setup-notices)). Until then, with hooks that this version or a
-later one set up, Claude Code, Codex, Muse, Devin and Pi say at session start that the binary is missing;
-older hooks and the other agents add nothing, without a word.
+An upgrade never needs `ctxtra setup` unless the release notes say so, 0.x releases included: each release
+keeps serving what an earlier one set up ([setup compatibility](docs/spec.md#setup-compatibility)). When the
+notes say so, Codex asks once to trust the changed hooks after setup, and Hermes needs the plugin reloaded, or
+Hermes restarted, if it is running. If the binary moves, run `ctxtra setup` again, and trust the hooks again
+in Codex; `doctor` shows which binary the hooks run and whether it exists. Every other command says so too: a
+line on stderr per agent whose setup needs you (a missing or other binary, an older setup with less room, a
+setup that is incomplete or gone, an agent found since the last setup), with the command that repairs it (see
+[the spec](docs/spec.md#setup-notices)). Until then, Claude Code, Codex, Muse, Devin and Pi say at session
+start that the binary is missing; the other agents add nothing, without a word.
 
 ## Let your agent help
 

@@ -56,11 +56,12 @@ func TestOutputPerAgent(t *testing.T) {
 		!strings.Contains(d["additionalContext"].(string), "Rule A") {
 		t.Errorf("devin: %v", d)
 	}
-	pi := run("pi", "before_agent_start", input)
+	plugin := `{"cwd": "` + r + `", "ctxtra_plugin": 1}`
+	pi := run("pi", "before_agent_start", plugin)
 	if f, s := pi["files"].([]any), pi["skills"].([]any); len(f) != 1 || len(s) != 1 || s[0] != filepath.Join(h, "s", "deploy", "SKILL.md") {
 		t.Errorf("pi: %v", pi)
 	}
-	oc := run("opencode", "context", input)
+	oc := run("opencode", "context", plugin)
 	if s := oc["skills"].([]any); !strings.Contains(oc["text"].(string), "Rule A <&>") || strings.Contains(oc["text"].(string), "<name>deploy</name>") ||
 		len(s) != 1 || s[0].(map[string]any)["name"] != "deploy" {
 		t.Errorf("opencode: %v", oc)
@@ -113,12 +114,14 @@ func TestClaudeHookUnderDevin(t *testing.T) {
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
 		"schema: ctxtra/v1\nbindings:\n  - {name: a, match: {global: true}, instructions: [~/a.md]}\n")
 	testenv.Config(t, h, "schema: ctxtra/v1\ninclude: [b.yaml]\n")
-	cmd, _ := json.Marshal(agent.Command("/bin/ctxtra", "devin", "SessionStart", nil))
+	d, _ := registry.Get("devin")
+	m, _ := d.(agent.Missing)
+	cmd, _ := json.Marshal(agent.Command("/bin/ctxtra", "devin", "SessionStart", m))
 	testenv.Write(t, filepath.Join(h, ".config", "devin", "config.json"),
 		`{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": `+string(cmd)+`}]}]}}`)
 	run := func() string {
 		var out bytes.Buffer
-		Run("claude", "SessionStart", strings.NewReader(`{"cwd": "`+r+`"}`), &out, io.Discard)
+		RunSlot("claude", "SessionStart", 0, strings.NewReader(`{"cwd": "`+r+`"}`), &out, io.Discard)
 		return out.String()
 	}
 	if out := run(); !strings.Contains(out, "Rule A") {
@@ -174,66 +177,41 @@ func TestClaudeHookUnderCursor(t *testing.T) {
 	}
 	// Without ctxtra's Cursor hook, Claude's hook is the one that serves Cursor.
 	testenv.Write(t, filepath.Join(h, ".cursor", "hooks.json"), `{"version": 1, "hooks": {}}`)
-	if out := run(-1, fromCursor); !strings.Contains(out, "Rule A") {
+	if out := run(0, fromCursor); !strings.Contains(out, "Rule A") {
 		t.Errorf("claude under cursor, no cursor hook: %s", out)
 	}
 }
 
-// Hooks that an older version set up, which call this version: they get the
-// text they got then, whole files dropped from the end, and the user and
-// the log are told to run setup.
-func TestOldHooks(t *testing.T) {
+// old is Claude Code with a Legacy case, as after a capacity change: a
+// setup with one slot gets one part.
+type old struct{ agent.Agent }
+
+func (o old) Legacy(_ string, in agent.Input) (agent.Delivery, bool) {
+	d := o.Agent.Delivery()
+	return agent.Delivery{Title: d.Title, Capacity: d.Chunk, Unit: d.Unit, Chunk: d.Chunk, Slots: 1}, in.Slots == 1
+}
+
+// A hook that Legacy recognizes gets what its setup got, whole files
+// dropped from the end, and the user and the log are told to run setup.
+// Other hooks get this version's delivery.
+func TestLegacy(t *testing.T) {
 	h := testenv.Home(t)
 	r := testenv.Repo(t, filepath.Join(h, "svc"), "")
 	testenv.Write(t, filepath.Join(h, "small.md"), "SMALL FILE")
-	testenv.Write(t, filepath.Join(h, "big.md"), strings.Repeat("big \"line\" with \\ escapes\n", 1200))
-	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
-		"schema: ctxtra/v1\nbindings:\n  - {name: a, match: {global: true}, instructions: [~/small.md, ~/big.md]}\n")
-	testenv.Config(t, h, "schema: ctxtra/v1\ninclude: [b.yaml]\n")
-	// Codex's hooks as the previous version wrote them: no
-	// additionalContextLimit.
-	cmd, _ := json.Marshal(agent.Command("/bin/ctxtra", "codex", "SessionStart", nil))
-	codexHooks := `{"hooks": {"SessionStart": [{"matcher": "startup|clear|compact", "hooks": [{"type": "command", "command": ` +
-		string(cmd) + `, "timeout": 10, "statusMessage": "ctxtra: personal instructions"}]}]}}`
-	testenv.Write(t, filepath.Join(h, ".codex", "hooks.json"), codexHooks)
-	run := func(harness string, slot int, input string) string {
-		var out bytes.Buffer
-		RunSlot(harness, "SessionStart", slot, strings.NewReader(input), &out, io.Discard)
-		return out.String()
+	testenv.Write(t, filepath.Join(h, "big.md"), strings.Repeat("big line\n", 1200))
+	testenv.Config(t, h, "schema: ctxtra/v1\nbindings:\n  - {name: a, match: {global: true}, instructions: [~/small.md, ~/big.md]}\n")
+	a, _ := registry.Get("claude")
+	d, upgrade, err := delivery(old{a}, "SessionStart", agent.Input{Slot: 0, Slots: 1})
+	if err != nil || d.Capacity != 9000 || !strings.Contains(upgrade, "Claude Code's limit of 9,000 characters; run ctxtra setup") {
+		t.Fatalf("%+v, %q, %v", d, upgrade, err)
 	}
-	input := `{"cwd": "` + r + `"}`
-	for _, c := range []struct {
-		harness, input, limit string
-		slot                  int
-	}{
-		{"claude", input, "Claude Code's limit of 9,000 characters", -1},
-		{"muse", input, "Muse's limit of 13,000 bytes", -1},
-		{"codex", input, "Codex's limit of 9,000 bytes", -1},
-		{"hermes", input, "Hermes's limit of 9,000 characters", -1},
-	} {
-		out := run(c.harness, c.slot, c.input)
-		if !strings.Contains(out, "SMALL FILE") || strings.Contains(out, "big \\\"line") {
-			t.Errorf("%s: %.300s", c.harness, out)
-		}
-		if c.harness != "hermes" && (!strings.Contains(out, "dropped big.md (over "+c.limit+")") || !strings.Contains(out, "run ctxtra setup")) {
-			t.Errorf("%s: user message in %.600s", c.harness, out)
-		}
-		e := logEntries(t, h)
-		last := e[len(e)-1]
-		if len(last.Dropped) != 1 || !slices.ContainsFunc(last.Problems, func(p string) bool { return strings.Contains(p, "run ctxtra setup") }) {
-			t.Errorf("%s: log %+v", c.harness, last)
-		}
+	res, e := session(old{a}, d, upgrade, "", "SessionStart", payload{Cwd: r}, r)
+	if len(res.Files) != 1 || len(res.Dropped) != 1 || !strings.Contains(agent.Summary(res), "run ctxtra setup") ||
+		!slices.Contains(e.Problems, upgrade) {
+		t.Errorf("files %v, dropped %v, summary %q, log %+v", res.Files, res.Dropped, agent.Summary(res), e)
 	}
-	// Hooks of this version get it all.
-	limited := strings.Replace(codexHooks, `"timeout": 10,`, `"timeout": 10, "additionalContextLimit": 250000,`, 1)
-	testenv.Write(t, filepath.Join(h, ".codex", "hooks.json"), limited)
-	for harness, input := range map[string]string{"codex": input, "hermes": `{"cwd": "` + r + `", "ctxtra_plugin": 2}`} {
-		if out := run(harness, -1, input); !strings.Contains(out, "big \\\"line") || strings.Contains(out, "run ctxtra setup") {
-			t.Errorf("%s of this version: %.300s", harness, out)
-		}
-	}
-	if out := run("claude", 0, input); !strings.Contains(out, "big \\\"line") || strings.Contains(out, "run ctxtra setup") {
-		t.Errorf("claude slot 0: %.300s", out)
+	if d, upgrade, err := delivery(old{a}, "SessionStart", agent.Input{Slot: 0, Slots: 40}); err != nil || upgrade != "" || d != a.Delivery() {
+		t.Errorf("40 slots: %+v, %q, %v", d, upgrade, err)
 	}
 }
 
@@ -248,10 +226,42 @@ func TestBadArgs(t *testing.T) {
 	if e := logEntries(t, h); len(e) != 1 || e[0].Error != "bad hook arguments: --slot given twice" {
 		t.Errorf("log %+v", e)
 	}
+	// Without the slot count, a hook of an agent with slots would put the
+	// whole text in each of them; only a plugin sends it in the input.
+	for _, c := range []struct {
+		harness string
+		args    Args
+		input   string
+	}{
+		{"claude", Args{Slot: 3}, `{"cwd": "/x"}`},
+		{"claude", Args{Slot: -1}, `{"cwd": "/x"}`},
+		{"muse", Args{Slot: 0}, `{"cwd": "/x"}`},
+		{"claude", Args{Slot: -1, Slots: 40}, `{"cwd": "/x"}`},
+		{"claude", Args{Slot: 0}, `{"cwd": "/x", "ctxtra_slots": 40}`},
+	} {
+		out.Reset()
+		RunArgs(c.harness, "SessionStart", c.args, strings.NewReader(c.input), &out, io.Discard)
+		e := logEntries(t, h)
+		if strings.TrimSpace(out.String()) != "{}" || e[len(e)-1].Error != "bad hook arguments: the hook has no --slot K --of N" {
+			t.Errorf("%s %+v %s: %q, log %+v", c.harness, c.args, c.input, out.String(), e[len(e)-1])
+		}
+	}
+	// A plugin that doesn't say its version isn't one that setup writes.
+	for agent, event := range map[string]string{"pi": "before_agent_start", "opencode": "context", "dsh": "startup", "hermes": "pre_llm_call"} {
+		out.Reset()
+		Run(agent, event, strings.NewReader(`{"cwd": "/x", "ctxtra_slots": 125}`), &out, io.Discard)
+		a, _ := registry.Get(agent)
+		empty, _ := json.Marshal(a.Answer(event, nil))
+		e := logEntries(t, h)
+		if strings.TrimSpace(out.String()) != string(empty) || e[len(e)-1].Error != "bad hook input: no ctxtra_plugin" {
+			t.Errorf("%s: %q, log %+v", agent, out.String(), e[len(e)-1])
+		}
+	}
 }
 
 // Hermes's plugin says how many callbacks it registered: the text is
-// fitted to them. A count that isn't a positive number adds nothing.
+// fitted to them. A count that is missing or not a positive number adds
+// nothing.
 func TestHermesSlots(t *testing.T) {
 	h := testenv.Home(t)
 	r := testenv.Repo(t, filepath.Join(h, "svc"), "")
@@ -270,7 +280,6 @@ func TestHermesSlots(t *testing.T) {
 		return m
 	}
 	for extra, parts := range map[string]int{
-		`, "ctxtra_plugin": 2`:                      4,
 		`, "ctxtra_plugin": 3, "ctxtra_slots": 125`: 4,
 		`, "ctxtra_plugin": 3, "ctxtra_slots": 2`:   0,
 	} {
@@ -278,50 +287,13 @@ func TestHermesSlots(t *testing.T) {
 			t.Errorf("%s: %d parts, want %d", extra, len(got), parts)
 		}
 	}
-	for _, extra := range []string{`, "ctxtra_plugin": 3, "ctxtra_slots": 0`, `, "ctxtra_plugin": 3, "ctxtra_slots": -2`,
+	for _, extra := range []string{`, "ctxtra_plugin": 2`, `, "ctxtra_plugin": 3, "ctxtra_slots": 0`, `, "ctxtra_plugin": 3, "ctxtra_slots": -2`,
 		`, "ctxtra_plugin": 3, "ctxtra_slots": "x"`, `, "ctxtra_plugin": 3, "ctxtra_slots": null`, `, "ctxtra_plugin": 3, "ctxtra_slots": 1.5`} {
 		if m := run(extra); len(m) != 0 {
 			t.Errorf("%s: %v", extra, m)
 		}
 		if e := logEntries(t, h); !strings.HasPrefix(e[len(e)-1].Error, "bad hook input: ") {
 			t.Errorf("%s: log %+v", extra, e[len(e)-1])
-		}
-	}
-}
-
-// more is an agent whose Delivery has more slots than its setups from
-// before version 1, as after a later change of the slot count.
-type more struct {
-	agent.Agent
-	slots int
-}
-
-func (m more) Delivery() agent.Delivery {
-	d := m.Agent.Delivery()
-	d.Capacity, d.Slots = m.slots*d.Chunk, m.slots
-	return d
-}
-
-func (m more) OldSlots() int { return m.Agent.(agent.OldSlots).OldSlots() }
-
-func (m more) Legacy(event string, in agent.Input) (agent.Delivery, bool) {
-	return m.Agent.(agent.Upgrader).Legacy(event, in)
-}
-
-// A setup that doesn't say how many slots it has gets the count that
-// setups from before version 1 have, not the agent's current count.
-func TestOldSlots(t *testing.T) {
-	testenv.Home(t)
-	for name, old := range map[string]int{"claude": 40, "muse": 40, "hermes": 125} {
-		a, _ := registry.Get(name)
-		m := more{a, old * 2}
-		in := agent.Input{Slot: 3, Plugin: 2}
-		if d, _ := delivery(m, "SessionStart", in); d.Slots != old {
-			t.Errorf("%s without --of: %d slots, want %d", name, d.Slots, old)
-		}
-		in.Slots = old * 2
-		if d, _ := delivery(m, "SessionStart", in); d.Slots != old*2 {
-			t.Errorf("%s with --of %d: %d slots", name, old*2, d.Slots)
 		}
 	}
 }

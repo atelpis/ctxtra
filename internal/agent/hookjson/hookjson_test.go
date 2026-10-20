@@ -213,23 +213,23 @@ func TestFlatLayoutAndBadFiles(t *testing.T) {
 	}
 }
 
-// An entry written by an earlier version (cat instead of /bin/cat) is
-// updated in place, not added a second time.
-func TestOldCommandUpdatedInPlace(t *testing.T) {
+// An entry in a form that setup doesn't write (cat instead of /bin/cat) is
+// a hook changed by hand: setup and --remove leave the file alone.
+func TestOldCommandLeftAlone(t *testing.T) {
 	h := testenv.Home(t)
 	on := fakeBinary(t, h)
 	c := Config{Agent: "codex", Path: filepath.Join(h, ".codex", "hooks.json"), Events: events[:1]}
 	old := `/bin/sh -c 'f=\"$HOME/go/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook codex SessionStart; else cat >/dev/null 2>&1; echo \"{}\"; fi'`
-	testenv.Write(t, c.Path, `{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "`+old+`"}]}, {"hooks": [{"type": "command", "command": "other"}]}]}}`)
-	var r agent.Report
-	if err := c.Apply(on, &r); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := os.ReadFile(c.Path)
-	s := string(b)
-	if strings.Count(s, "hook codex SessionStart") != 1 || !strings.Contains(s, "/bin/cat") ||
-		strings.Index(s, "/bin/cat") > strings.Index(s, `"other"`) {
-		t.Errorf("not updated in place:\n%s", s)
+	content := `{"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": "` + old + `"}]}]}}`
+	testenv.Write(t, c.Path, content)
+	for _, o := range []agent.Options{on, {Remove: true}} {
+		var r agent.Report
+		if err := c.Apply(o, &r); err == nil || !strings.Contains(err.Error(), handEdited) {
+			t.Errorf("remove %v: %v", o.Remove, err)
+		}
+		if b, _ := os.ReadFile(c.Path); string(b) != content {
+			t.Errorf("remove %v: changed:\n%s", o.Remove, b)
+		}
 	}
 }
 
@@ -381,32 +381,17 @@ func TestContextLimit(t *testing.T) {
 	if st := c.Status("", false); !st.OK || len(st.Details) != 0 {
 		t.Errorf("status %+v", st)
 	}
-	if !c.Limited("SessionStart") || !c.Limited("SubagentStart") {
-		t.Error("not limited as set up")
-	}
-	// An entry of an older version, without the limit: the hook sees it,
-	// doctor says so, and setup adds it.
+	// A handler without the limit, which this test's Legacy recognizes:
+	// doctor says so, and setup adds the limit.
 	testenv.Write(t, c.Path, strings.Replace(string(b), `,
             "additionalContextLimit": 250000`, "", 1))
 	if st := c.Status("", false); st.OK || len(st.Details) != 1 ||
 		st.Details[0] != "set up by an older ctxtra, with Codex's limit of 9,000 bytes; run ctxtra setup --agent codex (and trust)" {
 		t.Errorf("without the limit: %+v", st)
 	}
-	if c.Limited("SessionStart") || !c.Limited("SubagentStart") {
-		t.Error("limited without the limit")
-	}
 	r = agent.Report{}
 	if err := c.Apply(fakeBinary(t, h), &r); err != nil || len(r.Changes) != 1 || !c.Status("", false).OK {
 		t.Errorf("setup: %+v, %v, %+v", r, err, c.Status("", false))
-	}
-	// Without a ctxtra hook for the event, or without the file, nothing
-	// shows the limit.
-	if c.Limited("Stop") {
-		t.Error("limited without a hook")
-	}
-	os.Remove(c.Path)
-	if c.Limited("SessionStart") {
-		t.Error("limited without the file")
 	}
 }
 
@@ -415,32 +400,20 @@ type message struct{}
 
 func (message) MissingAnswer(event, msg string) string { return agent.SystemMessage(event, msg) }
 
-// The message for a missing binary goes to slot 0 at session start. Entries
-// of earlier versions, which print {}, are updated in place: Codex keys
-// trust by position.
+// The message for a missing binary goes to slot 0 at session start, and
+// to a hook without slots there.
 func TestMissingMessage(t *testing.T) {
 	h := testenv.Home(t)
 	on := fakeBinary(t, h)
 	c := Config{Agent: "claude", Path: filepath.Join(h, ".claude", "settings.json"), Events: events, Slots: 3, Missing: message{}}
-	old := Config{Agent: "claude", Path: c.Path, Events: events}
 	var r agent.Report
-	if err := old.Apply(on, &r); err != nil {
-		t.Fatal(err)
-	}
-	b, _ := os.ReadFile(c.Path)
-	// Slots of an earlier version, without --of.
-	slotted := strings.ReplaceAll(string(b), `hook claude SessionStart;`, `hook claude SessionStart --slot 0;`)
-	testenv.Write(t, c.Path, slotted)
 	if err := c.Apply(on, &r); err != nil {
 		t.Fatal(err)
 	}
-	b, _ = os.ReadFile(c.Path)
+	b, _ := os.ReadFile(c.Path)
 	s := string(b)
 	if n := strings.Count(s, "systemMessage"); n != 1 || !strings.Contains(s, `SessionStart --slot 0 --of 3; else /bin/cat >/dev/null 2>&1; echo \"{\\\"systemMessage\\\"`) {
 		t.Errorf("want the message in slot 0 of SessionStart only, found %d:\n%s", n, s)
-	}
-	if strings.Count(s, "hook claude") != 6 || strings.Contains(s, "--slot 0;") {
-		t.Errorf("not updated in place:\n%s", s)
 	}
 	if st := c.Status("", false); !st.OK {
 		t.Errorf("status %+v", st)
@@ -451,27 +424,17 @@ func TestMissingMessage(t *testing.T) {
 		t.Errorf("--of 5 with 3 slots: %+v", st)
 	}
 
-	// One hook per event, after another tool's: the message takes the place
-	// of the old entry.
+	// One hook per event, after another tool's.
 	d := Config{Agent: "codex", Path: filepath.Join(h, ".codex", "hooks.json"), Events: events, Missing: message{}}
 	testenv.Write(t, d.Path, otherTool)
-	if err := (Config{Agent: d.Agent, Path: d.Path, Events: events}).Apply(on, &r); err != nil {
+	if err := d.Apply(on, &r); err != nil {
 		t.Fatal(err)
 	}
 	b, _ = os.ReadFile(d.Path)
-	before := string(b)
-	r = agent.Report{}
-	if err := d.Apply(on, &r); err != nil || len(r.Changes) != 1 {
-		t.Fatalf("update: %+v, %v", r, err)
-	}
-	b, _ = os.ReadFile(d.Path)
 	s = string(b)
-	if strings.Count(s, "hook codex") != 2 || strings.Count(s, "systemMessage") != 1 ||
+	if strings.Count(s, "hook codex") != 2 || strings.Count(s, "systemMessage") != 1 || !strings.Contains(s, `SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"`) ||
 		strings.Index(s, "other-tool") > strings.Index(s, "hook codex SessionStart") {
-		t.Errorf("not updated in place:\n%s", s)
-	}
-	if strings.Count(before, "{}") != strings.Count(s, "{}")+1 {
-		t.Errorf("SubagentStart changed:\nbefore %s\nafter %s", before, s)
+		t.Errorf("hooks:\n%s", s)
 	}
 }
 

@@ -14,7 +14,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"sync"
 
 	"go.yaml.in/yaml/v3"
 
@@ -29,22 +28,18 @@ import (
 type Agent struct{}
 
 var (
-	_ agent.Agent    = Agent{}
-	_ agent.Upgrader = Agent{}
-	_ agent.OldSlots = Agent{}
+	_ agent.Agent        = Agent{}
+	_ agent.PluginClient = Agent{}
 )
 
 // pluginName is the plugin's name in plugin.yaml and in plugins.enabled.
 const pluginName = "ctxtra"
 
 // pluginVersion is sent by the plugin as ctxtra_plugin in the hook input,
-// and is its protocol line. Version 2 was the first with a callback per
-// part; version 3 also sends ctxtra_slots. Plugins of older versions send
-// none.
+// and is its protocol line.
 const pluginVersion = 3
 
-// firstSlotted is the first plugin version with a callback per part.
-const firstSlotted = 2
+func (Agent) Protocol() int { return pluginVersion }
 
 const enableNote = "hermes: the plugin runs only after you enable it: run `hermes plugins enable " + pluginName +
 	"`. It applies from the next session."
@@ -131,15 +126,9 @@ func (a Agent) Status(bin string, known bool) agent.Status {
 }
 
 // Check adds plugin.yaml, and whether the plugin is enabled: a plugin that
-// isn't is set up, but Hermes doesn't load it. A plugin of an older version
-// that gets as much as this version's is fine.
+// isn't is set up, but Hermes doesn't load it.
 func (a Agent) Check(bin string, known bool) []string {
-	config := sync.OnceValues(readConfig)
-	notices, ours := extfile.CheckSetup(extfile.Ext{Path: a.ConfigPath(), Agent: a.Name(), Noun: "plugin",
-		Legacy: func(v int) (agent.Delivery, bool) {
-			doc, _ := config()
-			return legacy(v, doc)
-		}}, bin, known)
+	notices, ours := extfile.CheckSetup(extfile.Ext{Path: a.ConfigPath(), Agent: a.Name(), Noun: "plugin"}, bin, known)
 	if !ours {
 		return notices
 	}
@@ -151,7 +140,7 @@ func (a Agent) Check(bin string, known bool) []string {
 	case !strings.HasPrefix(string(b), extfile.Python.Mark()):
 		notices = append(notices, fmt.Sprintf("%s isn't ctxtra's: delete it, then %s", paths.Tilde(manifestPath()), agent.Repair(a.Name())))
 	}
-	doc, err := config()
+	doc, err := readConfig()
 	on := false
 	if err == nil {
 		on, err = enabled(doc)
@@ -185,12 +174,12 @@ func enabled(doc *yaml.Node) (bool, error) {
 
 // Answer is the text for the first user message, files and the skill list
 // like Claude and Codex: a plugin's skills are registered once per gateway,
-// not per session. The plugin's callback K adds part K of chunks. context
-// is the whole text, for a plugin written by an older version. Hermes has no
-// way to show the user a message from a plugin, so there is no summary.
+// not per session. The plugin's callback K adds part K of chunks. Hermes
+// has no way to show the user a message from a plugin, so there is no
+// summary.
 func (a Agent) Answer(_ string, res *resolve.Result) any {
-	if text := res.Render(); text != "" {
-		return map[string]any{"chunks": a.Delivery().Chunks(res), "context": text}
+	if res.Render() != "" {
+		return map[string]any{"chunks": a.Delivery().Chunks(res)}
 	}
 	return map[string]any{}
 }
@@ -211,21 +200,6 @@ func (Agent) Delivery() agent.Delivery {
 	doc, _ := readConfig()
 	size := min(partChars, spillChars(doc))
 	return agent.Delivery{Title: "Hermes", Capacity: min(1_000_000, slots*size), Chunk: size, Slots: slots}
-}
-
-// OldSlots: a plugin of version 2, which doesn't send ctxtra_slots,
-// registers 125 callbacks.
-func (Agent) OldSlots() int { return 125 }
-
-// Legacy: a plugin from before version 2 adds the text with one callback,
-// which gets as much as Hermes doesn't spill.
-func (Agent) Legacy(_ string, in agent.Input) (agent.Delivery, bool) {
-	doc, _ := readConfig()
-	return legacy(in.Plugin, doc)
-}
-
-func legacy(plugin int, doc *yaml.Node) (agent.Delivery, bool) {
-	return agent.Delivery{Title: "Hermes", Capacity: min(partChars, spillChars(doc))}, plugin < firstSlotted
 }
 
 func configPath() string { return filepath.Join(dir(), "config.yaml") }

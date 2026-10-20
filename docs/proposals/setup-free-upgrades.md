@@ -211,8 +211,9 @@ Add a section "Setup compatibility" to `docs/spec.md`, after "Capacity":
 1. **The contract** is everything that `ctxtra setup` writes: hook entries (events, matchers, command lines,
    slot count, timeouts, other keys such as `additionalContextLimit`), plugin files (events they send,
    input fields, answer fields they read, constants), and the argv of `ctxtra hook`.
-2. **Version 1** of the contract is what the first public release writes. Each distinct client gets an
-   immutable fixture (P5); no separate contract number is stored.
+2. **0.1**, the first public release (tag v0.1.0), is the first version of the contract. Each distinct
+   client gets an immutable fixture (P5), named after the release that first wrote it (`0.1`, then the
+   release of the next contract change); no separate contract number is stored.
 3. **Kinds of change:**
 
    | Kind | Example | Old setups | Allowed |
@@ -234,7 +235,7 @@ Add a section "Setup compatibility" to `docs/spec.md`, after "Capacity":
    - for an additive change, a line in `doctor` that names the feature an old setup doesn't have.
 5. **Answers only grow.** Fields are added, never renamed or given a new meaning. Clients ignore fields they
    don't know. A field that a released client reads is always sent while that client is supported.
-6. **Argv and event names** that a released client sends are accepted forever. From version 1 on, `ctxtra
+6. **Argv and event names** that a released client sends are accepted forever. From 0.1 on, `ctxtra
    hook` ignores arguments it doesn't know (P2.5), so a downgraded binary still runs a newer client.
 
 ### P2. Freeze the command hooks
@@ -253,11 +254,12 @@ also a trust prompt for every user. Only item 1 changes the Codex entries.
 
    Today a server can't tell a 40-slot setup from a setup with more slots: both run `--slot 0`, `--slot 1`,
    and so on. A later version with 80 slots would split the text into up to 80 parts, and an old setup would
-   run only 40 of them: the rest would be lost without a word. So, from version 1:
+   run only 40 of them: the rest would be lost without a word. So, from 0.1:
 
    - `agent.SlotCommand` writes `hook claude SessionStart --slot 3 --of 40`.
    - The server reads `--of N` and uses `min(N, Delivery().Slots)` slots for `Fits` and `Chunks`. Without
-     `--of` (a setup written before version 1, with slots) it uses 40, the only count ever written.
+     `--of` (a setup written before 0.1, with slots) it uses 40, the only count ever written. (Deleted
+     before 0.1, see P9.)
    - Validation: `N > 0` (`Delivery.Slots == 0` means "any number" in `agent.Delivery`, so `--of 0` must not
      reach it); `--of` only together with `--slot`; `0 <= K < N`. Anything else is an invalid argv (P2.5).
      A valid slot that is past the server's own slot count (a downgrade) answers empty.
@@ -267,7 +269,7 @@ also a trust prompt for every user. Only item 1 changes the Codex entries.
      snapshot. Test: the same session input with `--of 40` and `--of 64` within the join window gets two
      snapshots, each fitted to its count.
    - `commandRes` and `CommandSlot` in `command.go` match the new form; `oldTemplates`-style matching keeps
-     the form without `--of`, so setup updates such entries in place.
+     the form without `--of`, so setup updates such entries in place. (Deleted before 0.1, see P9.)
    - Hermes sends the count it registered in its input (`"ctxtra_slots": 125`), for the same reason;
      without it, 125. The same validation applies: a count that isn't a positive integer gets the empty
      answer and a log entry.
@@ -298,17 +300,18 @@ OpenCode, DSH and Hermes:
 
 1. **Input: the plugin sends its version** as `"ctxtra_plugin": N` in the stdin JSON, next to `cwd`.
    - Pi, OpenCode, DSH: start at 1. A plugin without the field is a pre-release plugin; it gets what it
-     gets today (they have no `Legacy` case, and none is needed).
+     gets today (they have no `Legacy` case, and none is needed). (Since P9, it gets the empty answer.)
    - Hermes: keeps its own sequence. Version 2 (today's) stays a full-capacity client; version 3 adds
      `ctxtra_slots` (P2.3). `hermes.Legacy` must then compare with 2, the first version with several
      callbacks, not with `pluginVersion` as today (`in.Plugin < pluginVersion`): otherwise raising
-     `pluginVersion` to 3 would give every version-2 plugin the one-callback capacity.
+     `pluginVersion` to 3 would give every version-2 plugin the one-callback capacity. (Deleted before
+     0.1, see P9: a plugin without `ctxtra_slots` gets the empty answer.)
    - `internal/hook/hook.go`: the comment of `payload.Plugin` says "Hermes"; make it general.
 2. **The file says its version**, so the CLI can check it without running it (P7). `extfile.Content` writes
    a third header line, `// protocol: N` (`# protocol: N` in Python), after the mark and the binary lines.
    `extfile` gets `func Protocol(path string) (int, bool)`. A file without the line is pre-release; for
    Hermes, `Protocol` falls back to the `"ctxtra_plugin": N` literal in the code, so today's version-2
-   plugins are recognized.
+   plugins are recognized. (Deleted before 0.1, see P9: a file without the line gets a `doctor` notice.)
 3. **A version is a compatibility fact, not a freshness check.** A lower version alone is not a reason to
    ask for setup. Setup is asked for only when the server, for that version, delivers less than a fresh
    setup (a `Legacy` case) or the version lacks a feature that the user has (P7). Replace Hermes's
@@ -416,11 +419,12 @@ Units are the server's (`chunk.Unit`): Unicode code points, UTF-16 units (Claude
 Muse's parts, bytes of the JSON answer (`ChunkJSON`). Test texts are sized per agent in its unit.
 
 A new fixture is added only when P4's golden files change; `testdata/clients/releases.json` maps each release
-to the fixture id per agent. Today's `e2e/testdata/upgrade/` files become the first fixtures (`pre-v1`).
+to the fixture id per agent. Today's `e2e/testdata/upgrade/` files become the first fixtures (`pre-0.1`; deleted before 0.1, see P9).
 Their `CTXTRA_BIN` placeholder is converted once, by syntax: to `$HOME/bin/ctxtra` inside shell commands
 (the JSON hook configs), and to `@@HOME@@/bin/ctxtra` in the Hermes plugin, which passes the path to
 `subprocess.run` without a shell, so `$HOME` would not be expanded there. A loader test runs the converted
-Hermes plugin's `_run` against the binary. The old placeholder is no longer supported.
+Hermes plugin's `_run` against the binary (deleted with the fixtures; the 0.1 Hermes plugin runs in
+`TestUpgradeFromRelease`). The old placeholder is no longer supported.
 
 **Loader:** writes a fixture into the session's home folder, replacing `@@HOME@@`, checks that each JSON and
 YAML file still parses, and links the tested binary at `$HOME/bin/ctxtra` (today the e2e binary lives in a
@@ -498,6 +502,7 @@ Options considered:
   entries and reports them the same way. `Check` (P7) reports them too. Tests: an edited fallback is kept by
   setup and by `--remove`, no second ctxtra hook is added, and the message names the file.
 - `oldTemplates` gets today's template, so setup updates entries in place (Codex keys trust by position).
+  (Deleted before 0.1, see P9.)
 - Agents that run another agent's hooks (Cursor desktop and Devin run Claude's): when ctxtra is missing,
   they may show Claude's message too. Acceptable: the message is true for them as well.
 - Tests: `command_test.go`: `CommandBinary` and `CommandSlot` on old and new templates; a test that runs each
@@ -604,9 +609,13 @@ entries, never Codex, always a notice.
 - Homebrew runs post-install steps in a sandbox that can't write to the home folder
   ([Formula Cookbook](https://docs.brew.sh/Formula-Cookbook#running-commands-after-installation)), so it can't
   run setup. The formula's `caveats` say "run `ctxtra setup` once after installing"; P7 covers upgrades.
-- Pre-release `Legacy` cases (Claude and Muse without `--slot`, Codex without the key, Hermes below 2):
-  recommendation: keep them. They are small and tested, and early testers have such setups. Delete them in a
-  later release, with a release note.
+- Pre-release `Legacy` cases (Claude and Muse without `--slot` or `--of`, Codex without the key, Hermes
+  below 3): deleted before 0.1, because the author was the only user. With them went the `pre-0.1`
+  fixtures, `OldSlots`, the old command templates and the support for plugins without `ctxtra_plugin` or
+  the protocol line: a hook of Claude or Muse without `--slot K --of N`, a Hermes plugin without
+  `ctxtra_slots`, or a plugin without `ctxtra_plugin` now adds nothing and logs why; `doctor` asks for
+  setup for a plugin file without the protocol line; and setup treats an old-form hook as changed by hand. `agent.Upgrader` and `Legacy` stay,
+  for the next capacity change.
 
 ## Examples
 
@@ -630,15 +639,15 @@ ctxtra: the hook is from an older version of ctxtra, with Claude Code's limit of
 
 After `ctxtra setup`, the file has 40 entries per event, and the session gets everything.
 
-**With the proposal:** version-1 entries are `... hook claude SessionStart --slot 0 --of 40` to `--slot 39
---of 40`. If a later version moves to 64 slots, a version-1 setup still gets 40 parts (`--of 40`), with a
+**With the proposal:** 0.1 entries are `... hook claude SessionStart --slot 0 --of 40` to `--slot 39
+--of 40`. If a later version moves to 64 slots, a 0.1 setup still gets 40 parts (`--of 40`), with a
 notice, and nothing is lost silently. P4 fails until the author follows the checklist; the release note
 says `run ctxtra setup --agent claude`.
 
 ### E2. A new answer field, OpenCode (server-only)
 
 A later version wants OpenCode to show "✓ ctxtra added 2 instructions". This is server-only only if the
-freeze found a toast API for server plugins and the version-1 plugin already reads `message` (P3.5). If the
+freeze found a toast API for server plugins and the 0.1 plugin already reads `message` (P3.5). If the
 API is found later, reading `message` is a plugin change: an additive change with an optional setup. With
 the handler in place, the binary adds `message` to the `context` answer:
 
@@ -705,9 +714,9 @@ is not set up (run ctxtra setup --agent claude)`. No CLI notice on every command
 ### E9. A downgrade (S6)
 
 A setup by a later version has a hook `... hook claude SessionStart --slot 3 --of 40 --part-size 12000` (a
-hypothetical new flag). The user goes back to a version-1 binary. With P2.5 it ignores `--part-size` and
+hypothetical new flag). The user goes back to a 0.1 binary. With P2.5 it ignores `--part-size` and
 runs slot 3 of 40 as it knows it. A pre-release binary would see an unknown argument count and run without a
-slot; downgrades below version 1 are not supported.
+slot; downgrades below 0.1 are not supported.
 
 ## Implementation plan
 
@@ -725,14 +734,15 @@ where noted.
      Hermes `Status` by protocol; Pi missing-binary notice; Hermes exit code and output bound; OpenCode only if
      the toast check passes.
    - e2e: `tui_test.go` stays as it is for Codex (the limit doesn't change; the template does, so its trust
-     flow runs once); P6 message with one agent; `TestUpgradeWithoutSetup` still passes.
+     flow runs once); P6 message with one agent; `TestUpgradeWithoutSetup` still passes (replaced by `TestUpgradeFromRelease`
+     in step 4).
 2. **Test isolation, fixtures and contract tests:** `COPILOT_HOME` and the variable list in `testenv` (first,
-   before any test that runs setup for every agent); the fixture schema, the `pre-v1` and current fixtures,
+   before any test that runs setup for every agent); the fixture schema, the `pre-0.1` and current fixtures,
    and the loader (P5); P4 (`internal/setup/contract_test.go` with `testdata/contract/`,
    `internal/cli/contract_test.go`); the P1 section in `docs/spec.md`.
 3. **CLI notices:** P7 (`Agent.Check`, `extfile.Owned`, `extfile.CheckSetup`, `setup.json`, `setupNotices`),
    `doctor` reusing `Check`.
-4. **First public release** = version 1: `releases.json` with the release (P5), `TestUpgradeFromRelease` and
+4. **First public release** = 0.1 (v0.1.0): `releases.json` with the release (P5), `TestUpgradeFromRelease` and
    `TestCodexUpgradeKeepsTrust` (the e2e tests on the fixtures of step 2); release checklist with the fixture
    step and the release-notes rule.
 5. **Distribution:** Homebrew formula with `caveats` (P9), README install section.
@@ -743,7 +753,8 @@ For the author:
 
 1. P2.4: is a feature planned that needs another event (per prompt, compaction)? If yes, decide now whether to
    add it with the freeze, to avoid an additive change right after the release.
-2. P9: keep or delete the pre-release `Legacy` cases at the first public release? (Recommended: keep.)
+2. P9: keep or delete the pre-release `Legacy` cases at the first public release? Answered: deleted before
+   0.1 (P9).
 3. P7: is a notice on every CLI command acceptable, or only on `files`, `show`, `explain`, `doctor`, `sync`?
 
 For verification during implementation:

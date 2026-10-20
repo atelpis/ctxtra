@@ -1,1 +1,0 @@
-{"agent": "muse", "slots": 1, "part": {"value": 15040, "unit": "json"}, "reads": "hookSpecificOutput.additionalContext", "events": ["SessionStart", "SubagentStart"]}

@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -62,14 +61,8 @@ func Content(s Syntax, bin string, protocol int, body string) string {
 // maxFile bounds what Protocol reads.
 const maxFile = 1 << 20
 
-// rePluginField is the version that a Python plugin from before the
-// protocol line sends (Hermes).
-var rePluginField = regexp.MustCompile(`"ctxtra_plugin": (\d+)`)
-
 // Protocol returns the protocol version of the extension at path, and
-// whether there is one of ctxtra's there. A file without the protocol line
-// is version 0, from before files said, or, for a Python plugin, the
-// ctxtra_plugin that it sends.
+// whether there is one of ctxtra's there that says it.
 func Protocol(path string) (int, bool) {
 	b, err := fsutil.ReadBounded(path, maxFile)
 	if err != nil || !managed(b) {
@@ -87,13 +80,7 @@ func protocol(b []byte) (int, bool) {
 			}
 		}
 	}
-	if bytes.HasPrefix(b, []byte(Python.Mark())) {
-		if m := rePluginField.FindSubmatch(b); m != nil {
-			n, err := strconv.Atoi(string(m[1]))
-			return n, err == nil
-		}
-	}
-	return 0, true
+	return 0, false
 }
 
 // Owned reports an error when a file exists at path that ctxtra didn't
@@ -179,7 +166,7 @@ type Ext struct {
 }
 
 // CheckSetup is agent.Agent.Check for the extension e: the binary it runs,
-// an older protocol version that gets less, and an extension that is gone
+// its protocol version, one that gets less, and an extension that is gone
 // although known. ours is whether ctxtra's extension is there.
 func CheckSetup(e Ext, bin string, known bool) (notices []string, ours bool) {
 	repair := agent.Repair(e.Agent)
@@ -198,7 +185,10 @@ func CheckSetup(e Ext, bin string, known bool) (notices []string, ours bool) {
 	} else {
 		notices = append(notices, fmt.Sprintf("%s doesn't say which binary it runs; %s", paths.Tilde(e.Path), repair))
 	}
-	if v, ok := protocol(b); ok && e.Legacy != nil {
+	switch v, ok := protocol(b); {
+	case !ok:
+		notices = append(notices, fmt.Sprintf("%s doesn't say its protocol version; %s", paths.Tilde(e.Path), repair))
+	case e.Legacy != nil:
 		if old, ok := e.Legacy(v); ok {
 			notices = append(notices, agent.LegacyNotice(old, repair))
 		}

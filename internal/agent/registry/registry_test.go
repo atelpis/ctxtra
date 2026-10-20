@@ -124,21 +124,6 @@ func commands(t *testing.T, path string) []string {
 	return out
 }
 
-// The agents with slots state the count of their setups from before
-// version 1, which didn't write it: those setups had exactly these.
-func TestOldSlots(t *testing.T) {
-	want := map[string]int{"claude": 40, "muse": 40, "hermes": 125}
-	for _, a := range All() {
-		o, ok := a.(agent.OldSlots)
-		if n, listed := want[a.Name()]; ok != listed || ok && o.OldSlots() != n {
-			t.Errorf("%s: OldSlots %v, want %d", a.Name(), ok, n)
-		}
-		if a.Delivery().Slots > 0 && !ok {
-			t.Errorf("%s has slots, but no OldSlots", a.Name())
-		}
-	}
-}
-
 // inHome stops the test before setup could write a file of a's outside the
 // test's home folder h.
 func inHome(t *testing.T, h string, a agent.Agent) {

@@ -22,11 +22,9 @@ import (
 type Agent struct{}
 
 var (
-	_ agent.Agent    = Agent{}
-	_ agent.Slotted  = Agent{}
-	_ agent.Upgrader = Agent{}
-	_ agent.Missing  = Agent{}
-	_ agent.OldSlots = Agent{}
+	_ agent.Agent   = Agent{}
+	_ agent.Slotted = Agent{}
+	_ agent.Missing = Agent{}
 )
 
 // events: SessionStart also runs on resume, without a matcher. Muse replaces
@@ -63,10 +61,7 @@ func (Agent) Detect() bool {
 // "schema_version": 1.
 func (a Agent) hooks() hookjson.Config {
 	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events,
-		Version: 1, VersionKey: "schema_version", Slots: a.Delivery().Slots, Missing: a,
-		Legacy: func(event string, h agent.Hook, _ bool) (agent.Delivery, bool) {
-			return a.Legacy(event, agent.Input{Slot: h.Slot, Slots: h.Slots})
-		}}
+		Version: 1, VersionKey: "schema_version", Slots: a.Delivery().Slots, Missing: a}
 }
 
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
@@ -75,8 +70,8 @@ func (a Agent) Status(bin string, known bool) agent.Status { return a.hooks().St
 
 func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
 
-// Answer is the whole text in one hook, for a hook without a slot, set up
-// by an older version.
+// Answer is the whole text in one hook. The hooks that setup writes have
+// slots, and get SlotAnswer.
 func (Agent) Answer(event string, res *resolve.Result) any {
 	return agent.ContextAnswer(event, res.Render(), clip(agent.Summary(res)))
 }
@@ -167,15 +162,4 @@ func omitted(line string) (int, bool) {
 // then.
 func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Muse", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 13_000, ChunkJSON: true, Slots: 40}
-}
-
-// OldSlots: setups from before version 1 wrote 40 hooks per event, without
-// --of.
-func (Agent) OldSlots() int { return 40 }
-
-// Legacy: a hook without a slot, set up by an older version, is the only
-// one of its event, and gets one part.
-func (a Agent) Legacy(_ string, in agent.Input) (agent.Delivery, bool) {
-	d := a.Delivery()
-	return agent.Delivery{Title: d.Title, Capacity: d.Chunk, Unit: chunk.JSON}, in.Slot < 0
 }

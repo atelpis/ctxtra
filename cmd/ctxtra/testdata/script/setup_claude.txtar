@@ -29,20 +29,6 @@ cmp .claude/settings.json original.json
 exec ctxtra setup --remove --agent claude
 stdout 'nothing to change'
 
-# The single hook of an older version: doctor, and the notice after other
-# commands, ask for setup, which puts the 40 hooks in its place.
-expand single.json .claude/settings.json
-! exec ctxtra doctor
-stdout '^    set up by an older ctxtra, with Claude Code''s limit of 9,000 characters; run ctxtra setup --agent claude$'
-! stderr .
-exec ctxtra files
-stderr '^claude: set up by an older ctxtra, with Claude Code''s limit of 9,000 characters; run ctxtra setup --agent claude$'
-exec ctxtra setup --agent claude
-stdout '^ctxtra setup \(claude\): changed$'
-cp .claude/settings.json got.json
-slots got.json
-cmpenv got.json want.json
-
 -- .claude/settings.json --
 {
   "theme": "dark",
@@ -145,53 +131,6 @@ cmpenv got.json want.json
           {
             "type": "command",
             "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook claude SubagentStart --slot 0..39 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
-            "timeout": 10
-          }
-        ]
-      }
-    ]
-  }
-}
--- single.json --
-{
-  "theme": "dark",
-  "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "other-tool session-start"
-          }
-        ]
-      },
-      {
-        "matcher": "startup|clear|compact",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook claude SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Stop": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "true"
-          }
-        ]
-      }
-    ],
-    "SubagentStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook claude SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]

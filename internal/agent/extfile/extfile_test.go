@@ -12,9 +12,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
-// The file says its protocol version on its third line. A file without
-// the line is from before files said: version 0, or for a Python plugin
-// the ctxtra_plugin that it sends.
+// The file says its protocol version on its third line.
 func TestProtocol(t *testing.T) {
 	h := testenv.Home(t)
 	ts := Content(TypeScript, filepath.Join(h, "go", "bin", "ctxtra"), 1, "const bin = %s;\n")
@@ -34,13 +32,12 @@ func TestProtocol(t *testing.T) {
 		version int
 		ok      bool
 	}{
-		"ts":             {ts, 1, true},
-		"python":         {py, 3, true},
-		"ts, no line":    {noLine(ts), 0, true},
-		"hermes v2":      {noLine(py), 9, true},
-		"hermes v1":      {"# @ctxtra-managed\n# binary: /opt/ctxtra\nBIN = \"/opt/ctxtra\"\n", 0, true},
-		"bad line":       {"// @ctxtra-managed\n// binary: /x\n// protocol: x\n", 0, false},
-		"someone else's": {"// protocol: 1\n", 0, false},
+		"ts":              {ts, 1, true},
+		"python":          {py, 3, true},
+		"ts, no line":     {noLine(ts), 0, false},
+		"python, no line": {noLine(py), 0, false},
+		"bad line":        {"// @ctxtra-managed\n// binary: /x\n// protocol: x\n", 0, false},
+		"someone else's":  {"// protocol: 1\n", 0, false},
 	} {
 		path := filepath.Join(h, "ext", name)
 		testenv.Write(t, path, c.content)
@@ -53,8 +50,8 @@ func TestProtocol(t *testing.T) {
 	}
 }
 
-// CheckSetup tells about the binary that the extension runs, an older
-// protocol that gets less, and an extension that is gone.
+// CheckSetup tells about the binary that the extension runs, its protocol,
+// an older protocol that gets less, and an extension that is gone.
 func TestCheckSetup(t *testing.T) {
 	h := testenv.Home(t)
 	e := Ext{Path: filepath.Join(h, "ext", "ctxtra.ts"), Agent: "pi", Noun: "extension",
@@ -72,9 +69,14 @@ func TestCheckSetup(t *testing.T) {
 	testenv.Write(t, e.Path, "// @ctxtra-managed\nconst bin = 1;\n")
 	if n, _ := CheckSetup(e, "", false); !slices.Equal(n, []string{
 		"~/ext/ctxtra.ts doesn't say which binary it runs; run ctxtra setup --agent pi",
-		"set up by an older ctxtra, with Pi's limit of 9,000 characters; run ctxtra setup --agent pi",
+		"~/ext/ctxtra.ts doesn't say its protocol version; run ctxtra setup --agent pi",
 	}) {
 		t.Errorf("unknown version: %q", n)
+	}
+	testenv.Write(t, e.Path, Content(TypeScript, filepath.Join(h, "gone", "ctxtra"), 0, "const bin = %s;\n"))
+	if n, _ := CheckSetup(e, "", false); len(n) != 2 ||
+		n[1] != "set up by an older ctxtra, with Pi's limit of 9,000 characters; run ctxtra setup --agent pi" {
+		t.Errorf("older protocol: %q", n)
 	}
 }
 
@@ -82,7 +84,7 @@ func TestCheckSetup(t *testing.T) {
 // still says its binary and protocol: no notice.
 func TestCRLF(t *testing.T) {
 	for _, c := range testenv.Clients(t) {
-		if c.ID != "v1" || c.Protocol == 0 {
+		if c.ID != "0.1" || c.Protocol == 0 {
 			continue
 		}
 		h := testenv.Home(t)
