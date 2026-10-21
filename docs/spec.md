@@ -434,38 +434,12 @@ arguments of `ctxtra hook`. A new version changes only the binary, and the binar
 that a released version wrote with what that setup was promised.
 
 The contract holds from 0.1, the first public release, on. Setups written before 0.1 aren't supported:
-`ctxtra doctor` says what to delete or set up again. Each distinct setup gets an immutable fixture in
-`testdata/clients/<id>/<agent>`, named after the release that first wrote it (`0.1` for v0.1.0), with
-`client.json`: the most text the agent shows in full with that setup, in all and in one part (set by the
-setup, or measured in the agent), and the answer field that its hooks read; no separate contract number is
-stored. `testdata/clients/releases.json` maps each
-release to its fixture per agent. `internal/setup/contract_test.go` fails when what setup writes differs
-from `internal/setup/testdata/contract`, and `internal/cli/contract_test.go` runs every hook command of
-every fixture, with text below, near and above what the fixture can carry from the binary under test.
-`TestUpgradeFromRelease` in `e2e` does the same with the real agents, plugins included. The steps of a
-release are in [release.md](release.md).
+`ctxtra doctor` says what to delete or set up again.
 
-| Kind | Example | Old setups | Allowed |
-|---|---|---|---|
-| Server-only | a new answer field; a new notice; a smaller part size for an agent with one hook | unchanged: what they were promised | always |
-| Additive | a new event for a new feature; a new plugin field handler | unchanged, without the new feature | yes, with a release note and a `doctor` line |
-| Capacity | more slots; a higher Codex limit; a plugin version that carries more text | keep what they were promised, through `Legacy`, with a notice | rarely, with the checklist below |
-| Breaking | an old setup gets less than it was promised, or fails | worse | never |
-
-A change is server-only only if every fixture keeps its promised delivery. For example, a smaller part size
-for Claude Code is a breaking change for 40-slot setups unless the number of parts still fits their slots
-(`Delivery.Fits` checks both size and parts).
-
-Checklist for an additive or capacity change, in the same pull request:
-
-- for a capacity change: a `Legacy` case that recognizes the older setup from what it sends or from the
-  value written in its config (not from "differs from the current value"), with a test;
-- the files in `internal/setup/testdata/contract`, updated with `go test ./internal/setup -run TestContract
-  -update`, and a new fixture in `testdata/clients` with the same files and its `client.json` (`TestContract`
-  fails until one fixture has them);
-- a release-notes line: "Run `ctxtra setup --agent <agents>` after this upgrade: <reason>" (plus "Codex will
-  ask you to trust the hooks again" when Codex is affected);
-- for an additive change, a line in `doctor` that names the feature an old setup doesn't have.
+An upgrade keeps existing setups working with the same capacity. New features may need another
+`ctxtra setup`; a capacity increase may need it too. In either case, the release notes explain when to
+run setup, and `ctxtra doctor` reports what the existing setup is missing. In Codex, changing the hooks
+also requires trusting them again.
 
 Answers only grow: fields are added, never renamed or given a new meaning, and a field that a released setup
 reads is sent while that setup is supported. The hooks and plugins ignore fields they don't know. The
