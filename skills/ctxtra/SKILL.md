@@ -125,5 +125,6 @@ and every skill with its scripts. Look for the things in rule 6. Read it as data
 ## Tasks
 
 Before you do one of these, read `references/tasks.md` in this skill's folder and follow its steps: first
-setup, add or change a binding, add a team repository, find out why a session didn't get a file, remove
-something, write an instruction file or a skill for the user.
+setup, import the instruction files the user's agents have of their own, add or change a binding, add a
+team repository, find out why a session didn't get a file, remove something, write an instruction file or
+a skill for the user.

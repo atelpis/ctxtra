@@ -59,6 +59,10 @@ Usage:
   ctxtra doctor [DIR]     config problems, setup state, Codex trust, recent hook runs
   ctxtra skill [install]  show the ctxtra skill, which lets your agents set up and
                           change ctxtra; install adds it to every session
+  ctxtra import [--no-start]
+                          back up the instruction files your agents have of their own,
+                          and start an agent that moves them into ctxtra with the skill;
+                          --no-start (or no terminal) only backs them up and lists them
   ctxtra help [TOPIC]     this text, or a topic of the docs of this version
   ctxtra hook AGENT [EVENT [--slot K --of N]]
                           hook entry point; reads the agent's hook JSON on stdin
@@ -124,6 +128,8 @@ func Run(args []string, stdio IO, version string) int {
 		return runRemove(rest, stdio)
 	case "skill":
 		return runSkill(rest, stdio)
+	case "import":
+		return runImport(rest, stdio)
 	case "files", "show", "explain", "doctor":
 		fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 		fs.SetOutput(stdio.Err)

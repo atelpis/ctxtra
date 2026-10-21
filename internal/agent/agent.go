@@ -6,12 +6,16 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/chunk"
+	"github.com/atelpis/ctxtra/internal/config"
+	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
 
@@ -149,6 +153,42 @@ type Missing interface {
 	// MissingAnswer is the JSON that the hook command prints for event when
 	// the binary is gone, with msg for the user; "" for {}.
 	MissingAnswer(event, msg string) string
+}
+
+// Native is an agent with user-level instruction files of its own, which
+// setup offers to move into ctxtra.
+type Native interface {
+	// NativeFiles are those of the files that have text, or can't be read,
+	// in the order the agent reads them.
+	NativeFiles() []NativeFile
+}
+
+// NativeFile is a user-level instruction file of an agent.
+type NativeFile struct {
+	Path string
+	Note string // for example why the agent doesn't read it now; "" for none
+	Err  error  // why it can't be read
+}
+
+// ReadNative is the file at path, and whether it counts: it has more than
+// white space, or it can't be read as a regular file of at most
+// config.MaxFileBytes, which Err says.
+func ReadNative(path string) (NativeFile, bool) {
+	b, err := fsutil.ReadBounded(path, config.MaxFileBytes)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return NativeFile{}, false
+	case err != nil:
+		return NativeFile{Path: path, Err: err}, true
+	}
+	return NativeFile{Path: path}, strings.TrimSpace(string(b)) != ""
+}
+
+// Launcher is an agent with a CLI that starts an interactive session with a
+// first prompt.
+type Launcher interface {
+	// Launch is the command line, whose first element is looked up in PATH.
+	Launch(prompt string) []string
 }
 
 // Input is the part of a hook's input and command line that tells which

@@ -79,6 +79,20 @@ stop adding the skill. Then ask any agent, for example "add my notes to every se
 repositories". The skill tells the agent to ask you before every change, and never to trust a repository or
 accept a `sync` for you. Before setup, you can paste the output of `ctxtra skill` into an agent to start.
 
+When your agents already have instruction files of their own (`~/.claude/CLAUDE.md` and `~/.claude/rules/`,
+`~/.codex/AGENTS.md` and `AGENTS.override.md`), setup in a terminal then offers to move them into ctxtra, so
+that all your agents get them. It asks only while no binding adds instructions, and only for the agents that
+are set up. If you agree, it copies the files to `~/.ctxtra/backups/import-<time>-<n>/` and starts Claude Code or
+Codex in `~/.ctxtra/import` with a prompt that lists the files and the backup. The agent then follows
+the skill: it merges rules that repeat, asks about rules that fit only one agent, shows you the new file,
+binds it, and empties the old files only after that. It asks before each change, as usual. Without either
+CLI, setup prints the prompt for you to give an agent. Setup starts the agent with its normal
+permissions and never with flags that skip them.
+
+`ctxtra import` makes the same offer at any time, also when your config has bindings. `ctxtra import
+--no-start` only backs up and lists the files: the skill runs it when you ask an agent to import your
+instructions.
+
 The skill is part of the binary: each version has a fixed text, which `ctxtra skill` shows. When you upgrade
 ctxtra, the hook of the next session writes the new version to `~/.ctxtra/skills/ctxtra`. Antigravity asks before it reads the skill there (see [Limits](#limits)).
 

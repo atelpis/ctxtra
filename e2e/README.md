@@ -72,6 +72,7 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestUpgradeFromRelease` | Every agent with each setup that a release wrote (`testdata/clients/<id>/<agent>` at the repository root, with the binary under test linked at `$HOME/bin/ctxtra`), with text below, near and above what that setup can carry from this binary (`carries` in [upgrade_test.go](upgrade_test.go)): every file up to that amount, files over it dropped whole, and the log (and the user message, where the agent shows one) says to run `ctxtra setup` only when a setup now would carry more |
 | `TestCodexTrustTUI` | Interactive Codex in tmux: one "Trust all and continue" in the hook review trusts ctxtra's hooks, which set a finite `additionalContextLimit`; the session gets the text in full; `setup` run again asks for no new trust. Needs tmux |
 | `TestCodexUpgradeKeepsTrust` | Interactive Codex in tmux: after the user trusted ctxtra's hooks, a newer binary at the same path asks for no new trust, and the session gets the text in full. Needs tmux |
+| `TestImportTUI` | `ctxtra setup` in tmux: Enter installs the skill and accepts the import, setup backs up Codex's own `AGENTS.md` and starts interactive Codex, whose first request has the import prompt with the file and its backup, and the ctxtra skill. It doesn't check what a real model does with them. Needs tmux |
 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped
 with the reason for the others. A declared capability that stops working fails the test.
@@ -80,6 +81,8 @@ Not covered here, and checked by hand before a release:
 
 - What the interactive TUI shows (the session-start message on screen), `/clear`, `/compact`, and resume in
   Claude, Codex, Pi and OpenCode. These need a pseudo-terminal runner.
+- What a real model makes of the import that `ctxtra setup` and `ctxtra import` start: the merged file,
+  its questions, and the cleanup of the old files; and the import started in Claude Code.
 - Codex hook trust through `/hooks`. The other tests run Codex with `--dangerously-bypass-hook-trust`;
   `TestCodexTrustTUI` and `TestCodexUpgradeKeepsTrust` cover the startup hook review only.
 - Cursor (Agent CLI and desktop app): its model protocol can't be mocked. [cursorkit](cursorkit) checks it by
