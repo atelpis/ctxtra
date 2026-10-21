@@ -3,12 +3,9 @@
 package claude
 
 import (
-	"errors"
-	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/cursor"
@@ -97,42 +94,7 @@ func (Agent) NativeFiles() []agent.NativeFile {
 	if f, ok := agent.ReadNative(filepath.Join(dir(), "CLAUDE.md")); ok {
 		out = append(out, f)
 	}
-	seen := map[string]bool{}
-	var walk func(string)
-	walk = func(d string) {
-		real, err := filepath.EvalSymlinks(d)
-		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
-				out = append(out, agent.NativeFile{Path: d, Err: err})
-			}
-			return
-		}
-		if seen[real] {
-			return
-		}
-		seen[real] = true
-		entries, err := os.ReadDir(d)
-		if err != nil {
-			out = append(out, agent.NativeFile{Path: d, Err: err})
-		}
-		for _, e := range entries {
-			p := filepath.Join(d, e.Name())
-			st, err := os.Stat(p)
-			switch {
-			case errors.Is(err, fs.ErrNotExist): // a broken symlink, which Claude skips too
-			case err != nil:
-				out = append(out, agent.NativeFile{Path: p, Err: err})
-			case st.IsDir():
-				walk(p)
-			case strings.HasSuffix(p, ".md"):
-				if f, ok := agent.ReadNative(p); ok {
-					out = append(out, f)
-				}
-			}
-		}
-	}
-	walk(filepath.Join(dir(), "rules"))
-	return out
+	return append(out, agent.WalkNative(filepath.Join(dir(), "rules"), ".md")...)
 }
 
 func (Agent) Launch(prompt string) []string { return []string{"claude", prompt} }

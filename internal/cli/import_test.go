@@ -259,8 +259,11 @@ func TestImportRelativeDirs(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(h, strings.TrimSpace(backup), "claude", "claude", "CLAUDE.md")); string(b) != "claude rules\n" {
 		t.Errorf("backup: %q %v", b, err)
 	}
-	env := absEnv([]string{"CLAUDE_CONFIG_DIR=../../claude", "CODEX_HOME=~/codex", "CTXTRA_CONFIG=", "OTHER=x/y"})
-	want := []string{"CLAUDE_CONFIG_DIR=" + filepath.Join(h, "claude"), "CODEX_HOME=~/codex", "CTXTRA_CONFIG=", "OTHER=x/y"}
+	if want := slices.DeleteFunc(slices.Clone(testenv.AgentVars), func(v string) bool { return v == "XDG_CONFIG_HOME" }); !slices.Equal(pathVars, want) {
+		t.Errorf("pathVars %q, want %q", pathVars, want)
+	}
+	env := absEnv([]string{"CLAUDE_CONFIG_DIR=../../claude", "CODEX_HOME=~/codex", "CTXTRA_CONFIG=", "XDG_CONFIG_HOME=cfg", "OTHER=x/y"})
+	want := []string{"CLAUDE_CONFIG_DIR=" + filepath.Join(h, "claude"), "CODEX_HOME=~/codex", "CTXTRA_CONFIG=", "XDG_CONFIG_HOME=cfg", "OTHER=x/y"}
 	if !slices.Equal(env, want) {
 		t.Errorf("env %q, want %q", env, want)
 	}

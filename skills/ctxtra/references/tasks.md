@@ -46,6 +46,7 @@ so that every agent gets them. Do every step; don't skip the files of an agent.
 7. Only then remove the moved rules from the old files. Empty a file that has nothing left; don't delete
    it. Codex reads `AGENTS.md` when `AGENTS.override.md` has no text: emptying the override makes Codex
    read `AGENTS.md` again, so clean both. A file that is a symlink changes at its target: say so first.
+   Other tools can read the same file (Gemini CLI reads `~/.gemini/GEMINI.md`): say so first, too.
    Don't change the files that the old files import: removing the import line is enough.
 8. Tell the user where the backup is, and that new sessions get the new file.
 

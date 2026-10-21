@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -22,6 +23,8 @@ type Agent struct{}
 var (
 	_ agent.Agent        = Agent{}
 	_ agent.PluginClient = Agent{}
+	_ agent.Native       = Agent{}
+	_ agent.Launcher     = Agent{}
 )
 
 func (Agent) Name() string { return "pi" }
@@ -149,3 +152,39 @@ export default function ctxtra(pi: any) {
 `
 
 var missingMessage, _ = json.Marshal(agent.MissingMessage("pi"))
+
+// contextNames are the user-level context files that Pi looks for, in its
+// order: it reads the first one that exists, also an empty one.
+var contextNames = []string{"AGENTS.override.md", "AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"}
+
+// NativeFiles: the context file that Pi reads, the others with a note, and
+// APPEND_SYSTEM.md, which Pi adds to its system prompt. SYSTEM.md, which
+// replaces Pi's own system prompt, isn't one.
+func (Agent) NativeFiles() []agent.NativeFile {
+	var out []agent.NativeFile
+	var seen []os.FileInfo // AGENTS.md and AGENTS.MD are one file on a case-insensitive disk
+	read := ""
+	for _, name := range contextNames {
+		p := filepath.Join(dir(), name)
+		st, err := os.Stat(p)
+		if err != nil || !st.Mode().IsRegular() || slices.ContainsFunc(seen, func(s os.FileInfo) bool { return os.SameFile(s, st) }) {
+			continue
+		}
+		seen = append(seen, st)
+		f, ok := agent.ReadNative(p)
+		if read == "" {
+			read = name
+		} else {
+			f.Note = "Pi doesn't read it while " + read + " exists"
+		}
+		if ok {
+			out = append(out, f)
+		}
+	}
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "APPEND_SYSTEM.md")); ok {
+		out = append(out, f)
+	}
+	return out
+}
+
+func (Agent) Launch(prompt string) []string { return []string{"pi", prompt} }

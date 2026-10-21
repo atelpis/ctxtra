@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -212,12 +214,11 @@ type tui struct {
 	tmux, name string
 }
 
-var tuiSessions int
+var tuiSessions atomic.Int64 // subtests run in parallel
 
 func startTUI(t *testing.T, tmux, script string) *tui {
 	t.Helper()
-	tuiSessions++
-	x := &tui{tmux: tmux, name: fmt.Sprintf("ctxtra-e2e-%d-%d", os.Getpid(), tuiSessions)}
+	x := &tui{tmux: tmux, name: fmt.Sprintf("ctxtra-e2e-%d-%d", os.Getpid(), tuiSessions.Add(1))}
 	if out, err := exec.Command(tmux, "new-session", "-d", "-s", x.name, "-x", "200", "-y", "50", script).CombinedOutput(); err != nil {
 		t.Fatalf("tmux: %v\n%s", err, out)
 	}
@@ -225,7 +226,15 @@ func startTUI(t *testing.T, tmux, script string) *tui {
 	return x
 }
 
-func (x *tui) stop() { exec.Command(x.tmux, "kill-session", "-t", x.name).Run() }
+// stop ends the session, and waits until the processes in it are gone.
+// tmux starts the pane in a session of its own: its PID is the group's.
+func (x *tui) stop() {
+	out, _ := exec.Command(x.tmux, "list-panes", "-t", x.name, "-F", "#{pane_pid}").Output()
+	exec.Command(x.tmux, "kill-session", "-t", x.name).Run()
+	if pid, err := strconv.Atoi(strings.TrimSpace(string(out))); err == nil {
+		endGroup(pid)
+	}
+}
 
 func (x *tui) screen() string {
 	out, _ := exec.Command(x.tmux, "capture-pane", "-p", "-t", x.name).Output()

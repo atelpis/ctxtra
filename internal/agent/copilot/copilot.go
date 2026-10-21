@@ -18,7 +18,11 @@ import (
 // Agent is GitHub Copilot CLI.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent    = Agent{}
+	_ agent.Native   = Agent{}
+	_ agent.Launcher = Agent{}
+)
 
 // events: sessionStart also runs for resumed sessions, and adds the text
 // again. Copilot doesn't keep a hook's text in the session, so a resumed
@@ -74,3 +78,15 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Copilot", Capacity: 140_000, Unit: chunk.Bytes}
 }
+
+// NativeFiles: copilot-instructions.md, then the .instructions.md files in
+// instructions/ and its subfolders.
+func (Agent) NativeFiles() []agent.NativeFile {
+	var out []agent.NativeFile
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "copilot-instructions.md")); ok {
+		out = append(out, f)
+	}
+	return append(out, agent.WalkNative(filepath.Join(dir(), "instructions"), ".instructions.md")...)
+}
+
+func (Agent) Launch(prompt string) []string { return []string{"copilot", "-i", prompt} }

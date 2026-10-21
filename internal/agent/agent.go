@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -182,6 +183,50 @@ func ReadNative(path string) (NativeFile, bool) {
 		return NativeFile{Path: path, Err: err}, true
 	}
 	return NativeFile{Path: path}, strings.TrimSpace(string(b)) != ""
+}
+
+// WalkNative is ReadNative of the files in root and its subfolders whose
+// names end with suffix, by name. It follows symlinks, and reads each folder
+// once. A missing root, or a broken symlink, adds nothing; a folder that
+// can't be read is a file with Err.
+func WalkNative(root, suffix string) []NativeFile {
+	var out []NativeFile
+	seen := map[string]bool{}
+	var walk func(string)
+	walk = func(d string) {
+		real, err := filepath.EvalSymlinks(d)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				out = append(out, NativeFile{Path: d, Err: err})
+			}
+			return
+		}
+		if seen[real] {
+			return
+		}
+		seen[real] = true
+		entries, err := os.ReadDir(d)
+		if err != nil {
+			out = append(out, NativeFile{Path: d, Err: err})
+		}
+		for _, e := range entries {
+			p := filepath.Join(d, e.Name())
+			st, err := os.Stat(p)
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+			case err != nil:
+				out = append(out, NativeFile{Path: p, Err: err})
+			case st.IsDir():
+				walk(p)
+			case strings.HasSuffix(p, suffix):
+				if f, ok := ReadNative(p); ok {
+					out = append(out, f)
+				}
+			}
+		}
+	}
+	walk(root)
+	return out
 }
 
 // Launcher is an agent with a CLI that starts an interactive session with a

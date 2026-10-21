@@ -26,6 +26,7 @@ type Agent struct{}
 var (
 	_ agent.Agent        = Agent{}
 	_ agent.PluginClient = Agent{}
+	_ agent.Native       = Agent{}
 )
 
 func (Agent) Name() string { return "dsh" }
@@ -245,3 +246,12 @@ export function apply(ctx) {
 	});
 }
 `
+
+// NativeFiles: DSH reads AGENTS.md in $DSH_HOME. It has no terminal app to
+// start with a prompt: its interactive app is a web page.
+func (Agent) NativeFiles() []agent.NativeFile {
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "AGENTS.md")); ok {
+		return []agent.NativeFile{f}
+	}
+	return nil
+}
