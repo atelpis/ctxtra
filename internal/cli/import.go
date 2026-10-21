@@ -158,8 +158,8 @@ func importFiles(stdio IO, in *bufio.Reader, cmd string, files []importFile, lau
 		return 1
 	}
 	fmt.Fprint(stdio.Out, `An agent can move them into ctxtra, so that all your agents get them: it merges
-the rules that repeat, shows you the result, and empties the files after
-ctxtra backs them up.
+the rules that repeat and shows you the result. ctxtra backs the files up
+first; the agent empties them only if you agree.
 `)
 	if len(launchers) == 1 {
 		fmt.Fprintf(stdio.Out, "Start %s for this now? [Y/n] ", launchers[0].Delivery().Title)

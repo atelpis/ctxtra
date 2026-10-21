@@ -100,8 +100,9 @@ agent writes itself (Hermes's `memories/`) stay where they are. If you agree, se
 `~/.ctxtra/backups/import-<time>-<n>/<agent>/` and starts an agent in `~/.ctxtra/import` with a prompt that lists
 the files and the backup: the one agent with a CLI in PATH, or the one you pick. Every agent above except DSH,
 whose app is a web page, can be started, and so can Hermes. The agent then follows the skill: it merges rules
-that repeat, asks about rules that fit only one agent, shows you the new file, binds it, and empties the old
-files only after that. It asks before each change, as usual. Without an agent to start, setup prints the
+that repeat, asks about rules that fit only one agent, shows you the new file, and binds it. Then it
+recommends removing the moved rules from the old files, so that your agents don't get two copies that drift
+apart, and does it only if you agree. It asks before each change, as usual. Without an agent to start, setup prints the
 prompt for you to give an agent. Setup starts the agent with its normal permissions and never with flags that
 skip them.
 

@@ -43,12 +43,17 @@ so that every agent gets them. Do every step; don't skip the files of an agent.
    Wait for their OK.
 6. Write the file, and bind it to every session: `ctxtra bind NAME --global --file FILE` (rule 1). Check
    with `ctxtra files` that a session gets it.
-7. Only then remove the moved rules from the old files. Empty a file that has nothing left; don't delete
-   it. Codex reads `AGENTS.md` when `AGENTS.override.md` has no text: emptying the override makes Codex
-   read `AGENTS.md` again, so clean both. A file that is a symlink changes at its target: say so first.
-   Other tools can read the same file (Gemini CLI reads `~/.gemini/GEMINI.md`): say so first, too.
-   Don't change the files that the old files import: removing the import line is enough.
-8. Tell the user where the backup is, and that new sessions get the new file.
+7. Ask whether to remove the moved rules from the old files. Recommend it, and say why in short: it saves
+   tokens, and more importantly the agents don't get two copies that drift apart once the user changes
+   only the new file. Say where ctxtra's backup is, and suggest that they make a backup of their own too.
+   Remove nothing unless they agree; if they don't, tell them that these agents get the rules twice.
+8. If they agree, remove the moved rules from the old files. Show each change and wait for their OK
+   (rule 1). Empty a file that has nothing left; don't delete it. Codex reads `AGENTS.md` when
+   `AGENTS.override.md` has no text: emptying the override makes Codex read `AGENTS.md` again, so clean
+   both. A file that is a symlink changes at its target: say so first. Other tools can read the same file
+   (Gemini CLI reads `~/.gemini/GEMINI.md`): say so first, too. Don't change the files that the old files
+   import: removing the import line is enough.
+9. Tell the user where the backup is, and that new sessions get the new file.
 
 ## Add or change a binding
 
