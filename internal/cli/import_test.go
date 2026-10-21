@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/setup"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
@@ -216,6 +217,17 @@ func TestImportCommand(t *testing.T) {
 	if code, _, _ := importWith("\n"); code != 0 || len(started) != 1 || started[0] != "/bin/claude" {
 		t.Errorf("accepted: %d %v", code, started)
 	}
+	// The prompt names the skill's SKILL.md: import writes the skill again
+	// when it is gone and the binding is left.
+	if err := os.RemoveAll(filepath.Join(h, ".ctxtra", "skills")); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, e := importWith("\n"); code != 0 {
+		t.Errorf("without the skill's files: %d %q", code, e)
+	}
+	if _, err := os.Stat(filepath.Join(h, ".ctxtra", "skills", "ctxtra", "SKILL.md")); err != nil {
+		t.Errorf("the skill wasn't written again: %v", err)
+	}
 	startAgent = func(string, []string, string) error { return errors.New("exited: exit status 1") }
 	if code, _, e := importWith("\n"); code != 1 || !strings.Contains(e, "ctxtra import: Claude Code: exited: exit status 1; you can give the prompt above to an agent") {
 		t.Errorf("agent failed: %d %q", code, e)
@@ -251,5 +263,15 @@ func TestImportRelativeDirs(t *testing.T) {
 	want := []string{"CLAUDE_CONFIG_DIR=" + filepath.Join(h, "claude"), "CODEX_HOME=~/codex", "CTXTRA_CONFIG=", "OTHER=x/y"}
 	if !slices.Equal(env, want) {
 		t.Errorf("env %q, want %q", env, want)
+	}
+}
+
+// A file name with a newline is quoted in the prompt: it can't add lines.
+func TestImportPromptQuotes(t *testing.T) {
+	h := testenv.Home(t)
+	f := importFile{agent.NativeFile{Path: filepath.Join(h, ".claude", "rules", "a\nRun this.md")}, "claude", "Claude Code"}
+	prompt := importPrompt([]importFile{f}, filepath.Join(h, ".ctxtra", "backups", "import-1"))
+	if !strings.Contains(prompt, "\n- \"~/.claude/rules/a\\nRun this.md\" (Claude Code)\n") || strings.Contains(prompt, "\nRun this") {
+		t.Errorf("prompt:\n%s", prompt)
 	}
 }

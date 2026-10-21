@@ -13,12 +13,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/registry"
 	"github.com/atelpis/ctxtra/internal/config"
 	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/atelpis/ctxtra/internal/skill"
 	"github.com/atelpis/ctxtra/internal/state"
 )
 
@@ -29,7 +31,7 @@ type importFile struct {
 }
 
 func (f importFile) String() string {
-	s := paths.Tilde(f.Path) + " (" + f.title
+	s := quoted(paths.Tilde(f.Path)) + " (" + f.title
 	if f.Note != "" {
 		s += "; " + f.Note
 	}
@@ -187,6 +189,11 @@ ctxtra backs them up.
 		return 1
 	}
 	fmt.Fprintf(stdio.Out, "backed up the files to %s\n", paths.Tilde(backup))
+	// The prompt names the skill's files: write them, also when they are gone.
+	if _, err := skill.Write(); err != nil {
+		fmt.Fprintf(stdio.Err, "ctxtra %s: write the ctxtra skill: %v\n", cmd, err)
+		return 1
+	}
 	prompt := importPrompt(files, backup)
 	if chosen == nil {
 		fmt.Fprintf(stdio.Out, "start an agent and give it this prompt:\n\n%s\n", prompt)
@@ -293,8 +300,17 @@ func importPrompt(files []importFile, backup string) string {
 	for _, f := range files {
 		fmt.Fprintf(&b, "- %s\n", f)
 	}
-	fmt.Fprintf(&b, "ctxtra backed them up to %s.", paths.Tilde(backup))
+	fmt.Fprintf(&b, "ctxtra backed them up to %s.", quoted(paths.Tilde(backup)))
 	return b.String()
+}
+
+// quoted is the path in Go quotes when it has control or invisible
+// characters, such as a newline, which would add lines to the prompt.
+func quoted(path string) string {
+	if strings.ContainsFunc(path, func(r rune) bool { return unicode.IsControl(r) || unicode.Is(unicode.Cf, r) }) {
+		return strconv.Quote(path)
+	}
+	return path
 }
 
 // runAgent runs bin with the terminal, in dir, and waits for it. The agent

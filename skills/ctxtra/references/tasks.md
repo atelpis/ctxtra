@@ -31,7 +31,7 @@ so that every agent gets them. Do every step; don't skip the files of an agent.
    7 in `SKILL.md` apply.
 3. Ask the user where to keep the new file. Suggest `~/.config/ctxtra/instructions.md`, or their notes or
    dotfiles folder if they have one. A folder in a git repository needs a trusted source (rule 5).
-4. Write one file with every rule of every file:
+4. Draft one file with every rule of every file. Don't write it yet:
    - Rules that say the same thing become one rule. Keep the user's words; don't add rules of your own.
    - Drop no rule. If two rules disagree, ask the user which one to keep.
    - A rule for one agent only (it names that agent's tools, commands or settings) doesn't fit every
