@@ -30,6 +30,7 @@ type Agent struct{}
 var (
 	_ agent.Agent        = Agent{}
 	_ agent.PluginClient = Agent{}
+	_ agent.Launcher     = Agent{}
 )
 
 // pluginName is the plugin's name in plugin.yaml and in plugins.enabled.
@@ -397,3 +398,9 @@ def register(ctx):
     for k in range(SLOTS):
         ctx.register_hook("pre_llm_call", _callback(k))
 `
+
+// Launch: Hermes has no user-level instruction files of its own to move:
+// SOUL.md is the persona, which Hermes writes itself, and memories/ is
+// written by the agent. On a terminal, chat -q starts a session with the
+// prompt as its first turn.
+func (Agent) Launch(prompt string) []string { return []string{"hermes", "chat", "-q", prompt} }

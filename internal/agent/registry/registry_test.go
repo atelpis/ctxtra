@@ -172,3 +172,22 @@ func TestHomeClearsAgentVars(t *testing.T) {
 		inHome(t, h, a)
 	}
 }
+
+// In an empty home, no agent has instruction files of its own, and every
+// launch command ends with the prompt as one argument.
+func TestNativeAndLaunch(t *testing.T) {
+	testenv.Home(t)
+	for _, a := range All() {
+		if n, ok := a.(agent.Native); ok {
+			if files := n.NativeFiles(); len(files) != 0 {
+				t.Errorf("%s: files in an empty home: %+v", a.Name(), files)
+			}
+		}
+		if l, ok := a.(agent.Launcher); ok {
+			argv := l.Launch("a prompt")
+			if len(argv) < 2 || argv[0] == "" || argv[len(argv)-1] != "a prompt" {
+				t.Errorf("%s: launch %q", a.Name(), argv)
+			}
+		}
+	}
+}

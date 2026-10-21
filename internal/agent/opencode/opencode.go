@@ -21,6 +21,8 @@ type Agent struct{}
 var (
 	_ agent.Agent        = Agent{}
 	_ agent.PluginClient = Agent{}
+	_ agent.Native       = Agent{}
+	_ agent.Launcher     = Agent{}
 )
 
 func (Agent) Name() string { return "opencode" }
@@ -195,3 +197,14 @@ export default {
 	},
 };
 `
+
+// NativeFiles: OpenCode 2 reads AGENTS.md in its config folder; it doesn't
+// read ~/.claude/CLAUDE.md, as OpenCode 1 did.
+func (Agent) NativeFiles() []agent.NativeFile {
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "AGENTS.md")); ok {
+		return []agent.NativeFile{f}
+	}
+	return nil
+}
+
+func (Agent) Launch(prompt string) []string { return []string{"opencode", "--prompt", prompt} }

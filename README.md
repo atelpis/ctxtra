@@ -79,6 +79,37 @@ stop adding the skill. Then ask any agent, for example "add my notes to every se
 repositories". The skill tells the agent to ask you before every change, and never to trust a repository or
 accept a `sync` for you. Before setup, you can paste the output of `ctxtra skill` into an agent to start.
 
+When your agents already have instruction files of their own, setup in a terminal then offers to move them
+into ctxtra, so that all your agents get them. It asks only while no binding adds instructions, and only for
+the agents that are set up. The files are the ones each agent reads at user level, checked against each agent
+by the e2e tests:
+
+| Agent | Files |
+|---|---|
+| Claude Code | `~/.claude/CLAUDE.md`, `~/.claude/rules/**/*.md` |
+| Codex | `~/.codex/AGENTS.override.md`, `~/.codex/AGENTS.md` |
+| Pi | the first of `~/.pi/agent/AGENTS.override.md`, `AGENTS.md`, `AGENTS.MD`, `CLAUDE.md`, `CLAUDE.MD` that exists; `APPEND_SYSTEM.md` |
+| OpenCode | `~/.config/opencode/AGENTS.md` |
+| Copilot | `~/.copilot/copilot-instructions.md`, `~/.copilot/instructions/**/*.instructions.md` |
+| Antigravity | `~/.gemini/AGENTS.md`, `~/.gemini/GEMINI.md`, `~/.gemini/config/GEMINI.md` |
+| Muse | `~/.config/muse/AGENTS.md` |
+| DSH | `$DSH_HOME/AGENTS.md` |
+
+Files that replace an agent's own system prompt or persona (Pi's `SYSTEM.md`, Hermes's `SOUL.md`) and files the
+agent writes itself (Hermes's `memories/`) stay where they are. If you agree, setup copies the files to
+`~/.ctxtra/backups/import-<time>-<n>/<agent>/` and starts an agent in `~/.ctxtra/import` with a prompt that lists
+the files and the backup: the one agent with a CLI in PATH, or the one you pick. Every agent above except DSH,
+whose app is a web page, can be started, and so can Hermes. The agent then follows the skill: it merges rules
+that repeat, asks about rules that fit only one agent, shows you the new file, and binds it. Then it
+recommends removing the moved rules from the old files, so that your agents don't get two copies that drift
+apart, and does it only if you agree. It asks before each change, as usual. Without an agent to start, setup prints the
+prompt for you to give an agent. Setup starts the agent with its normal permissions and never with flags that
+skip them.
+
+`ctxtra import` makes the same offer at any time, also when your config has bindings. `ctxtra import
+--no-start` only backs up and lists the files: the skill runs it when you ask an agent to import your
+instructions.
+
 The skill is part of the binary: each version has a fixed text, which `ctxtra skill` shows. When you upgrade
 ctxtra, the hook of the next session writes the new version to `~/.ctxtra/skills/ctxtra`. Antigravity asks before it reads the skill there (see [Limits](#limits)).
 

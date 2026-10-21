@@ -15,6 +15,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/skill"
+	"github.com/atelpis/ctxtra/internal/term"
 )
 
 // topic is a docs page that ctxtra help shows: a file, or one section of it.
@@ -173,17 +174,13 @@ func skillBound() *config.Binding {
 // replace it.
 var interactive = func(in io.Reader) bool {
 	f, ok := in.(*os.File)
-	if !ok {
-		return false
-	}
-	st, err := f.Stat()
-	return err == nil && st.Mode()&os.ModeCharDevice != 0
+	return ok && term.IsTerminal(f)
 }
 
 // offerSkill asks, after setup, whether to install the skill; Enter says
 // yes. Without a terminal, for example when an agent runs setup, it says
 // how instead.
-func offerSkill(stdio IO) error {
+func offerSkill(stdio IO, in *bufio.Reader) error {
 	if skillBound() != nil {
 		return nil
 	}
@@ -196,15 +193,22 @@ ctxtra comes with a skill for your agents:
 it helps you get started, manage your config, and fix problems.
 You can install it later with: ctxtra skill install
 Install it now? [Y/n] `)
-	answer, err := bufio.NewReader(stdio.In).ReadString('\n')
-	if err != nil && !errors.Is(err, io.EOF) {
+	if ok, err := confirm(in); !ok || err != nil {
+		if err == nil {
+			fmt.Fprintln(stdio.Out, "not installed")
+		}
 		return err
 	}
-	// Input that ends without a line (Ctrl-D) is no answer.
-	a := strings.ToLower(strings.TrimSpace(answer))
-	if err != nil || a != "" && a != "y" && a != "yes" {
-		fmt.Fprintln(stdio.Out, "not installed")
-		return nil
-	}
 	return installSkill(stdio)
+}
+
+// confirm reads the answer to a [Y/n] question: Enter says yes. Input that
+// ends without a line (Ctrl-D) is no answer.
+func confirm(in *bufio.Reader) (bool, error) {
+	answer, err := in.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	a := strings.ToLower(strings.TrimSpace(answer))
+	return err == nil && (a == "" || a == "y" || a == "yes"), nil
 }

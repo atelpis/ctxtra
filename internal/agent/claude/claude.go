@@ -20,9 +20,11 @@ import (
 type Agent struct{}
 
 var (
-	_ agent.Agent   = Agent{}
-	_ agent.Slotted = Agent{}
-	_ agent.Missing = Agent{}
+	_ agent.Agent    = Agent{}
+	_ agent.Slotted  = Agent{}
+	_ agent.Missing  = Agent{}
+	_ agent.Native   = Agent{}
+	_ agent.Launcher = Agent{}
 )
 
 // events are not registered for resume: the resumed transcript already
@@ -84,6 +86,18 @@ func (Agent) SlotAnswer(event, text, summary string) any {
 }
 
 func (Agent) MissingAnswer(event, msg string) string { return agent.SystemMessage(event, msg) }
+
+// NativeFiles: CLAUDE.md, then the user-level rules: the .md files in rules/
+// and its subfolders, which Claude finds also through symlinks.
+func (Agent) NativeFiles() []agent.NativeFile {
+	var out []agent.NativeFile
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "CLAUDE.md")); ok {
+		out = append(out, f)
+	}
+	return append(out, agent.WalkNative(filepath.Join(dir(), "rules"), ".md")...)
+}
+
+func (Agent) Launch(prompt string) []string { return []string{"claude", prompt} }
 
 // Delivery: Claude shows the model only a preview of a hook's text over
 // 10,000 UTF-16 units, but gets the text of every hook of an event: 40 hooks

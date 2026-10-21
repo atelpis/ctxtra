@@ -166,7 +166,11 @@ type Result struct {
 func (s *Session) Run(dir string, opts driver.Options, script ...mock.Step) *Result {
 	s.t.Helper()
 	m := mock.New(s.t, script...)
-	cmd, err := s.agent.Command(s.agent.Bin, s.Home, dir, m.URL(), mock.Prompt, opts, s.Env())
+	prompt := mock.Prompt
+	if opts.Prompt != "" {
+		prompt = opts.Prompt
+	}
+	cmd, err := s.agent.Command(s.agent.Bin, s.Home, dir, m.URL(), prompt, opts, s.Env())
 	if err != nil {
 		s.t.Fatal(err)
 	}

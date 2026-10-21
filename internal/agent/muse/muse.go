@@ -22,9 +22,11 @@ import (
 type Agent struct{}
 
 var (
-	_ agent.Agent   = Agent{}
-	_ agent.Slotted = Agent{}
-	_ agent.Missing = Agent{}
+	_ agent.Agent    = Agent{}
+	_ agent.Slotted  = Agent{}
+	_ agent.Missing  = Agent{}
+	_ agent.Native   = Agent{}
+	_ agent.Launcher = Agent{}
 )
 
 // events: SessionStart also runs on resume, without a matcher. Muse replaces
@@ -163,3 +165,13 @@ func omitted(line string) (int, bool) {
 func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Muse", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 13_000, ChunkJSON: true, Slots: 40}
 }
+
+// NativeFiles: Muse reads AGENTS.md in its config folder.
+func (Agent) NativeFiles() []agent.NativeFile {
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "AGENTS.md")); ok {
+		return []agent.NativeFile{f}
+	}
+	return nil
+}
+
+func (Agent) Launch(prompt string) []string { return []string{"muse", prompt} }

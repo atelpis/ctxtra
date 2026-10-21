@@ -1,4 +1,5 @@
-// Package term makes text safe to print to a terminal.
+// Package term makes text safe to print to a terminal, and tells a terminal
+// from other input.
 package term
 
 import (

@@ -6,12 +6,17 @@ package agent
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/chunk"
+	"github.com/atelpis/ctxtra/internal/config"
+	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
 
@@ -149,6 +154,86 @@ type Missing interface {
 	// MissingAnswer is the JSON that the hook command prints for event when
 	// the binary is gone, with msg for the user; "" for {}.
 	MissingAnswer(event, msg string) string
+}
+
+// Native is an agent with user-level instruction files of its own, which
+// setup offers to move into ctxtra.
+type Native interface {
+	// NativeFiles are those of the files that have text, or can't be read,
+	// in the order the agent reads them.
+	NativeFiles() []NativeFile
+}
+
+// NativeFile is a user-level instruction file of an agent.
+type NativeFile struct {
+	Path string
+	Note string // for example why the agent doesn't read it now; "" for none
+	Err  error  // why it can't be read
+}
+
+// ReadNative is the file at path, and whether it counts: it has more than
+// white space, or it can't be read as a regular file of at most
+// config.MaxFileBytes, which Err says.
+func ReadNative(path string) (NativeFile, bool) {
+	b, err := fsutil.ReadBounded(path, config.MaxFileBytes)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return NativeFile{}, false
+	case err != nil:
+		return NativeFile{Path: path, Err: err}, true
+	}
+	return NativeFile{Path: path}, strings.TrimSpace(string(b)) != ""
+}
+
+// WalkNative is ReadNative of the files in root and its subfolders whose
+// names end with suffix, by name. It follows symlinks, and reads each folder
+// once. A missing root, or a broken symlink, adds nothing; a folder that
+// can't be read is a file with Err.
+func WalkNative(root, suffix string) []NativeFile {
+	var out []NativeFile
+	seen := map[string]bool{}
+	var walk func(string)
+	walk = func(d string) {
+		real, err := filepath.EvalSymlinks(d)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				out = append(out, NativeFile{Path: d, Err: err})
+			}
+			return
+		}
+		if seen[real] {
+			return
+		}
+		seen[real] = true
+		entries, err := os.ReadDir(d)
+		if err != nil {
+			out = append(out, NativeFile{Path: d, Err: err})
+		}
+		for _, e := range entries {
+			p := filepath.Join(d, e.Name())
+			st, err := os.Stat(p)
+			switch {
+			case errors.Is(err, fs.ErrNotExist):
+			case err != nil:
+				out = append(out, NativeFile{Path: p, Err: err})
+			case st.IsDir():
+				walk(p)
+			case strings.HasSuffix(p, suffix):
+				if f, ok := ReadNative(p); ok {
+					out = append(out, f)
+				}
+			}
+		}
+	}
+	walk(root)
+	return out
+}
+
+// Launcher is an agent with a CLI that starts an interactive session with a
+// first prompt.
+type Launcher interface {
+	// Launch is the command line, whose first element is looked up in PATH.
+	Launch(prompt string) []string
 }
 
 // Input is the part of a hook's input and command line that tells which

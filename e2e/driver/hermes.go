@@ -18,9 +18,24 @@ func (Hermes) Executable() string { return "hermes" }
 func (Hermes) Caps() []Cap        { return []Cap{Subagent} }
 
 func (Hermes) Command(bin, home, dir, mockURL, prompt string, _ Options, env []string) (*exec.Cmd, error) {
+	if err := hermesConfig(home, mockURL); err != nil {
+		return nil, err
+	}
+	// Newer versions run the session in a background gateway, which would
+	// outlive the run; stopping it is a no-op for older ones.
+	cmd := exec.Command("/bin/sh", "-c", `"$0" "$@"; s=$?; "$0" gateway stop >/dev/null 2>&1; exit $s`,
+		bin, "chat", "-Q", "-q", prompt, "--provider", "mock", "-m", "mock-model", "--yolo")
+	cmd.Dir = dir
+	cmd.Env = env
+	return cmd, nil
+}
+
+// hermesConfig writes config.yaml with the mock as the provider, and every
+// plugin in plugins/ enabled.
+func hermesConfig(home, mockURL string) error {
 	cfgDir := filepath.Join(home, ".hermes")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		return nil, err
+		return err
 	}
 	var plugins []string
 	entries, _ := os.ReadDir(filepath.Join(cfgDir, "plugins"))
@@ -41,16 +56,7 @@ providers:
 plugins:
   enabled: [PLUGINS]
 `)
-	if err := os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cfg), 0o644); err != nil {
-		return nil, err
-	}
-	// Newer versions run the session in a background gateway, which would
-	// outlive the run; stopping it is a no-op for older ones.
-	cmd := exec.Command("/bin/sh", "-c", `"$0" "$@"; s=$?; "$0" gateway stop >/dev/null 2>&1; exit $s`,
-		bin, "chat", "-Q", "-q", prompt, "--provider", "mock", "-m", "mock-model", "--yolo")
-	cmd.Dir = dir
-	cmd.Env = env
-	return cmd, nil
+	return os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(cfg), 0o644)
 }
 
 func (Hermes) UserMessages(_, _ string) []string { return nil }

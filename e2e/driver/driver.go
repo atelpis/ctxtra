@@ -55,8 +55,27 @@ type Driver interface {
 	UserMessages(home, stdout string) []string
 }
 
+// TUI is a driver that also runs the agent's interactive terminal app, as
+// ctxtra import starts it: a shim in PATH runs bin with Pre, the arguments
+// ctxtra launches with, and Post, in Env.
+type TUI interface {
+	// Interactive is the app against the mock at mockURL. It may write the
+	// agent's config files into home. env is the fixture's environment.
+	Interactive(bin, home, mockURL string, env []string) (Interactive, error)
+	// Answer is the keys (tmux send-keys arguments) that answer a startup
+	// question on the screen, or nil when there is none.
+	Answer(screen string) []string
+}
+
+// Interactive is the command line and environment of an interactive app.
+type Interactive struct {
+	Pre, Post, Env []string
+}
+
 // Options change one run.
 type Options struct {
+	// Prompt replaces mock.Prompt as the task.
+	Prompt string
 	// Untrusted runs Codex without bypassing hook trust.
 	Untrusted bool
 	// Resume continues the agent's last session.

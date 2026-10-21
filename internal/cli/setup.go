@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"strings"
 
@@ -65,10 +66,14 @@ func setupCmd(stdio IO, o setup.Options) int {
 		return 1
 	}
 	if !o.Remove && !o.DryRun {
-		if err := offerSkill(stdio); err != nil {
+		// One reader for every question: a reader of its own would take
+		// the input of the next.
+		in := bufio.NewReader(stdio.In)
+		if err := offerSkill(stdio, in); err != nil {
 			fmt.Fprintf(stdio.Err, "ctxtra skill install: %v\n", err)
 			return 1
 		}
+		return offerImport(stdio, in)
 	}
 	return 0
 }

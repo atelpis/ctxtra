@@ -29,9 +29,11 @@ import (
 type Agent struct{}
 
 var (
-	_ agent.Agent   = Agent{}
-	_ agent.Missing = Agent{}
-	_ agent.Retrust = Agent{}
+	_ agent.Agent    = Agent{}
+	_ agent.Missing  = Agent{}
+	_ agent.Retrust  = Agent{}
+	_ agent.Native   = Agent{}
+	_ agent.Launcher = Agent{}
 )
 
 // events are not registered for resume: the resumed transcript already
@@ -76,6 +78,24 @@ func (a Agent) hooks() hookjson.Config {
 		StatusMessage: "ctxtra: personal instructions", ContextLimit: contextLimit, Missing: a,
 		RepairNote: " (" + a.TrustNote() + " again)"}
 }
+
+// NativeFiles: Codex reads AGENTS.override.md, or AGENTS.md when the
+// override has no text.
+func (Agent) NativeFiles() []agent.NativeFile {
+	var out []agent.NativeFile
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "AGENTS.override.md")); ok {
+		out = append(out, f)
+	}
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "AGENTS.md")); ok {
+		if len(out) > 0 {
+			f.Note = "Codex doesn't read it while AGENTS.override.md has text"
+		}
+		out = append(out, f)
+	}
+	return out
+}
+
+func (Agent) Launch(prompt string) []string { return []string{"codex", prompt} }
 
 func (Agent) TrustNote() string { return "Codex will then ask you to trust the hooks" }
 

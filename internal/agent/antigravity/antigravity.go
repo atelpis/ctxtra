@@ -21,7 +21,11 @@ import (
 // Agent is Google Antigravity.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent    = Agent{}
+	_ agent.Native   = Agent{}
+	_ agent.Launcher = Agent{}
+)
 
 // hookName is the key of our hook in hooks.json.
 const hookName = "ctxtra"
@@ -96,3 +100,17 @@ func (a Agent) Answer(_ string, res *resolve.Result) any {
 func (Agent) Delivery() agent.Delivery {
 	return agent.Delivery{Title: "Antigravity", Capacity: 650_000, Unit: chunk.Bytes, Chunk: 40_000}
 }
+
+// NativeFiles: the Antigravity CLI reads AGENTS.md, GEMINI.md and
+// config/GEMINI.md in ~/.gemini, all of them.
+func (Agent) NativeFiles() []agent.NativeFile {
+	var out []agent.NativeFile
+	for _, rel := range []string{"AGENTS.md", "GEMINI.md", filepath.Join("config", "GEMINI.md")} {
+		if f, ok := agent.ReadNative(filepath.Join(dir(), rel)); ok {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func (Agent) Launch(prompt string) []string { return []string{"agy", "-i", prompt} }

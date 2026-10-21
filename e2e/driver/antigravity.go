@@ -21,13 +21,7 @@ func (Antigravity) Command(bin, home, dir, mockURL, prompt string, _ Options, en
 	// The API key mode needs modelProvider; without it agy asks for a
 	// sign-in. Headless runs can't ask for permissions, so reads outside
 	// the workspace (skills, the scripted reads) are allowed in home.
-	settings, _ := json.Marshal(map[string]any{"modelProvider": "gemini", "enableTelemetry": false,
-		"permissions": map[string]any{"allow": []string{"read_file(" + home + ")"}}})
-	cfgDir := filepath.Join(home, ".gemini", "antigravity-cli")
-	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
-		return nil, err
-	}
-	if err := os.WriteFile(filepath.Join(cfgDir, "settings.json"), settings, 0o644); err != nil {
+	if err := agySettings(home); err != nil {
 		return nil, err
 	}
 	cmd := exec.Command(bin, "-p", prompt, "--output-format", "json")
@@ -38,3 +32,15 @@ func (Antigravity) Command(bin, home, dir, mockURL, prompt string, _ Options, en
 }
 
 func (Antigravity) UserMessages(string, string) []string { return nil }
+
+// agySettings writes the CLI's settings: the Gemini API with a key, and
+// reads in home allowed.
+func agySettings(home string) error {
+	settings, _ := json.Marshal(map[string]any{"modelProvider": "gemini", "enableTelemetry": false,
+		"permissions": map[string]any{"allow": []string{"read_file(" + home + ")"}}})
+	cfgDir := filepath.Join(home, ".gemini", "antigravity-cli")
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(cfgDir, "settings.json"), settings, 0o644)
+}
