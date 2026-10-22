@@ -86,7 +86,7 @@
 <circle cx="1040" cy="292" r="5.5" fill="#7C3AED"/>
 <circle cx="1057" cy="292" r="5.5" fill="#0E7490"/>
 <rect x="1020" y="320" width="224" height="76" rx="10" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="1034" y="344" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="16" font-weight="700" fill="#1F2328">cursor</text>
+<text x="1034" y="344" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="16" font-weight="700" fill="#1F2328">cursor-agent</text>
 <text x="1034" y="366" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#57606A">~/Downloads</text>
 <circle cx="1040" cy="382" r="5.5" fill="#7C3AED"/>
 </svg>

@@ -62,7 +62,7 @@ SESSIONS = [
     ("claude", "~/dev/acme/billing", [0, 1, 2, 3]),
     ("codex", "~/wt/billing-fix", [0, 1, 2, 3]),
     ("pi", "~/dev/side-project", [0, 1]),
-    ("cursor", "~/Downloads", [0]),
+    ("cursor-agent", "~/Downloads", [0]),
 ]
 
 
@@ -180,11 +180,13 @@ def social():
 # ---------------------------------------------------------------- demo (dark in both themes: it is a terminal)
 
 def demo():
+    """Four panes, one session each, with the summary that ctxtra shows at session start."""
     c = THEMES["dark"]
-    w, h = 1100, 486
+    w, ph = 1100, 236  # ph: pane height
+    h = 46 + 2 * ph
     T = 18.0  # loop length, seconds
-    cw = 10.2  # monospace advance at 17px
-    x0, lh = 34, 30
+    cw = 9.0  # monospace advance at 15px
+    lh = 22
     scenes = [
         ("~/dev/acme/billing", "claude", [0, 1, 2], True, "# remote is github.com/acme/billing"),
         ("~/wt/billing-fix", "codex", [0, 1, 2], True, "# a worktree of it, outside ~/dev"),
@@ -195,6 +197,8 @@ def demo():
     b.append(f'<rect x="1" y="1" width="{w-2}" height="44" rx="13" fill="{c["PANEL"]}"/>')
     b.append(f'<rect x="1" y="30" width="{w-2}" height="15" fill="{c["PANEL"]}"/>')
     b.append(f'<line x1="1" y1="45" x2="{w-1}" y2="45" stroke="{c["EDGE"]}"/>')
+    b.append(f'<line x1="{w/2}" y1="45" x2="{w/2}" y2="{h-1}" stroke="{c["EDGE"]}"/>')
+    b.append(f'<line x1="1" y1="{45+ph}" x2="{w-1}" y2="{45+ph}" stroke="{c["EDGE"]}"/>')
     for i, dot in enumerate(["#FF5F57", "#FEBC2E", "#28C840"]):
         b.append(f'<circle cx="{26+i*22}" cy="23" r="6.5" fill="{dot}"/>')
     b.append(f'<text x="{w/2}" y="28" font-size="14" fill="{c["MUTED"]}" text-anchor="middle">one config, four sessions</text>')
@@ -209,37 +213,36 @@ def demo():
     def appear(t, to="1"):
         return anim("opacity", [0, t, t + 0.01, fade_out[0], fade_out[1], T], ["0", "0", to, to, "0", "0"])
 
-    y = 88
+    def text(x, y, body, t):
+        return f'<text x="{x}" y="{y}" font-family="{MONO}" font-size="15" xml:space="preserve">{body}{appear(t)}</text>'
+
+    m = c["MUTED"]
     start = 0.6
     for s, (cwd, agent, files, skill, note) in enumerate(scenes):
+        x0, y = 28 + (s % 2) * w / 2, 45 + (s // 2) * ph + 34
         cmd = f"cd {cwd} && {agent}"
         t0, t1 = start, start + 0.045 * len(cmd)
         t_out = t1 + 0.45
-        full = cw * (len(cmd) + 2) + 6
+        b.append(text(x0, y, f'<tspan fill="{c["DIM"]}">{escape(note)}</tspan>', t0 - 0.3))
         # the command, revealed by a growing clip
-        b.append(f'<clipPath id="c{s}"><rect x="{x0}" y="{y-22}" height="{lh}" width="{full}">'
+        full = cw * (len(cmd) + 2) + 6
+        b.append(f'<clipPath id="c{s}"><rect x="{x0}" y="{y+lh-17}" height="{lh+4}" width="{full}">'
                  + anim("width", [0, t0, t1, T], ["0", "0", f"{full}", f"{full}"]) + "</rect></clipPath>")
         b.append(f'<g clip-path="url(#c{s})">'
-                 f'<text x="{x0}" y="{y}" font-family="{MONO}" font-size="17" xml:space="preserve">'
+                 f'<text x="{x0}" y="{y+lh}" font-family="{MONO}" font-size="15" xml:space="preserve">'
                  f'<tspan fill="{c["GREEN"]}">❯</tspan> <tspan fill="{c["TEXT"]}">cd </tspan><tspan fill="{c["CYAN"]}">{cwd}</tspan>'
                  f'<tspan fill="{c["TEXT"]}"> &amp;&amp; </tspan><tspan fill="{c["TEXT"]}" font-weight="700">{agent}</tspan></text></g>')
-        b.append(f'<text x="{x0 + cw*44}" y="{y}" font-family="{MONO}" font-size="16" fill="{c["DIM"]}">{escape(note)}{appear(t_out)}</text>')
-        # ctxtra's summary line, each name in its color
-        m = c["MUTED"]
-        parts = [f'<tspan fill="{m}">ctxtra: added {len(files)} file{"s" if len(files) != 1 else ""} (</tspan>']
-        for k, i in enumerate(files):
-            if k:
-                parts.append(f'<tspan fill="{m}">, </tspan>')
-            parts.append(f'<tspan fill="{c[FILE_COLORS[i]]}">{FILE_NAMES[i]}</tspan>')
-        parts.append(f'<tspan fill="{m}">)</tspan>')
+        # ctxtra's summary, as the agent shows it, each name in its color
+        n = len(files)
+        head = f'ctxtra added {n} instruction{"s" if n != 1 else ""}' + (" and 1 skill" if skill else "")
+        rows = [f'<tspan fill="{c["GREEN"]}">✓</tspan> <tspan fill="{c["TEXT"]}">{head}</tspan>',
+                f'<tspan fill="{m}">Instructions:</tspan>']
+        rows += [f'<tspan fill="{m}">- </tspan><tspan fill="{c[FILE_COLORS[i]]}">{FILE_NAMES[i]}</tspan>' for i in files]
         if skill:
-            parts.append(f'<tspan fill="{m}"> and 1 skill (</tspan><tspan fill="{c["LIME"]}">deploy</tspan><tspan fill="{m}">)</tspan>')
-        b.append(f'<text x="{x0 + cw*2}" y="{y+lh}" font-family="{MONO}" font-size="17" xml:space="preserve">'
-                 + "".join(parts) + appear(t_out) + "</text>")
-        y += lh * 2 + 26
-        start = t_out + 2.2
-    b.append(f'<text x="{x0}" y="{y}" font-family="{MONO}" font-size="17" fill="{c["GREEN"]}">❯{appear(start - 1.2)}</text>')
-    b.append(f'<rect x="{x0 + cw*2}" y="{y-16}" width="10" height="20" fill="{c["TEXT"]}">{appear(start - 1.2, "0.8")}</rect>')
+            rows += [f'<tspan fill="{m}">Skills:</tspan>', f'<tspan fill="{m}">- </tspan><tspan fill="{c["LIME"]}">deploy</tspan>']
+        for k, row in enumerate(rows):
+            b.append(text(x0 + cw * 2, y + lh * (k + 2) + 6, row, t_out + 0.06 * k))
+        start = t_out + 2.6
     write("demo.svg", "\n".join(b), w, h, "ctxtra demo: four sessions in four folders get four different sets of files from one config")
 
 
@@ -384,10 +387,11 @@ def story(theme):
         paths = "".join(f'<path d="{d}"/>' for d in ICONS[name])
         return f'<g transform="translate({cx - size/2:g} {cy - size/2:g}) scale({k:g})" fill="{fill}" fill-rule="evenodd">{paths}</g>'
 
-    agents = [("claude", "Claude"), ("codex", "Codex"), ("pi", "Pi"), ("opencode", "OpenCode"), ("cursor", "Cursor")]
+    # Long labels sit next to short ones, so that they don't run into each other.
+    agents = [("claude", "Claude"), ("codex", "Codex"), ("opencode", "OpenCode"), ("pi", "Pi"), ("cursor", "Cursor CLI")]
 
     def agent(cx, cy, name, label):
-        return icon(name, cx, cy - 8, 30) + sans(cx, cy + 24, label, 11 if len(label) > 6 else 12, "MUTED")
+        return icon(name, cx, cy - 8, 30) + sans(cx, cy + 24, label, 10.5 if len(label) > 7 else 12, "MUTED")
 
     def any_agent(cx, cy):
         """A generic agent: a terminal prompt."""
@@ -444,7 +448,7 @@ def story(theme):
     gx = M - 110
     fx = [gx - 198, gx, gx + 198]
     files = ["CLAUDE.md", "AGENTS.md", ".cursor/rules/"]
-    gen_agents = [("claude", "Claude Code"), ("codex", "Codex"), ("cursor", "Cursor")]
+    gen_agents = [("claude", "Claude Code"), ("codex", "Codex"), ("cursor", "Cursor CLI")]
     b.append(line(Path(gx, A + 22).L(gx, 238), s, z))
     for i, x in enumerate(fx):
         b.append(line(Path(gx, 274).C((gx, 300), (x, 298), (x, 324)), s, z, draw=(s + 1.0, s + 1.4)))
@@ -469,12 +473,14 @@ def story(theme):
                       f'stroke="{c["RED"]}" stroke-width="2" stroke-dasharray="6 4"/>' + mono(x - 10, 380, "stale", 13, "RED", "end"), 0.3))
     b.append(show(s + 5.2, s + 8.6, f'<rect x="{gx-110}" y="{A-22}" width="220" height="44" rx="10" fill="none" stroke="{c["AMBER"]}" stroke-width="2"/>'
                   + mono(gx + 122, A + 6, "✎ edited", 15, "AMBER"), 0.3))
+    # the regenerated files land in the repo's diff
     wx = fl + 624
-    b.append(show(s + 9.2, z, f'<rect x="{wx}" y="302" width="200" height="84" rx="12" fill="none" stroke="{c["RED"]}" stroke-opacity="0.7" stroke-dasharray="6 4"/>'
-                  + mono(wx, 294, "new worktree/", 15, "MUTED") + sans(wx + 100, 350, "✕ no files yet", 17, "RED")))
+    b.append(show(s + 9.2, z, f'<rect x="{wx}" y="302" width="200" height="84" rx="12" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>'
+                  + mono(wx, 294, "git diff", 15, "MUTED")
+                  + "".join(mono(wx + 16, 325 + 22 * i, f"M {name}", 14, "AMBER") for i, name in enumerate(files))))
     b.append(caption("Generators: one source, written out as each agent's files in your project.", s, s + 5.2))
     b.append(caption("Change the source, and those files are stale until you run it again.", s + 5.2, s + 9.0))
-    b.append(caption("A new clone or worktree gets nothing until you generate there too.", s + 9.0, z))
+    b.append(caption("Commit the output, and every change to the rules is a diff in your repo.", s + 9.0, z))
 
     # ---- slide 3: ctxtra
     s, z = S3, T - 0.1
@@ -548,7 +554,7 @@ def story(theme):
     b.append(show(l(14.0), z, icon("github", R - 52, A - 10, 40)
                   + mono(R - 22, A - 14, "team-ctx", 16, weight="700") + mono(R - 22, A + 6, "pinned a1b2c3d", 12, "CYAN")
                   + f'<circle cx="{R-62}" cy="{A+30}" r="6" fill="{c["LIME"]}"/>' + mono(R - 48, A + 36, "team.md", 15)))
-    b.append(binding(R, "gitRepos: org/work-proj", "LIME", l(14.6), 260))
+    b.append(binding(R, "repos: org/work-proj", "LIME", l(14.6), 260))
 
     for x, a, name in [(P1, l(10.2), "my-proj/"), (P2, l(17.4), "work-proj/")]:
         b.append(show(a, z, mono(x + 12, B + 42, "+0 files", 13, "GREEN")))
@@ -564,7 +570,7 @@ def story(theme):
 
     write(f"story-{theme}.svg", "\n".join(b), W, H,
           "Out of the box, one agent reads its own files. Generators write each agent's files into your project and "
-          "need a rerun after every change and in every new worktree. ctxtra hooks into every agent and adds files "
+          "need a rerun and a new diff after every change. ctxtra hooks into every agent and adds files "
           "from your own folder or a pinned team repo through bindings, with nothing written into the projects")
 
 
