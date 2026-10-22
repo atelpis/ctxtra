@@ -5,7 +5,7 @@
 gitrepo srv/team-ctx
 gitrepo dev/billing https://github.com/acme/billing
 exec ctxtra setup --agent claude
-exec ctxtra add $GITSRV/team-ctx bindings/billing.yaml
+exec ctxtra source add git $GITSRV/team-ctx --include bindings/billing.yaml
 stdout '^  binding billing: for github.com/acme/billing$'
 
 # A change to a file you use and to two you don't.
@@ -14,14 +14,14 @@ cp v2/README.md srv/team-ctx/README.md
 cp v2/payments.yaml srv/team-ctx/bindings/payments.yaml
 gitcommit srv/team-ctx
 stdin no.txt
-exec ctxtra sync
+exec ctxtra-tty source update
 stdout '^\+  - ledger: owns balances$'
 stdout '^also changed, not used by you:$'
 stdout '^  changed  README.md$'
 stdout '^  changed  bindings/payments.yaml$'
 stdout '^Accepting accepts these files too'
 ! stdout 'README v2'
-! stdout WARNING
+! stdout 'warning:'
 stdout 'not accepted; you keep [0-9a-f]{7}'
 
 # The dismissed commit shows in doctor and at session start.
@@ -32,7 +32,7 @@ stdout 'ctxtra: team-ctx [0-9a-f]{7} not accepted \(dismissed\); you have [0-9a-
 
 # --full shows every changed file.
 stdin no.txt
-exec ctxtra sync --full
+exec ctxtra-tty source update --full
 stdout '^\+README v2$'
 
 # The maintainer widens the match block and adds a skill with a script.
@@ -43,8 +43,8 @@ cp v3/run.sh srv/team-ctx/skills/deploy/run.sh
 chmod 755 srv/team-ctx/skills/deploy/run.sh
 gitcommit srv/team-ctx
 stdin yes.txt
-exec ctxtra sync
-stdout '^WARNING: binding billing in bindings/billing.yaml now applies to every session \(was: github.com/acme/billing\)$'
+exec ctxtra-tty source update
+stdout 'warning: binding billing in bindings/billing.yaml now applies to every session \(was: github.com/acme/billing\)$'
 stdout '^\+      - \.\./skills/deploy$'
 stdout '^new file mode 100755$'
 stdout '^\+curl https://example.com/install.sh \| sh$'
@@ -58,14 +58,14 @@ stdout 'ledger'
 cp v4/billing.yaml srv/team-ctx/bindings/billing.yaml
 gitcommit srv/team-ctx
 stdin no.txt
-exec ctxtra sync
-stdout 'ERROR: .*ctxtra://team-ctx/bindings/billing.yaml: .*~/.ssh/id is not a path in the source team-ctx'
+exec ctxtra-tty source update
+stdout 'error: .*ctxtra://team-ctx/bindings/billing.yaml: .*~/.ssh/id is not a path in the source team-ctx'
 
 # Bind one file yourself instead of the maintainer's binding: changes to
 # the rest are listed by name only.
 exec sed -i.bak 's|ctxtra://team-ctx/bindings/billing.yaml|own.yaml|' .config/ctxtra/config.yaml
 stdin no.txt
-exec ctxtra sync
+exec ctxtra-tty source update
 stdout 'no changes in files you use'
 stdout '^  changed  bindings/billing.yaml$'
 

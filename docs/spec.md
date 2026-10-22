@@ -31,8 +31,8 @@ sources:
     trusted-path: ~/dev/dotfiles      # a repo of your own: read from disk, changes apply right away
   team-ctx:
     git: git@github.com:acme/team-ctx.git
-    branch: main                      # where sync looks for new commits
-    commit: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432'   # the accepted version; sync changes it
+    branch: main                      # where source update looks for new commits
+    commit: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432'   # the accepted version; source update changes it
 
 bindings:                             # your own bindings, see Binding file below
   - name: me
@@ -53,12 +53,19 @@ budget:
 Every key except `schema` is optional. A config with only `schema` and `bindings` is enough for your own
 files.
 
-`ctxtra bind NAME (--global | --dir PATTERN... | --repo REMOTE...) [--file FILE]... [--skill FOLDER]... [--dry-run]`
+`ctxtra binding add NAME (--global | {--dir PATTERN | --repo PATTERN}...) {--instruction FILE | --skill DIR}... [--dry-run]`
 adds a binding to the config's own `bindings`, after the others. Paths are relative to the current folder
 and are written from `~` when they are under it; `ctxtra://` references are written as they are. The config
 is changed only when a session that the binding matches would get every file and skill in it: none is
 missing, each is trusted, and no other problem is new. `--dry-run` does the same checks and changes
-nothing. A binding in a binding file, and a change to an existing binding, are edits by hand.
+nothing. `ctxtra binding remove NAME` removes one of the config's own bindings, and `ctxtra binding list`
+lists every binding with the file it is in. A binding in a binding file, and a change to an existing
+binding, are edits by hand.
+
+`ctxtra binding-file add (FILE | ctxtra://SOURCE/PATH)` adds a binding file to `include`: a file on your
+disk in a trusted place, or a file of a source you have. It never adds, pins or trusts a source; for a file
+in a repository that isn't a source, it names the `ctxtra source add` commands that would add it.
+`ctxtra binding-file remove ENTRY` removes one entry, and `ctxtra binding-file list` lists them.
 
 ## Sources and trust
 
@@ -99,23 +106,24 @@ above, so it can lead outside the source, but only to a file that is trusted on 
 
 A `git` source is a team repository. ctxtra keeps its own copy, so you don't need a clone, and serves one
 commit of it: the one in `commit`. A new commit on the branch reaches your sessions only after you review
-and accept it with `ctxtra sync`, or after you change `commit` yourself.
+and accept it with `ctxtra source update`, or after you change `commit` yourself.
 
 ```text
-$ ctxtra add git@github.com:acme/team-ctx.git bindings/billing.yaml
+$ ctxtra source add git git@github.com:acme/team-ctx.git --include bindings/billing.yaml
 fetched team-ctx: main at abc1234 (git@github.com:acme/team-ctx.git)
-added source team-ctx (pinned: changes apply after `ctxtra sync`)
-added ctxtra://team-ctx/bindings/billing.yaml
+added source team-ctx (pinned: new commits apply after you accept them in ctxtra source update)
+included ctxtra://team-ctx/bindings/billing.yaml
   binding billing: for github.com/acme/billing
     instructions: services-overview.md
 ```
 
 - `git` is an `https://` or `ssh://` URL, or `user@host:path`. Other transports and local paths are errors.
-- `branch` is required. `add` uses the remote's default branch unless you pass `--branch`.
+- `branch` is required. `source add git` uses the remote's default branch unless you pass `--branch`.
 - `commit` is a full commit ID in quotes: 40 hex digits, or 64 for SHA-256 repositories. A source without
-  `commit` is inactive until `ctxtra sync <name>`, which accepts the branch as it is, like `add`.
+  `commit` is inactive until you accept its first commit with `ctxtra source update <name>` in a terminal;
+  `--check` shows that commit without accepting it.
 - **The first version is accepted without review**, the same decision as cloning the repository: read a
-  team repository before you add it. `add` shows its bindings and its executable files.
+  team repository before you add it. `source add git` shows its bindings and its executable files.
 - Accepting a commit accepts **every file in it**, also files the review lists only by name: a file you
   reference later is used at once, without another review.
 - Anyone who can edit your config can choose the version, for example through a dotfiles repository that
@@ -126,34 +134,39 @@ added ctxtra://team-ctx/bindings/billing.yaml
   declare sources or include other files: only your config does.
 - Files are read from ctxtra's store (below), never from a clone. Symlinks and submodules in the
   repository are left out.
-- ctxtra doesn't check for new commits by itself: sessions never fetch. Run `ctxtra sync` regularly.
+- ctxtra doesn't check for new commits by itself: sessions never fetch. Run `ctxtra source update` regularly.
 
 ### Commands
 
 | Command | Does |
 |---|---|
-| `ctxtra add <git URL> [<binding file>] [--as NAME] [--branch B]` | Fetches the branch, adds the source with its current commit, and the binding file to `include`. The name defaults to the repository name. Without a binding file, it lists the binding files in the repository. |
-| `ctxtra add ctxtra://<source>/<binding file>` | Adds a binding file of a source you have to `include`, at its accepted commit. |
-| `ctxtra add <binding file> [--trust] [--as NAME]` | Adds a binding file on your disk to `include`. A file in a clone with a remote is imported as a `git` source (below); with `--trust`, the repository is added as a `trusted-path` source instead. |
-| `ctxtra add --trust <folder> [--as NAME]` | Adds a folder as a `trusted-path` source. |
-| `ctxtra add --local-git <clone> [--as NAME]` | Adds your clone as a `local-git` source (below). |
-| `ctxtra remove <source>` | Removes the source and its `include` entries, and lists the lines of your config and binding files that still use it. |
-| `ctxtra remove <include entry>` | Removes one entry from `include`. |
-| `ctxtra sync [--full] [SOURCE]...` | For each pinned source: makes sure the accepted commit is in the store, fetches the branch, shows what changed (below), and on `y` writes the new commit to the config. |
-| `ctxtra sync --restore [SOURCE]...` | Fetches exactly the commits in the config, and changes nothing in it. Use it on a new laptop, or when the store is gone. It fails when a commit can't be fetched (removed by a force-push, or never pushed). |
+| `ctxtra source add git URL [--branch BRANCH]` | Fetches the branch and adds the source with its current commit. |
+| `ctxtra source add git DIR [--remote REMOTE] [--branch BRANCH]` | Adds the repository that DIR is a clone of (below). |
+| `ctxtra source add local-git DIR` | Adds your clone as a `local-git` source (below). |
+| `ctxtra source add trusted-path DIR` | Adds a folder as a `trusted-path` source. |
+| `ctxtra source list`, `ctxtra source show NAME` | The sources and their state; one source with its binding files and clones. |
+| `ctxtra source update [--full] [NAME]...` | For each pinned source: makes sure the accepted commit is in the store, fetches the branch, shows what changed (below), and on `y` writes the new commit to the config. Only in a terminal. |
+| `ctxtra source update --check [--json] [NAME]...` | The same fetch and review, without accepting or dismissing anything. Works anywhere. |
+| `ctxtra source restore [NAME]...` | Fetches exactly the commits in the config, and changes nothing in it. Use it on a new laptop, or when the store is gone. It fails when a commit can't be fetched (removed by a force-push, or never pushed). |
+| `ctxtra source trust NAME [DIR]` | Converts a pinned source to `trusted-path` in place (below). |
+| `ctxtra source remove NAME` | Removes the source and its `include` entries, and lists the lines of your config and binding files that still use it. |
+
+Every `source add` takes `--name NAME` (default: the repository or folder name), `--include PATH` to add
+binding files of the source to `include` in the same edit (repeatable), and `--dry-run`, which checks and
+fetches nothing. Without `--include`, it lists the binding files in the source.
 
 ### A clone you already have
 
 ```text
-$ ctxtra add ~/dev/team-ctx/bindings/billing.yaml
-~/dev/team-ctx is a clone of git@github.com:acme/team-ctx.git (not trusted), added as source team-ctx
-starts at your local commit 9f8e7d6; later sync follows origin/main (remote not checked yet)
-added ctxtra://team-ctx/bindings/billing.yaml (pinned: changes apply after `ctxtra sync`)
+$ ctxtra source add git ~/dev/team-ctx --include bindings/billing.yaml
+~/dev/team-ctx is a clone of git@github.com:acme/team-ctx.git, added as source team-ctx (pinned)
+starts at your local commit 9f8e7d6; later updates follow origin/main (remote not checked yet)
+included ctxtra://team-ctx/bindings/billing.yaml
 ```
 
-- A binding file in a clone with a remote is imported: a `git` source with the clone's remote and the
-  upstream of its current branch, starting at the clone's committed `HEAD`. Uncommitted changes are not
-  used. Later, `sync` follows the remote branch, not the clone. A clone with several remotes, or without an
+- The source is a `git` source with the clone's remote and the upstream of its current branch, starting at
+  the clone's committed `HEAD`. Uncommitted changes are not used. Later, `source update` follows the remote
+  branch, not the clone. A clone with several remotes, or without an
   upstream, needs `--remote` or `--branch`.
 - Paths under the clone in your own bindings keep working, and are served from the source:
   `~/dev/team-ctx/jira-ticket.md` is `ctxtra://team-ctx/jira-ticket.md`, also after the clone moves or is
@@ -162,17 +175,19 @@ added ctxtra://team-ctx/bindings/billing.yaml (pinned: changes apply after `ctxt
   the folder comes first.
 - A missing file under the clone is skipped, not read from disk. When the source is removed, renamed or its
   URL changes, paths under the clone are skipped with `not in the config any more`, not read from disk.
-  `ctxtra remove` lists them.
+  `ctxtra source remove` lists them.
 - If `mappings.json` is deleted, paths under old clones are ordinary paths again: checked as usual, and
   skipped in a repository with a remote. If it is broken, ctxtra can't tell which paths were mapped: every
   plain path outside your `trusted-path` sources is skipped, and ctxtra doesn't write the file, until you
   fix or delete it.
 - Reading the clone never fetches: git runs without transports and without lazy fetching.
-- If the repository is yours (your dotfiles), `ctxtra add --trust <the file>` converts the source to
-  `trusted-path` under the same name: its `ctxtra://` references are read from disk from then on. With
-  `--as NAME`, a separate trusted source is added instead, and the pinned one stays: paths under the clone
-  are then live, `ctxtra://` references to the pinned source stay pinned. Use this to edit the team
-  repository and see your uncommitted changes.
+- If the repository is yours (your dotfiles), `ctxtra source trust NAME` converts the source to
+  `trusted-path` under the same name, reading the clone: its `ctxtra://` references are read from disk from
+  then on. DIR can be left out when ctxtra knows exactly one clone of the source. Other clones mapped to it
+  stay mapped, and their paths stay skipped. `ctxtra source add trusted-path DIR --name OTHER` adds a
+  separate trusted source instead, and the pinned one stays: paths under the clone are then live,
+  `ctxtra://` references to the pinned source stay pinned. Use this to edit the team repository and see
+  your uncommitted changes.
 
 ### Your clone, pinned
 
@@ -183,7 +198,7 @@ sources:
     commit: '1a2b3c4d5e6f708192a3b4c5d6e7f8091a2b3c4d'
 ```
 
-A `local-git` source is pinned like a `git` source, but `sync` follows the clone's committed `HEAD`
+A `local-git` source is pinned like a `git` source, but `source update` follows the clone's committed `HEAD`
 (detached works too) instead of a remote: for trying your commits before you push them. ctxtra fetches the
 commit from the clone; it never copies the clone's working tree, index, config or hooks. It adds no mapping:
 reference its files as `ctxtra://team-ctx-dev/<path>`.
@@ -191,15 +206,15 @@ reference its files as `ctxtra://team-ctx-dev/<path>`.
 ### Review
 
 ```text
-$ ctxtra sync
+$ ctxtra source update
 team-ctx: abc1234 -> def5678 (main, git@github.com:acme/team-ctx.git)
-WARNING: binding billing in bindings/billing.yaml now applies to every session (was: github.com/acme/billing)
+warning: binding billing in bindings/billing.yaml now applies to every session (was: github.com/acme/billing)
 diff --git a/bindings/billing.yaml b/bindings/billing.yaml
 ...
 also changed, not used by you:
   changed  README.md
   added    tools/setup.sh  executable
-Accepting accepts these files too: a file you reference later is used without review. ctxtra sync --full shows them.
+Accepting accepts these files too: a file you reference later is used without review. ctxtra source update --full shows them.
 Accept? [y/N]
 ```
 
@@ -214,52 +229,57 @@ Accept? [y/N]
 - Errors in the source's binding files that the new commit brings, for example a path outside the source.
 - The new commit is written to the store before the review. A commit over the limits fails there.
 
-When you answer `N`, ctxtra remembers the commit as dismissed. Sessions that use the source, `files` and
-`doctor` say `def5678 not accepted (dismissed)`. The next `sync` shows the review again.
+`source update` asks only when stdin and stdout are a terminal, so you see what you accept; the question
+goes to stderr. Without a terminal, or with `--no-input`, it fails before it fetches, and `--check` does
+the fetch and the review without asking. There is no option that accepts without asking.
+
+When you answer `N`, ctxtra remembers the commit as dismissed. Sessions that use the source,
+`context files` and `doctor` say `def5678 not accepted (dismissed)`. The next `source update` shows the
+review again. Input that ends without an answer decides nothing: no commit is accepted or dismissed.
 
 ### Notices
 
 Sessions never fetch, so they can't know about new commits. When a session uses a pinned source that
-wasn't checked for 7 days, it says `team-ctx last checked 12 days ago; run ctxtra sync to check for
-changes` (Claude Code, Codex, Muse and Pi show it at session start, and `files` and `doctor` show it too). A
-check is a fetch of the branch that worked, by `add` or `sync`. A source that was never checked on this
-machine, for example after `sync --restore` on a new laptop, says so.
+wasn't checked for 7 days, it says `team-ctx last checked 12 days ago; run ctxtra source update to check
+for changes` (Claude Code, Codex, Muse and Pi show it at session start, and `context files` and `doctor`
+show it too). A check is a fetch of the branch that worked, by `source add` or `source update`. A source
+that was never checked on this machine, for example after `source restore` on a new laptop, says so.
 
-When a new commit doesn't continue the accepted one, `sync` warns: the branch was force-pushed. Accepting
-it is still your choice.
+When a new commit doesn't continue the accepted one, `source update` warns: the branch was force-pushed.
+Accepting it is still your choice.
 
-`add` and `sync` change the config as text: they replace the `commit` value or add lines, and keep your
+The commands that change the config change it as text: they replace the `commit` value or add lines, and keep your
 comments and layout. In a flow-style map (`{...}`) they write the file again from its YAML, which keeps
 comments but not the layout. A changed config is checked before it is written, written atomically, and the
 old one is kept in `~/.ctxtra/backups`. A symlinked config stays a symlink. If the source changed in the
-config while `sync` waited for your answer, nothing is accepted.
+config while `source update` waited for your answer, nothing is accepted.
 
 ### Store
 
 - `~/.ctxtra/git/<id>.git`: a bare repository per source.
-- `~/.ctxtra/store/<id>/<commit>/`: the files of each accepted commit, and of each commit `sync` showed you,
+- `~/.ctxtra/store/<id>/<commit>/`: the files of each accepted commit, and of each commit `source update` showed you,
   private and read-only. Sessions
   read only these, and only through `ctxtra://`: a plain path into the store is an error, because a
   pinned source's binding file read that way could reference any file. A missing commit is reported
-  (`run: ctxtra sync --restore`), and the references to it are skipped; the rest of the binding still
+  (`run: ctxtra source restore NAME`), and the references to it are skipped; the rest of the binding still
   applies.
 - `<id>` comes from the URL: a source whose URL changes doesn't use the old data.
-- A commit is deleted from the store 30 days after the last session that used it started (`sync` cleans
-  up). The accepted commits are never deleted: of this config, and of every config that `add` or `sync`
-  used (with `$CTXTRA_CONFIG`, for example), listed in `~/.ctxtra/configs.json`. If one of those, or that
+- A commit is deleted from the store 30 days after the last session that used it started (`source update`
+  cleans up). The accepted commits are never deleted: of this config, and of every config that a ctxtra
+  command changed (with `$CTXTRA_CONFIG`, for example), listed in `~/.ctxtra/configs.json`. If one of those, or that
   list, can't be read, nothing is deleted. A session marks a commit as used before it reads from it; while
   cleaning decides about that commit, the session waits up to a second, and else skips the source's files
   for this session. A session that runs longer than 30 days on an old commit can lose its skill files.
 - `~/.ctxtra/state.json`: per source, the last check and the dismissed commit. Losing it loses the notices.
-- `~/.ctxtra/mappings.json`: the folders of imported clones (above). `~/.ctxtra/configs.json`: the config
-  files `add` and `sync` used.
+- `~/.ctxtra/mappings.json`: the folders of clones added as git sources (above). `~/.ctxtra/configs.json`:
+  the config files that ctxtra commands changed.
 
 ### How ctxtra runs git
 
-- It runs your `git`, so ssh keys, the ssh agent and credential helpers work. Only `add` and `sync` run
-  git, and they may prompt. Sessions never fetch.
+- It runs your `git`, so ssh keys, the ssh agent and credential helpers work. Only `source add`,
+  `source update` and `source restore` run git, and git may prompt. Sessions never fetch.
 - Only the https and ssh transports, and the file transport only to fetch from a clone you named (an
-  imported clone, a `local-git` source). No hooks, no submodules, no automatic maintenance. Nothing is checked
+  clone added as a git source, a `local-git` source). No hooks, no submodules, no automatic maintenance. Nothing is checked
   out, so `.gitattributes` filters (git-lfs, smudge) never run. Diffs use no external diff and no textconv.
 - Environment variables that point git at another repository or config are cleared.
 - Every file path in a commit is checked before anything is written: no `..`, no `.git`, no control
@@ -330,7 +350,7 @@ any of them matches.
   config or a binding file), or is a `ctxtra://<source>/<path>` reference.
 - `instructions` and `skills` support the same doublestar globs as `match`. Quote patterns in YAML
   and on the command line, for example `instructions: ['notes/**/*.md']` or
-  `ctxtra bind notes --global --file '~/notes/**/*.md'`. Skill patterns select folders containing a regular `SKILL.md`, so `skills/**` can select skills
+  `ctxtra binding add notes --global --instruction '~/notes/**/*.md'`. Skill patterns select folders containing a regular `SKILL.md`, so `skills/**` can select skills
   recursively without selecting their parent folders.
 - Glob metacharacters in a path are interpreted as patterns; for literal braces use character classes,
   for example `notes/[{]draft[}].md` to select `notes/{draft}.md`. Metacharacters in a resolved parent
@@ -341,9 +361,9 @@ any of them matches.
   fixed prefix retain the usual trust checks. Every local file still needs to be trusted.
 - Each pattern is limited to 10,000 directory entries and operations, with a maximum traversal depth of
   64. A traversal error or exceeded limit skips the whole pattern, with a problem.
-- Pinned-source patterns expand only against the selected commit. `sync` reviews matching files from
+- Pinned-source patterns expand only against the selected commit. `source update` reviews matching files from
   both the old and proposed commits, including newly matched files. Local patterns are expanded live:
-  new matching files apply immediately. Use `files`, `show` or `explain` to inspect the result.
+  new matching files apply immediately. Use `context files`, `context show` or `context explain` to inspect the result.
 - Each file is added once per session, at its first position, and the same for each skill. Two skills with
   the same `name`: the first is used, the other is reported.
 - `SKILL.md` must start with YAML frontmatter that has a `description`. `name` is optional (default: the
@@ -359,13 +379,13 @@ in order.
 
 With `budget.max-chars`, whole files are dropped from the end until the added text fits. The budget counts
 characters (Unicode code points), not bytes, and covers the whole added text, headers included. The skill
-list is never dropped. `ctxtra explain` shows what was dropped.
+list is never dropped. `ctxtra context explain` shows what was dropped.
 
 ## Capacity
 
 Each agent gets a limited amount of text in full, its capacity. Above it, whole files are dropped from the
 end, the same way as with `budget.max-chars`; with both, the lower limit applies. The skill list is never
-dropped. The message at session start (in the agents that show one), the log, `explain` and `doctor` name
+dropped. The message at session start (in the agents that show one), the log, `context explain` and `doctor` name
 the dropped files.
 
 | Agent | Capacity | How the text gets there |
@@ -448,8 +468,9 @@ arguments it doesn't know, so an older binary still runs a newer setup.
 
 ### Setup notices
 
-After every command but `hook`, `setup`, `doctor`, `help` and `version`, ctxtra prints a line on stderr for
-each setup that needs you, with the command that repairs it. The lines never change the exit code; `doctor`
+After every command that runs, but `hook`, `setup`, `doctor`, `help`, `version` and `completion`, ctxtra
+prints a line on stderr for each setup that needs you, with the command that repairs it. `--help` and usage
+errors print none. The lines never change the exit code; `doctor`
 shows the same lines under each agent instead:
 
 | When | Notice |
@@ -494,6 +515,31 @@ Problems never make ctxtra add more than the config says:
 
 `ctxtra doctor` lists every problem.
 
+## Command line
+
+`ctxtra help` lists the commands, and `ctxtra help COMMAND` (the same as `ctxtra COMMAND --help`) shows one
+with its flags and examples. The commands that change the config are grouped by what they change:
+`source`, `binding-file` and `binding`, each with `add`, `list` and `remove`.
+
+- Exit codes: 0 when the command did what it was asked; 1 when it failed, or when `doctor` or a `context`
+  command found that a session wouldn't get everything it should; 2 for a usage error (an unknown command
+  or flag, a missing argument), with the command's usage hint on stderr.
+- Results go to stdout; problems, warnings, notices and questions go to stderr. In a report (`doctor`,
+  `context explain`, the review of `source update`), its problems and warnings are part of the result, on
+  stdout.
+- `--json` (on `doctor`, `context files`, `context explain`, the `list` commands, `source show` and
+  `source update --check`) prints one JSON object: `schema_version`, `data`, and `diagnostics`, a list of
+  `{severity, message}` with the severity `error`, `warning` or `notice`. New fields can be added; a field
+  doesn't change its meaning within a `schema_version`.
+- ctxtra asks a question only when stdin and stdout are a terminal. `--no-input` turns every question off:
+  a step that needs an answer then fails. No option answers a question for you.
+- `--dry-run` on the commands that change the config, the agents' setup or the installed skills checks the
+  change and shows it, and writes nothing.
+- `--config FILE` uses another config for one command, like `$CTXTRA_CONFIG`. `setup` doesn't take it: the
+  hooks carry no config path, so sessions read `$CTXTRA_CONFIG` or the default file.
+- Paths in arguments are relative to the current folder; in the config they are relative to the config's
+  folder.
+
 ## Limits
 
 | Limit | Value |
@@ -512,7 +558,7 @@ Problems never make ctxtra add more than the config says:
 | `schema` | yes | `ctxtra/v1` |
 | `sources.<name>.trusted-path` | no | A folder of your own files. Absolute or starts with `~`. |
 | `sources.<name>.git` | no | A team repository: `https://`, `ssh://` or `user@host:path`. |
-| `sources.<name>.branch` | with `git` | The branch `sync` follows. |
+| `sources.<name>.branch` | with `git` | The branch `source update` follows. |
 | `sources.<name>.local-git` | no | Your clone, pinned to its committed `HEAD`. Absolute or starts with `~`. |
 | `sources.<name>.commit` | no | With `git` or `local-git`: the accepted commit, a full ID in quotes. |
 | `bindings[]` | no | Your own bindings, see **Binding** below. Paths are relative to the config's folder. |

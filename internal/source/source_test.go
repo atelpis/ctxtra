@@ -3,6 +3,8 @@ package source
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -398,5 +400,35 @@ func TestTouchWaitsBounded(t *testing.T) {
 	}
 	if err := Touch(GenDir("https://h/x", strings.Repeat("a", 40)), 0); err != nil {
 		t.Errorf("Touch after: %v", err)
+	}
+}
+
+// With NoPrompt, a remote that asks for credentials gets no prompt: the
+// user's askpass program isn't run.
+func TestNoPrompt(t *testing.T) {
+	testenv.Home(t)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("WWW-Authenticate", `Basic realm="git"`)
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+	asked := filepath.Join(t.TempDir(), "asked")
+	askpass := filepath.Join(t.TempDir(), "askpass")
+	testenv.Write(t, askpass, "#!/bin/sh\ntouch '"+asked+"'\necho x\n")
+	if err := os.Chmod(askpass, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIT_ASKPASS", askpass)
+	t.Setenv("GIT_SSL_NO_VERIFY", "1")
+	t.Cleanup(func() { NoPrompt = false })
+	for _, noPrompt := range []bool{true, false} {
+		NoPrompt = noPrompt
+		os.Remove(asked)
+		if _, err := Open(srv.URL + "/team").DefaultBranch(context.Background()); err == nil {
+			t.Fatalf("NoPrompt %v: no error", noPrompt)
+		}
+		if _, err := os.Stat(asked); (err == nil) == noPrompt {
+			t.Errorf("NoPrompt %v: askpass ran: %v", noPrompt, err == nil)
+		}
 	}
 }

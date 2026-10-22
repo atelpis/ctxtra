@@ -1,9 +1,9 @@
 # Local expansion is shared by bind, previews and hooks.
-exec ctxtra bind local --global --file '~/notes/**/*.md'
-exec ctxtra files .
+exec ctxtra binding add local --global --instruction '~/notes/**/*.md'
+exec ctxtra context files .
 stdout 'notes/a.md'
 stdout 'notes/sub/b.md'
-exec ctxtra show .
+exec ctxtra context show .
 stdout 'LOCAL_A'
 stdout 'LOCAL_B'
 ! stdout 'EXCLUDED'
@@ -14,40 +14,40 @@ stdout 'LOCAL_B'
 
 # Pinned patterns must include additions in review without a binding edit.
 gitrepo srv/team
-exec ctxtra add $GITSRV/team bindings.yaml
-exec ctxtra show .
+exec ctxtra source add git $GITSRV/team --include bindings.yaml
+exec ctxtra context show .
 stdout 'PINNED_A'
 stdout 'OLD_MATCH'
-exec ctxtra bind own --global --file 'ctxtra://team/notes/*.md'
+exec ctxtra binding add own --global --instruction 'ctxtra://team/notes/*.md'
 rm srv/team/notes/old.md
 cp new.md srv/team/notes/new.md
 cp old.md srv/team/notes/a.md
 gitcommit srv/team
-exec ctxtra show .
+exec ctxtra context show .
 ! stdout 'NEW_MATCH'
 stdin no.txt
-exec ctxtra sync
+exec ctxtra-tty source update
 stdout '\+NEW_MATCH'
 stdout '\+CHANGED_MATCH'
 stdout '-OLD_MATCH'
 stdout 'not accepted'
-exec ctxtra show .
+exec ctxtra context show .
 ! stdout 'NEW_MATCH'
 stdin yes.txt
-exec ctxtra sync
+exec ctxtra-tty source update
 stdout '\+NEW_MATCH'
-exec ctxtra show .
+exec ctxtra context show .
 stdout 'NEW_MATCH'
 stdout 'CHANGED_MATCH'
 
 # New glob errors in the user's config must be visible during sync.
-exec ctxtra bind last --global --file 'ctxtra://team/notes/new*.md'
+exec ctxtra binding add last --global --instruction 'ctxtra://team/notes/new*.md'
 rm srv/team/notes/new.md
 gitcommit srv/team
 stdin no.txt
-exec ctxtra sync
-stdout 'ERROR: .*ctxtra://team/notes/new\*.md.*glob matches no instructions'
-exec ctxtra show .
+exec ctxtra-tty source update
+stdout 'error: .*ctxtra://team/notes/new\*.md.*glob matches no instructions'
+exec ctxtra context show .
 stdout 'NEW_MATCH'
 
 -- notes/a.md --

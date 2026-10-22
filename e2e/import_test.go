@@ -4,7 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -22,16 +21,9 @@ var importFile = map[string]string{
 	"hermes": ".claude/CLAUDE.md",
 }
 
-// importTitle is the agent's name in ctxtra's questions.
-var importTitle = map[string]string{
-	"claude": "Claude Code", "codex": "Codex", "pi": "Pi", "opencode": "OpenCode", "copilot": "Copilot",
-	"antigravity": "Antigravity", "muse": "Muse", "hermes": "Hermes", "dsh": "DSH",
-}
-
-// ctxtra setup in a terminal: Enter installs the skill and accepts the
-// import, and setup starts the agent's interactive app with the import
-// prompt (DSH has none: setup prints the prompt, which the test gives to its
-// headless app). The agent's first request has the prompt, with the agent's
+// ctxtra import --start in a terminal starts the agent's interactive app
+// with the import prompt (DSH has none: import prints the prompt, which the
+// test gives to its headless app). The agent's first request has the prompt, with the agent's
 // own instruction file and its backup, and the ctxtra skill. The mock
 // checks what ctxtra hands over, not what a real model makes of it.
 func TestImportTUI(t *testing.T) {
@@ -51,23 +43,16 @@ func TestImportTUI(t *testing.T) {
 		for _, name := range agents {
 			s.Ctxtra("setup", "--agent", name)
 		}
+		s.Ctxtra("skill", "install", "ctxtra")
 		m := mock.New(t)
 		ui, isTUI := a.Driver.(driver.TUI)
-		tui := startTUI(t, tmux, importScript(t, s, a, agents, m.URL()))
+		tui := startTUI(t, tmux, importScript(t, s, a, m.URL()))
 		t.Cleanup(func() {
 			if t.Failed() {
 				t.Logf("screen:\n%s", tui.screen())
 			}
 		})
 
-		// Each question waits for a line that only it shows: an answer typed
-		// early would answer the question before.
-		tui.until(t, "Your agents can set up ctxtra for you")
-		tui.keys("Enter")
-		tui.until(t, "Work across multiple projects in one session?")
-		tui.keys("n", "Enter")
-		tui.until(t, "this now? [Y/n]")
-		tui.keys("Enter")
 		var text string
 		if isTUI {
 			deadline := time.Now().Add(120 * time.Second)
@@ -75,17 +60,14 @@ func TestImportTUI(t *testing.T) {
 				if time.Now().After(deadline) {
 					t.Fatalf("%s sent no request with the prompt", a.Name())
 				}
-				sc := tui.screen()
-				if strings.Contains(sc, "Which agent?") && !strings.Contains(sc, "starting ") {
-					tui.keys(menuChoice(t, sc, importTitle[a.Name()]), "Enter")
-				} else if keys := ui.Answer(sc); keys != nil {
+				if keys := ui.Answer(tui.screen()); keys != nil {
 					tui.keys(keys...)
 				}
 				time.Sleep(500 * time.Millisecond)
 			}
 			text = firstMain(t, m, 0)
 		} else {
-			// No app to start: setup prints the prompt for the user.
+			// No app to start: import prints the prompt for the user.
 			tui.until(t, "ctxtra backed them up to")
 			text = s.Run(t.TempDir(), driver.Options{Prompt: printedPrompt(t, tui)}).First(mock.Main).text
 		}
@@ -110,10 +92,10 @@ func TestImportTUI(t *testing.T) {
 	})
 }
 
-// importScript writes a script that runs ctxtra setup for the agents in the
-// fixture's environment. For an agent with an interactive app, a shim in
-// PATH runs it against the mock: setup starts it with the prompt only.
-func importScript(t *testing.T, s *Session, a Agent, agents []string, mockURL string) string {
+// importScript writes a script that runs ctxtra import in the fixture's
+// environment: with --start for an agent with an interactive app, which a
+// shim in PATH runs against the mock; import starts it with the prompt only.
+func importScript(t *testing.T, s *Session, a Agent, mockURL string) string {
 	t.Helper()
 	env := s.Env()
 	q := func(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
@@ -136,7 +118,7 @@ func importScript(t *testing.T, s *Session, a Agent, agents []string, mockURL st
 		env = app.Env
 	}
 	var b strings.Builder
-	// The session stays after setup, which can end with the prompt to read.
+	// The session stays after import, which can end with the prompt to read.
 	b.WriteString("#!/bin/sh\ncd " + q(s.Home) + " || exit 1\nenv -i")
 	for _, e := range env {
 		switch {
@@ -148,9 +130,9 @@ func importScript(t *testing.T, s *Session, a Agent, agents []string, mockURL st
 		}
 		b.WriteString(" " + q(e))
 	}
-	b.WriteString(" " + q(ctxtraBin) + " setup")
-	for _, name := range agents {
-		b.WriteString(" --agent " + name)
+	b.WriteString(" " + q(ctxtraBin) + " import")
+	if _, ok := a.Driver.(driver.TUI); ok {
+		b.WriteString(" --start " + a.Name())
 	}
 	b.WriteString("\nsleep 3600\n")
 	path := s.Write("setup-tui.sh", b.String())
@@ -158,17 +140,7 @@ func importScript(t *testing.T, s *Session, a Agent, agents []string, mockURL st
 	return path
 }
 
-// menuChoice is the number of the agent in setup's "Which agent?" list.
-func menuChoice(t *testing.T, screen, title string) string {
-	t.Helper()
-	m := regexp.MustCompile(`(?m)^\s*(\d+)\) ` + regexp.QuoteMeta(title) + `\s*$`).FindStringSubmatch(screen)
-	if m == nil {
-		t.Fatalf("%s isn't in the list:\n%s", title, screen)
-	}
-	return m[1]
-}
-
-// printedPrompt is the prompt that setup printed, from its first line to
+// printedPrompt is the prompt that import printed, from its first line to
 // the line that names the backup, with wrapped lines joined.
 func printedPrompt(t *testing.T, x *tui) string {
 	t.Helper()

@@ -1,37 +1,50 @@
-# --trust on an imported clone: without --as the source becomes trusted
-# under its own name; with --as a separate trusted source is added and the
-# pinned one stays.
+# source trust converts a pinned source in place into a trusted one that
+# reads your clone. source add trusted-path adds a separate trusted source,
+# and the pinned one stays.
 
 gitrepo srv/dotfiles
 gitrepo srv/team-ctx
+gitrepo srv/other
 exec git clone -q $GITSRV/dotfiles dev/dotfiles
 exec git clone -q $GITSRV/team-ctx dev/team-ctx
 
-# Dotfiles imported by mistake, then converted.
-exec ctxtra add dev/dotfiles/ctxtra/work.yaml
+# Dotfiles added as a pinned source by mistake, then converted.
+exec ctxtra source add git dev/dotfiles --include ctxtra/work.yaml
 stdout 'added as source dotfiles'
-exec ctxtra add --trust dev/dotfiles/ctxtra/work.yaml
+exec ctxtra source trust dotfiles --dry-run
+stdout '^would convert source dotfiles to trusted-path ~/dev/dotfiles'
+grep 'git: .*dotfiles' .config/ctxtra/config.yaml
+exec ctxtra source trust dotfiles
 stdout '^converted source dotfiles to trusted-path ~/dev/dotfiles: its files are read from disk now, changes apply right away$'
-stdout 'ctxtra://dotfiles/ctxtra/work.yaml is in include already'
 grep '^    trusted-path: ~/dev/dotfiles$' .config/ctxtra/config.yaml
 ! grep 'git: .*dotfiles' .config/ctxtra/config.yaml
+grep 'ctxtra://dotfiles/ctxtra/work.yaml' .config/ctxtra/config.yaml
 cp live.md dev/dotfiles/work.md
-! exec ctxtra files notes
+! exec ctxtra context files notes
 stdout '^.*/dev/dotfiles/work.md$'
-exec ctxtra show notes
+! exec ctxtra context show notes
 stdout 'LIVE-EDIT'
+! exec ctxtra source trust dotfiles
+stderr 'is a trusted-path source already'
 
 # The team repository: a separate trusted source for editing it live.
-exec ctxtra add dev/team-ctx/bindings/billing.yaml
+exec ctxtra source add git dev/team-ctx --include bindings/billing.yaml
 cp live.md dev/team-ctx/services-overview.md
-exec ctxtra add --trust dev/team-ctx --as team-ctx-live
+exec ctxtra source add trusted-path dev/team-ctx --name team-ctx-live
 stdout '^added source team-ctx-live \(trusted-path: ~/dev/team-ctx\); changes apply right away$'
-stdout '^note: ~/dev/team-ctx/... paths in your bindings were served from team-ctx and are now live$'
+stdout '^note: ~/dev/team-ctx/... paths in your bindings were served from the pinned source team-ctx and are now read from disk$'
 grep 'git: .*team-ctx' .config/ctxtra/config.yaml
 # ctxtra://team-ctx stays pinned; a plain path is now live.
-exec ctxtra show notes
+exec ctxtra context show notes
 stdout 'Contents of .*/.ctxtra/store/.*/services-overview.md'
 stdout 'Contents of .*/dev/team-ctx/jira-ticket.md'
+
+# Without a known clone, trust needs the folder to read.
+exec ctxtra source add git $GITSRV/other
+! exec ctxtra source trust other
+stderr 'no clone of other is known; name the folder of yours: ctxtra source trust other DIR'
+exec ctxtra source trust other dev/dotfiles --dry-run
+stderr '^warning: ~/dev/dotfiles is not a clone of https://'
 
 -- .config/ctxtra/config.yaml --
 schema: ctxtra/v1
@@ -66,3 +79,5 @@ bindings:
     match:
       global: true
     instructions: [../services-overview.md]
+-- srv/other/a.md --
+other

@@ -624,6 +624,50 @@ func RemoveInclude(data []byte, entry string) ([]byte, error) {
 	})
 }
 
+// RemoveBinding removes the binding name from the config's own bindings,
+// and bindings itself when it becomes empty.
+func RemoveBinding(data []byte, name string) ([]byte, error) {
+	doc, err := root(data)
+	if err != nil {
+		return nil, err
+	}
+	list := get(doc, "bindings")
+	i := -1
+	if list != nil && list.Kind == yaml.SequenceNode {
+		i = slices.IndexFunc(list.Content, func(n *yaml.Node) bool { v := get(n, "name"); return v != nil && v.Value == name })
+	}
+	if i < 0 {
+		return nil, fmt.Errorf("no binding %q in the config", name)
+	}
+	last := len(list.Content) == 1
+	want := func(m map[string]any) {
+		if last {
+			delete(m, "bindings")
+			return
+		}
+		l := m["bindings"].([]any)
+		m["bindings"] = slices.Delete(slices.Clone(l), i, i+1)
+	}
+	// A flow value that spans lines ends below its last node: same then
+	// fails, and it is encoded again.
+	if item := list.Content[i]; list.Style&yaml.FlowStyle == 0 {
+		from := item.Line
+		if last {
+			from = keyLine(doc, "bindings")
+		}
+		if out := deleteLines(data, from, lastLine(item)); same(data, out, want) {
+			return out, nil
+		}
+	}
+	return reencode(doc, func() {
+		if last {
+			unset(doc, "bindings")
+		} else {
+			list.Content = slices.Delete(list.Content, i, i+1)
+		}
+	})
+}
+
 // RemoveSource removes the source name, and sources itself when it becomes
 // empty.
 func RemoveSource(data []byte, name string) ([]byte, error) {

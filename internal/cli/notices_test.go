@@ -223,20 +223,21 @@ func TestSetupRecord(t *testing.T) {
 	}
 }
 
-// The notices follow every command but hook, setup, doctor, help and
-// version, and never change the exit code. doctor shows them under each
+// The notices follow every command that runs but hook, setup, doctor, help
+// and version, and never change the exit code. doctor shows them under each
 // agent.
 func TestNoticesFollowCommands(t *testing.T) {
 	h, _ := noticeHome(t)
 	setUp(t, filepath.Join(h, "gone", "ctxtra"), "claude")
 	notice := "claude: the hooks run ~/gone/ctxtra, which doesn't exist; run ctxtra setup --agent claude\n"
-	for _, args := range [][]string{{"version"}, {"help"}, {"--help"}, {"hook", "claude", "SessionStart"}, {"nonsense"}} {
+	for _, args := range [][]string{{"version"}, {"help"}, {"--help"}, {"hook", "claude", "SessionStart"}, {"nonsense"},
+		{"context", "files", "--help"}, {"source"}, {"completion", "bash"}} {
 		if _, _, errOut := run(args...); strings.Contains(errOut, notice) {
 			t.Errorf("%v: %q", args, errOut)
 		}
 	}
-	if code, _, errOut := run("files", h); code != 0 || errOut != notice {
-		t.Errorf("files: %d %q", code, errOut)
+	if code, _, errOut := run("context", "files", h); code != 0 || errOut != notice {
+		t.Errorf("context files: %d %q", code, errOut)
 	}
 	if code, out, errOut := run("doctor", h); code != 1 || !strings.Contains(out, "\n    the hooks run ~/gone/ctxtra, which doesn't exist") || strings.Contains(errOut, notice) {
 		t.Errorf("doctor: %d %q %q", code, out, errOut)
