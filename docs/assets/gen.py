@@ -73,6 +73,9 @@ PACKAGES = [
 ]
 
 
+HEADLINE = ["Your own layer", "of agent context."]
+
+
 def hero_body(c, w, h, top=0, animate=True, paths=True):
     """The hero content; top shifts it down for the taller social preview."""
     col = lambda i: c[FILE_COLORS[i]]
@@ -94,10 +97,9 @@ def hero_body(c, w, h, top=0, animate=True, paths=True):
                           '<animate attributeName="opacity" values="1;0" calcMode="discrete" dur="1.1s" repeatCount="indefinite"/>'))
     else:
         b.append(wordmark(None, "url(#g)", None, c["CYAN"]))
-    b.append(f'<text x="64" y="{t+212}" font-size="38" font-weight="700" fill="{c["TEXT"]}">Context for coding agents,</text>')
-    b.append(f'<text x="64" y="{t+258}" font-size="38" font-weight="700" fill="{c["TEXT"]}">keyed by git repo.</text>')
-    b.append(f'<text x="64" y="{t+304}" font-size="19" fill="{c["MUTED"]}">Nothing written into your repos.</text>')
-    b.append(f'<text x="64" y="{t+331}" font-size="19" fill="{c["MUTED"]}">Nothing to set up per worktree.</text>')
+    # the headline sits just above the agent list
+    for k, line in enumerate(HEADLINE):
+        b.append(f'<text x="64" y="{t + 274 + k*56}" font-size="46" font-weight="700" fill="{c["TEXT"]}">{escape(line)}</text>')
     x = 64
     for name in ["Claude Code", "Codex", "Pi", "OpenCode", "Cursor"]:
         cw = 22 + len(name) * 8.9
@@ -161,7 +163,7 @@ def hero(theme):
     c = THEMES[theme]
     w, h = 1280, 432
     write(f"hero-{theme}.svg", frame(c, w, h, grid=True) + hero_body(c, w, h), w, h,
-          "ctxtra: context for coding agents, keyed by git repo. Nothing written into your repos, nothing to set up per worktree")
+          "ctxtra: your own layer of agent context. Personal and team instruction files and skills, bound to agent sessions")
 
 
 def social():

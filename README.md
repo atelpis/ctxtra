@@ -1,15 +1,8 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/hero-dark.svg">
-    <img src="docs/assets/hero-light.svg" alt="ctxtra: context for coding agents, keyed by git repo. Nothing written into your repos, nothing to set up per worktree" width="100%">
+    <img src="docs/assets/hero-light.svg" alt="ctxtra: your own layer of agent context. Personal and team instruction files and skills, bound to agent sessions" width="100%">
   </picture>
-</p>
-
-<p align="center">
-  <a href="https://github.com/atelpis/ctxtra/actions/workflows/ci.yml"><img src="https://github.com/atelpis/ctxtra/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/atelpis/ctxtra/actions/workflows/e2e.yml"><img src="https://github.com/atelpis/ctxtra/actions/workflows/e2e.yml/badge.svg" alt="e2e against real agents"></a>
-  <img src="https://img.shields.io/github/go-mod/go-version/atelpis/ctxtra" alt="Go version">
-  <img src="https://img.shields.io/badge/status-preview-F59E0B" alt="Status: preview">
 </p>
 
 ctxtra gives each coding agent session the instructions and skills you chose for that repo. Keep them in
