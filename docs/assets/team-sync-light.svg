@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif">
-<title>A team repository is pinned to a commit; new commits reach your sessions only after you accept them in ctxtra sync</title>
+<title>A team repository is pinned to a commit; new commits reach your sessions only after you accept them in ctxtra source update</title>
 <rect x="0.5" y="0.5" width="1279" height="419" rx="18" fill="#FFFFFF" stroke="#D0D7DE"/>
 <defs><pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" fill="#E6EAEF"/></pattern></defs><rect x="1" y="1" width="1278" height="418" rx="18" fill="url(#grid)"/>
 
@@ -22,12 +22,12 @@
 <rect x="640" y="315" width="576" height="30" rx="15" fill="#0E7490" fill-opacity="0.10" stroke="#0E7490" stroke-opacity="0.6"/>
 <text x="656" y="336" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#0E7490">pinned def5678</text>
 <line x1="360" y1="222" x2="360" y2="315" stroke="#7C3AED" stroke-opacity="0.8" stroke-width="2"/>
-<text x="374" y="268.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#57606A">ctxtra add</text>
+<text x="348" y="268.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#57606A" text-anchor="end">ctxtra source add</text>
 <line x1="640" y1="222" x2="640" y2="315" stroke="#1A7F37" stroke-width="2"/>
-<rect x="522" y="246.0" width="236" height="34" rx="8" fill="#F6F8FA" stroke="#1A7F37"/>
-<text x="640" y="268.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#1F2328" text-anchor="middle">sync: diff → <tspan fill="#1A7F37" font-weight="700">Accept? y</tspan></text>
+<rect x="490" y="246.0" width="300" height="34" rx="8" fill="#F6F8FA" stroke="#1A7F37"/>
+<text x="640" y="268.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#1F2328" text-anchor="middle">source update: diff → <tspan fill="#1A7F37" font-weight="700">Accept? y</tspan></text>
 <line x1="980" y1="222" x2="980" y2="246.0" stroke="#CF222E" stroke-width="2" stroke-dasharray="4 4"/>
-<rect x="790" y="246.0" width="380" height="34" rx="8" fill="#F6F8FA" stroke="#CF222E"/>
-<text x="980" y="268.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#1F2328" text-anchor="middle"><tspan fill="#C2410C" font-weight="700">WARNING</tspan> scope widened → <tspan fill="#CF222E" font-weight="700">N</tspan>, keep def5678</text>
-<text x="56" y="384" font-size="17" fill="#57606A">ctxtra keeps its own copy, so you need no clone. Sessions never fetch. <tspan font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1F2328">ctxtra sync --restore</tspan> gives a new laptop exactly the accepted commits.</text>
+<rect x="810" y="246.0" width="380" height="34" rx="8" fill="#F6F8FA" stroke="#CF222E"/>
+<text x="1000" y="268.0" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" fill="#1F2328" text-anchor="middle"><tspan fill="#C2410C" font-weight="700">WARNING</tspan> scope widened → <tspan fill="#CF222E" font-weight="700">N</tspan>, keep def5678</text>
+<text x="56" y="384" font-size="17" fill="#57606A">ctxtra keeps its own copy, so you need no clone. Sessions never fetch. <tspan font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" fill="#1F2328">ctxtra source restore</tspan> gives a new laptop exactly the accepted commits.</text>
 </svg>

@@ -278,14 +278,14 @@ def skill_chat(theme):
     msgs = [
         ("you", [("p", "Add my Go notes to every acme repo")], 0.6),
         ("agent", [("p", "I'll add this binding. OK to run it?"),
-                   ("c", "ctxtra bind go --repo 'github.com/acme/**' --file ~/notes/go-style.md")], 2.4),
+                   ("c", "ctxtra binding add go --repo 'github.com/acme/**' --instruction ~/notes/go-style.md")], 2.4),
         ("you", [("p", "Yes")], 4.6),
         ("agent", [("p", "✓ Done. New sessions in acme repos get go-style.md, in every agent.")], 5.8),
         ("you", [("p", "Why didn't my billing session get the deploy skill?")], 8.2),
-        ("agent", [("r", "ran ctxtra explain ~/dev/acme/billing"),
+        ("agent", [("r", "ran ctxtra context explain ~/dev/acme/billing"),
                    ("p", "Your team repo is pinned to a1b2c3d, and deploy came in a later commit."),
                    ("p", "To review that commit and accept it, run in your terminal:"),
-                   ("c", "ctxtra sync")], 10.4),
+                   ("c", "ctxtra source update")], 10.4),
     ]
     rh = {"p": 22, "r": 22, "c": 32}
     y = 70
@@ -315,7 +315,7 @@ def skill_chat(theme):
         b.append(f'<g opacity="0">{appear(t)}{"".join(parts)}</g>')
         y += bh + 12
     write(f"skill-chat-{theme}.svg", "\n".join(b), w, h,
-          "An agent with the ctxtra skill shows the ctxtra bind command and runs it after you say yes, then explains "
+          "An agent with the ctxtra skill shows the ctxtra binding add command and runs it after you say yes, then explains "
           "why a session didn't get a skill")
 
 
@@ -344,22 +344,22 @@ def team_sync(theme):
         b.append(f'<text x="{xa+16}" y="{bot+6}" font-family="{MONO}" font-size="15" fill="{col}">pinned {sha}</text>')
     # first version: accepted when added
     b.append(f'<line x1="360" y1="{top+46}" x2="360" y2="{bot-15}" stroke="{c["VIOLET"]}" stroke-opacity="0.8" stroke-width="2"/>')
-    b.append(f'<text x="374" y="{mid+5}" font-family="{MONO}" font-size="15" fill="{c["MUTED"]}">ctxtra add</text>')
+    b.append(f'<text x="348" y="{mid+5}" font-family="{MONO}" font-size="15" fill="{c["MUTED"]}" text-anchor="end">ctxtra source add</text>')
     # reviewed and accepted
     gx = 640
     b.append(f'<line x1="{gx}" y1="{top+46}" x2="{gx}" y2="{bot-15}" stroke="{c["GREEN"]}" stroke-width="2"/>')
-    b.append(f'<rect x="{gx-118}" y="{mid-17}" width="236" height="34" rx="8" fill="{c["PANEL"]}" stroke="{c["GREEN"]}"/>')
-    b.append(f'<text x="{gx}" y="{mid+5}" font-family="{MONO}" font-size="15" fill="{c["TEXT"]}" text-anchor="middle">sync: diff → <tspan fill="{c["GREEN"]}" font-weight="700">Accept? y</tspan></text>')
+    b.append(f'<rect x="{gx-150}" y="{mid-17}" width="300" height="34" rx="8" fill="{c["PANEL"]}" stroke="{c["GREEN"]}"/>')
+    b.append(f'<text x="{gx}" y="{mid+5}" font-family="{MONO}" font-size="15" fill="{c["TEXT"]}" text-anchor="middle">source update: diff → <tspan fill="{c["GREEN"]}" font-weight="700">Accept? y</tspan></text>')
     # reviewed and declined
     gx = 980
     b.append(f'<line x1="{gx}" y1="{top+46}" x2="{gx}" y2="{mid-17}" stroke="{c["RED"]}" stroke-width="2" stroke-dasharray="4 4"/>')
-    b.append(f'<rect x="{gx-190}" y="{mid-17}" width="380" height="34" rx="8" fill="{c["PANEL"]}" stroke="{c["RED"]}"/>')
-    b.append(f'<text x="{gx}" y="{mid+5}" font-family="{MONO}" font-size="15" fill="{c["TEXT"]}" text-anchor="middle">'
+    b.append(f'<rect x="{gx-170}" y="{mid-17}" width="380" height="34" rx="8" fill="{c["PANEL"]}" stroke="{c["RED"]}"/>')
+    b.append(f'<text x="{gx+20}" y="{mid+5}" font-family="{MONO}" font-size="15" fill="{c["TEXT"]}" text-anchor="middle">'
              f'<tspan fill="{c["AMBER"]}" font-weight="700">WARNING</tspan> scope widened → <tspan fill="{c["RED"]}" font-weight="700">N</tspan>, keep def5678</text>')
     b.append(f'<text x="56" y="{h-36}" font-size="17" fill="{c["MUTED"]}">ctxtra keeps its own copy, so you need no clone. Sessions never fetch. '
-             f'<tspan font-family="{MONO}" fill="{c["TEXT"]}">ctxtra sync --restore</tspan> gives a new laptop exactly the accepted commits.</text>')
+             f'<tspan font-family="{MONO}" fill="{c["TEXT"]}">ctxtra source restore</tspan> gives a new laptop exactly the accepted commits.</text>')
     write(f"team-sync-{theme}.svg", "\n".join(b), w, h,
-          "A team repository is pinned to a commit; new commits reach your sessions only after you accept them in ctxtra sync")
+          "A team repository is pinned to a commit; new commits reach your sessions only after you accept them in ctxtra source update")
 
 
 # ---------------------------------------------------------------- the story: out of the box, generators, ctxtra

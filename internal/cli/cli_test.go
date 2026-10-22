@@ -1,8 +1,8 @@
 package cli
 
 import (
+	"bufio"
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -31,18 +31,18 @@ bindings:
 `)
 	testenv.Config(t, h, "schema: ctxtra/v1\ninclude: [b.yaml]\n")
 
-	if code, out, errOut := run("files", r); code != 1 || out != filepath.Join(h, "a.md")+"\n" || !strings.Contains(errOut, "missing: "+filepath.Join(h, "gone.md")) {
+	if code, out, errOut := run("context", "files", r); code != 1 || out != filepath.Join(h, "a.md")+"\n" || !strings.Contains(errOut, "missing: "+filepath.Join(h, "gone.md")) {
 		t.Errorf("files: %d %q %q", code, out, errOut)
 	}
-	if code, out, _ := run("show", r); code != 0 || !strings.Contains(out, "Contents of "+filepath.Join(h, "a.md")) {
+	if code, out, _ := run("context", "show", r); code != 1 || !strings.Contains(out, "Contents of "+filepath.Join(h, "a.md")) {
 		t.Errorf("show: %d %q", code, out)
 	}
-	if _, out, _ := run("explain", h); !strings.Contains(out, "- svc (~/.config/ctxtra/b.yaml): repos: not in a git repository") {
-		t.Errorf("explain outside git:\n%s", out)
+	if code, out, _ := run("context", "explain", h); code != 0 || !strings.Contains(out, "- svc (~/.config/ctxtra/b.yaml): repos: not in a git repository") {
+		t.Errorf("explain outside git: %d\n%s", code, out)
 	}
-	if _, out, _ := run("explain", r); !strings.Contains(out, "+ svc (~/.config/ctxtra/b.yaml): repos remote github.com/acme/svc") ||
+	if code, out, _ := run("context", "explain", r); code != 1 || !strings.Contains(out, "+ svc (~/.config/ctxtra/b.yaml): repos remote github.com/acme/svc") ||
 		!strings.Contains(out, "MISSING  "+filepath.Join(h, "gone.md")) {
-		t.Errorf("explain:\n%s", out)
+		t.Errorf("explain: %d\n%s", code, out)
 	}
 	if code, out, _ := run("doctor", r); code != 1 || !strings.Contains(out, "claude: not set up") || !strings.Contains(out, "MISSING") {
 		t.Errorf("doctor: %d\n%s", code, out)
@@ -50,16 +50,23 @@ bindings:
 	if code, out, _ := run("hook", "claude", "SessionStart", "--slot", "0"); code != 0 || out != "{}\n" {
 		t.Errorf("hook without input: %d %q", code, out)
 	}
-	for _, args := range [][]string{{"nope"}, {"files", "a", "b"}, {"setup", "--agent"}, {"setup", "extra"}, {"install"}} {
+	for _, args := range [][]string{
+		{"nope"}, {"context", "files", "a", "b"}, {"setup", "--agent"}, {"setup", "extra"}, {"source", "nope"},
+		{"source", "add", "git"}, {"binding", "add"}, {"skill", "show"}, {"--config", "x.yaml", "setup"},
+		{"source", "update", "--json"}, {"context", "show", "--part", "x"}, {"version", "x"}, {"help", "nope"},
+	} {
 		if code, _, _ := run(args...); code != 2 {
 			t.Errorf("%v: exit %d, want 2", args, code)
 		}
 	}
+	if _, _, e := run("source", "add", "git"); !strings.Contains(e, "ctxtra source add git: expected URL or DIR\nUsage: ctxtra source add git (URL | DIR) [flags]\n") {
+		t.Errorf("usage error: %q", e)
+	}
 	binary = func() (string, []string, error) { return "/opt/homebrew/bin/ctxtra", nil, nil }
 	t.Cleanup(func() { binary = setup.Binary })
-	for _, args := range [][]string{{"setup", "-h"}, {"files", "--help"}, {"help"}} {
-		if code, _, _ := run(args...); code != 0 {
-			t.Errorf("%v: exit %d, want 0", args, code)
+	for _, args := range [][]string{{"setup", "-h"}, {"context", "files", "--help"}, {"help"}, {"help", "source", "add", "git"}, {"source"}, {}, {"--version"}} {
+		if code, out, _ := run(args...); code != 0 || out == "" {
+			t.Errorf("%v: exit %d, want 0 and output", args, code)
 		}
 	}
 	if code, out, _ := run("setup", "--agent", "claude", "--dry-run"); code != 0 || !strings.Contains(out, "Setup would change these files:\n  Claude Code   ~/.claude/settings.json\n") {
@@ -86,77 +93,57 @@ func TestSizeWarnings(t *testing.T) {
 		{strings.Repeat("界\n", 300_000), []string{"claude", "muse", "codex", "antigravity", "copilot"}}, // 1,200,000 bytes
 	} {
 		testenv.Write(t, filepath.Join(h, "b.md"), tc.content)
-		_, out, _ := run("explain", h)
+		_, out, _ := run("context", "explain", h)
 		for _, a := range []string{"claude", "muse", "codex", "antigravity", "copilot", "pi", "hermes"} {
 			warned := strings.Contains(out, ", "+a+" sessions don't get b.md\n")
 			if warned != slices.Contains(tc.warn, a) {
 				t.Errorf("%d bytes: %s warned %v:\n%s", len(tc.content), a, warned, out)
 			}
 		}
-		if slices.Contains(tc.warn, "claude") && !strings.Contains(out, "WARNING: over Claude Code's limit of 360,000 characters, claude sessions don't get b.md\n") {
+		if slices.Contains(tc.warn, "claude") && !strings.Contains(out, "warning: over Claude Code's limit of 360,000 characters, claude sessions don't get b.md\n") {
 			t.Errorf("warning:\n%s", out)
 		}
 	}
 }
 
-// In a terminal, setup offers each skill that isn't installed, with a
-// question of its own; the answer decides.
-func TestSetupOffersSkill(t *testing.T) {
+// After setup, the next steps name the skills that no binding adds, and
+// import while there are files to import and no binding adds instructions.
+func TestSetupNextSteps(t *testing.T) {
 	h := testenv.Home(t)
-	isTerminal := interactive
 	binary = func() (string, []string, error) { return "/opt/homebrew/bin/ctxtra", nil, nil }
-	interactive = func(io.Reader) bool { return true }
-	t.Cleanup(func() { binary, interactive = setup.Binary, isTerminal })
-	setupWith := func(answer string) string {
-		var o, e bytes.Buffer
-		if code := Run([]string{"setup", "--agent", "claude"}, IO{In: strings.NewReader(answer), Out: &o, Err: &e}, "test"); code != 0 {
-			t.Fatalf("setup: %d %s", code, e.String())
+	t.Cleanup(func() { binary = setup.Binary })
+	steps := func() string {
+		t.Helper()
+		code, out, e := run("setup", "--agent", "claude")
+		if code != 0 {
+			t.Fatalf("setup: %d %s", code, e)
 		}
-		return o.String()
+		_, next, _ := strings.Cut(out, "Next:\n")
+		return next
 	}
-	const base, follow = "Your agents can set up ctxtra for you\n", "Work across multiple projects in one session?\n"
-	for _, answer := range []string{"n\nn\n", "no\nx\n", "n\n", ""} {
-		out := setupWith(answer)
-		if !strings.Contains(out, base) || !strings.Contains(out, follow) || strings.Count(out, " skill? [Y/n] Skipped. To install it later: ctxtra skill install") != 2 {
-			t.Errorf("declined with %q:\n%s", answer, out)
-		}
+	if next := steps(); !strings.Contains(next, "ctxtra skill install ctxtra ") || !strings.Contains(next, "ctxtra skill install ctxtra-follow") ||
+		strings.Contains(next, "ctxtra import") {
+		t.Errorf("new config:\n%s", next)
 	}
-	if _, err := os.Stat(filepath.Join(h, ".ctxtra", "skills")); err == nil {
-		t.Error("declined, but a skill was written")
+	testenv.Write(t, filepath.Join(h, ".claude", "CLAUDE.md"), "claude rules\n")
+	if code, _, e := run("skill", "install", "ctxtra"); code != 0 {
+		t.Fatalf("skill install: %s", e)
 	}
-	want := `ctxtra is already set up for Claude Code.
-
-Your agents can set up ctxtra for you
-ctxtra comes with a skill that makes getting started easy. Your agents can create your bindings, change your config, and bring the instructions you already have into ctxtra.
-
-Install the ctxtra skill? [Y/n] 
-Installed to ~/.ctxtra/skills/ctxtra
-Created ~/.config/ctxtra/config.yaml
-The skill is ready for new agent sessions in any folder. Ask your agent to help you get started with ctxtra.
-
-Work across multiple projects in one session?
-The ctxtra-follow skill helps your agent pick up the instructions and skills you've configured for each project as your work moves between them.
-
-Install the ctxtra-follow skill? [Y/n] Skipped. To install it later: ctxtra skill install ctxtra-follow
-`
-	if out := setupWith("\nn\n"); out != want {
-		t.Errorf("accepted the first with Enter, declined the second:\n%s\nwant:\n%s", out, want)
+	if next := steps(); strings.Contains(next, "ctxtra skill install ctxtra ") || !strings.Contains(next, "ctxtra import") {
+		t.Errorf("skill installed, a file to import:\n%s", next)
 	}
-	want = `ctxtra is already set up for Claude Code.
-
-Work across multiple projects in one session?
-The ctxtra-follow skill helps your agent pick up the instructions and skills you've configured for each project as your work moves between them.
-
-Install the ctxtra-follow skill? [Y/n] 
-Installed to ~/.ctxtra/skills/ctxtra-follow
-Added to ~/.config/ctxtra/config.yaml
-The skill is ready for new agent sessions in any folder.
-`
-	if out := setupWith("\n"); out != want {
-		t.Errorf("accepted the second with Enter:\n%s\nwant:\n%s", out, want)
+	testenv.Write(t, filepath.Join(h, "notes.md"), "mine\n")
+	if code, _, e := run("binding", "add", "notes", "--global", "--instruction", filepath.Join(h, "notes.md")); code != 0 {
+		t.Fatalf("binding add: %s", e)
 	}
-	if out := setupWith(""); strings.Contains(out, "skill? [Y/n]") {
-		t.Errorf("installed, but asked again:\n%s", out)
+	if code, _, e := run("skill", "install", "ctxtra-follow"); code != 0 {
+		t.Fatalf("skill install: %s", e)
+	}
+	if code, out, _ := run("setup", "--agent", "claude"); code != 0 || strings.Contains(out, "Next:") {
+		t.Errorf("nothing left to do: %d\n%s", code, out)
+	}
+	if code, out, _ := run("setup", "--agent", "claude", "--dry-run"); code != 0 || strings.Contains(out, "Next:") {
+		t.Errorf("dry run: %d\n%s", code, out)
 	}
 }
 
@@ -202,5 +189,24 @@ func TestHookArgs(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(h, ".ctxtra", "log.jsonl")); strings.Count(string(b), "bad hook arguments") != 2 {
 		t.Errorf("log:\n%s", b)
+	}
+}
+
+// Only a whole line is an answer: input that ends before the end of a line
+// accepts and dismisses nothing.
+func TestAsk(t *testing.T) {
+	for _, c := range []struct {
+		in      string
+		yes, ok bool
+	}{
+		{"y\n", true, true}, {"yes\n", true, true}, {"n\n", false, true}, {"\n", false, true},
+		{"", false, false}, {"y", false, false}, {"n", false, false},
+	} {
+		var e bytes.Buffer
+		s := &sources{IO: IO{Err: &e}, in: bufio.NewReader(strings.NewReader(c.in))}
+		yes, err := s.ask("Accept? [y/N] ")
+		if yes != c.yes || (err == nil) != c.ok {
+			t.Errorf("%q: %v %v", c.in, yes, err)
+		}
 	}
 }

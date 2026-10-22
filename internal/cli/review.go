@@ -46,13 +46,17 @@ func (u *used) add(cfg *config.Config, gen string) {
 	}
 }
 
-// review shows what changes in src from its accepted commit to commit:
-// files the config uses (with the accepted commit or the new one) in full,
-// every other changed file by name, and warnings for changed match blocks and
-// broken references. With full, every changed file in full. Both commits
-// must be in the store.
+// review shows what changes in src from its accepted commit, or from
+// nothing for a source without one, to commit: files the config uses (with
+// the accepted commit or the new one) in full, every other changed file by
+// name, and warnings for changed match blocks and broken references. With
+// full, every changed file in full. Both commits must be in the store.
 func (s *sources) review(r *source.Repo, src config.Source, commit string, full bool) error {
-	changes, err := r.Changes(s.ctx, src.Commit, commit)
+	old := src.Commit
+	if old == "" {
+		old = emptyTree(commit)
+	}
+	changes, err := r.Changes(s.ctx, old, commit)
 	if err != nil {
 		return err
 	}
@@ -67,7 +71,7 @@ func (s *sources) review(r *source.Repo, src config.Source, commit string, full 
 	// Problems introduced by the proposed source version.
 	for _, p := range after.Problems {
 		if (strings.Contains(p, paths.Tilde(newGen)) || strings.Contains(p, config.Scheme+src.Name+"/")) && !slices.Contains(before.Problems, strings.ReplaceAll(p, paths.Tilde(newGen), paths.Tilde(oldGen))) {
-			fmt.Fprintf(s.Out, "  ERROR: %s\n", source.Sanitize(strings.ReplaceAll(p, paths.Tilde(newGen)+"/", config.Scheme+src.Name+"/")))
+			fmt.Fprintf(s.Out, "  error: %s\n", source.Sanitize(strings.ReplaceAll(p, paths.Tilde(newGen)+"/", config.Scheme+src.Name+"/")))
 		}
 	}
 
@@ -88,7 +92,7 @@ func (s *sources) review(r *source.Repo, src config.Source, commit string, full 
 		for _, c := range batch {
 			ps = append(ps, c.Path)
 		}
-		d, err := r.Diff(s.ctx, src.Commit, commit, ps...)
+		d, err := r.Diff(s.ctx, old, commit, ps...)
 		if err != nil {
 			return err
 		}
@@ -102,9 +106,18 @@ func (s *sources) review(r *source.Repo, src config.Source, commit string, full 
 		for _, c := range other {
 			fmt.Fprintf(s.Out, "  %s\n", describeChange(c))
 		}
-		fmt.Fprintln(s.Out, "Accepting accepts these files too: a file you reference later is used without review. ctxtra sync --full shows them.")
+		fmt.Fprintln(s.Out, "Accepting accepts these files too: a file you reference later is used without review. ctxtra source update --full shows them.")
 	}
 	return nil
+}
+
+// emptyTree is git's empty tree in the object format of commit: the base of
+// the review of a source's first commit. Git knows it without the object.
+func emptyTree(commit string) string {
+	if len(commit) == 64 {
+		return "6ef19b41225c5369f1c104d45d8d85efa9b057b53b14b4b9b939dd74decc5321"
+	}
+	return "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 }
 
 // describeChange is one line about a changed file that isn't shown in full.
@@ -165,12 +178,12 @@ func (s *sources) selectorWarnings(src config.Source, before, after *config.Conf
 		prev, ok := old[k]
 		switch {
 		case !ok:
-			fmt.Fprintf(s.Out, "WARNING: new binding %s in %s, for %s\n", k.name, k.file, sel)
+			fmt.Fprintf(s.Out, "warning: new binding %s in %s, for %s\n", k.name, k.file, sel)
 		case reflect.DeepEqual(prev, sel):
 		case sel.Global:
-			fmt.Fprintf(s.Out, "WARNING: binding %s in %s now applies to every session (was: %s)\n", k.name, k.file, prev)
+			fmt.Fprintf(s.Out, "warning: binding %s in %s now applies to every session (was: %s)\n", k.name, k.file, prev)
 		default:
-			fmt.Fprintf(s.Out, "WARNING: binding %s in %s: match changed from %s to %s\n", k.name, k.file, prev, sel)
+			fmt.Fprintf(s.Out, "warning: binding %s in %s: match changed from %s to %s\n", k.name, k.file, prev, sel)
 		}
 	}
 }

@@ -12,12 +12,6 @@ import (
 	"github.com/atelpis/ctxtra/internal/state"
 )
 
-// quiet are the commands that setupNotices doesn't follow: hook, whose
-// output is for the agent, setup, which just ran, doctor, which shows the
-// same lines under each agent, and the ones that only print help or the
-// version.
-var quiet = []string{"hook", "help", "-h", "--help", "version", "setup", "doctor"}
-
 // running is this binary, "" when it can't be compared; a variable for
 // tests.
 var running = setup.Running

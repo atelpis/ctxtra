@@ -58,7 +58,7 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestStartup` | Bound files reach the model at session start, once each, in config order after the repo's `AGENTS.md`, in a worktree outside the project folder; a binding for another repo adds nothing; the hook ran; no checkout changed |
 | `TestSubagent` | A subagent gets the files; the main agent still has them once after tool calls. In Antigravity a subagent is a session of its own, so the hook runs twice |
 | `TestSkills` | The skill's name and description are listed, its body isn't, until the agent reads `SKILL.md` (or loads it with OpenCode's `skill` tool); a skill bound to another repo isn't listed |
-| `TestCtxtraSkill` | The ctxtra skill that `ctxtra skill install` binds is listed like any other skill, and its body reaches the model only when the agent loads it |
+| `TestCtxtraSkill` | The ctxtra skill that `ctxtra skill install ctxtra` binds is listed like any other skill, and its body reaches the model only when the agent loads it |
 | `TestCoexist` | Another tool's session-start hook keeps working next to ctxtra's and after `setup --remove` |
 | `TestUntrustedHookAddsNothing` | Codex without hook trust: the session works and gets nothing from ctxtra |
 | `TestUserMessage` | Claude and Muse get the summary message for the user from the hook |
@@ -72,8 +72,8 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestUpgradeFromRelease` | Every agent with each setup that a release wrote (`testdata/clients/<id>/<agent>` at the repository root, with the binary under test linked at `$HOME/bin/ctxtra`), with text below, near and above what that setup can carry from this binary (`carries` in [upgrade_test.go](upgrade_test.go)): every file up to that amount, files over it dropped whole, and the log (and the user message, where the agent shows one) says to run `ctxtra setup` only when a setup now would carry more |
 | `TestCodexTrustTUI` | Interactive Codex in tmux: one "Trust all and continue" in the hook review trusts ctxtra's hooks, which set a finite `additionalContextLimit`; the session gets the text in full; `setup` run again asks for no new trust. Needs tmux |
 | `TestCodexUpgradeKeepsTrust` | Interactive Codex in tmux: after the user trusted ctxtra's hooks, a newer binary at the same path asks for no new trust, and the session gets the text in full. Needs tmux |
-| `TestImportTUI` | `ctxtra setup` in tmux: Enter installs the skill and accepts the import, setup backs up the agent's own instruction file and starts the agent's interactive app through a shim pointed at the mock (Hermes, which has no such file, moves Claude Code's; DSH, without a terminal app, gets the prompt that setup prints). The first request has the import prompt with the file and its backup, and the ctxtra skill. It doesn't check what a real model does with them. Needs tmux |
-| `TestNativeFiles` | The files that `ctxtra import --no-start` lists for an agent are the user-level files that reach its model, out of a set of candidates, apart from files it leaves out on purpose (`nativeExcluded`); a file it lists as not read now doesn't reach it |
+| `TestImportTUI` | `ctxtra import --start AGENT` in tmux, with the ctxtra skill installed: import backs up the agent's own instruction file and starts the agent's interactive app through a shim pointed at the mock (Hermes, which has no such file, moves Claude Code's; DSH, without a terminal app, gets the prompt that `ctxtra import` prints). The first request has the import prompt with the file and its backup, and the ctxtra skill. It doesn't check what a real model does with them. Needs tmux |
+| `TestNativeFiles` | The files that `ctxtra import` lists for an agent are the user-level files that reach its model, out of a set of candidates, apart from files it leaves out on purpose (`nativeExcluded`); a file it lists as not read now doesn't reach it |
 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped
 with the reason for the others. A declared capability that stops working fails the test.
@@ -82,7 +82,7 @@ Not covered here, and checked by hand before a release:
 
 - What the interactive TUI shows (the session-start message on screen), `/clear`, `/compact`, and resume in
   Claude, Codex, Pi and OpenCode. These need a pseudo-terminal runner.
-- What a real model makes of the import that `ctxtra setup` and `ctxtra import` start: the merged file,
+- What a real model makes of the import that `ctxtra import --start` starts: the merged file,
   its questions, and the cleanup of the old files.
 - Codex hook trust through `/hooks`. The other tests run Codex with `--dangerously-bypass-hook-trust`;
   `TestCodexTrustTUI` and `TestCodexUpgradeKeepsTrust` cover the startup hook review only.

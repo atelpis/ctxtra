@@ -270,7 +270,7 @@ func TestNotices(t *testing.T) {
 	work := filepath.Join(h, "work")
 	os.MkdirAll(work, 0o755)
 
-	if got := notices(work); !slices.Equal(got, []string{"team not checked for new commits on this machine yet; run ctxtra sync"}) {
+	if got := notices(work); !slices.Equal(got, []string{"team not checked for new commits on this machine yet; run ctxtra source update"}) {
 		t.Errorf("never checked: %v", got)
 	}
 	if got := notices(h); len(got) != 0 {
@@ -285,7 +285,7 @@ func TestNotices(t *testing.T) {
 		e.LastCheck = time.Now().Add(-12*24*time.Hour - time.Hour)
 		e.Dismissed = strings.Repeat("b", 40)
 	})
-	want := []string{"team last checked 12 days ago; run ctxtra sync to check for changes", "team bbbbbbb not accepted (dismissed); you have aaaaaaa"}
+	want := []string{"team last checked 12 days ago; run ctxtra source update to check for changes", "team bbbbbbb not accepted (dismissed); you have aaaaaaa"}
 	if got := notices(work); !slices.Equal(got, want) {
 		t.Errorf("old check and dismissed: %v", got)
 	}

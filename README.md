@@ -15,8 +15,8 @@ It's for you if:
   each one with a PR,
 - you have notes for a repo that you can't or don't want to commit, like a client's repo or your team's,
 - you run agents in worktrees, and a new worktree starts without your `CLAUDE.local.md`,
-- you use more than one agent, and keep copying text between `CLAUDE.md` and `AGENTS.md` (setup offers
-  to merge them into one file, and backs up the originals).
+- you use more than one agent, and keep copying text between `CLAUDE.md` and `AGENTS.md` (`ctxtra import`
+  merges them into one file, and backs up the originals).
 
 ```bash
 go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
@@ -70,7 +70,7 @@ bindings:
 ## Ask your agent to set it up
 
 ctxtra ships with skills that teach your agents its commands and config, so you can try it without reading
-the docs. `setup` offers to add them. Then ask any agent in your own words: to add your notes to some repos,
+the docs: `ctxtra skill install ctxtra` adds them. Then ask any agent in your own words: to add your notes to some repos,
 to add your team's repo, to move your existing `CLAUDE.md` and `AGENTS.md` into ctxtra, or why a session
 didn't get a file. The agent shows you each command before it runs it and waits for your OK. It never
 trusts a repo or accepts a team update for you.
@@ -78,7 +78,7 @@ trusts a repo or accepts a team update for you.
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/skill-chat-dark.svg">
-    <img src="docs/assets/skill-chat-light.svg" alt="An agent with the ctxtra skill shows the ctxtra bind command and runs it after you say yes, then explains why a session didn't get a skill" width="100%">
+    <img src="docs/assets/skill-chat-light.svg" alt="An agent with the ctxtra skill shows the ctxtra binding add command and runs it after you say yes, then explains why a session didn't get a skill" width="100%">
   </picture>
 </p>
 
@@ -89,15 +89,15 @@ always apply belong in the context from the start. ctxtra adds your bound instru
 starts, chosen by folder and repo, not by the model. Bound skills are listed next to them, for the tasks
 that need them.
 
-Only what you bind gets in. `ctxtra show DIR` prints the exact text a session in `DIR` gets, and
-`ctxtra explain DIR` shows why each binding matched or didn't.
+Only what you bind gets in. `ctxtra context show DIR` prints the exact text a session in `DIR` gets, and
+`ctxtra context explain DIR` shows why each binding matched or didn't.
 
 ## Share packages with your team
 
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/team-sync-dark.svg">
-    <img src="docs/assets/team-sync-light.svg" alt="A team repository is pinned to a commit; new commits reach your sessions only after you accept them in ctxtra sync" width="100%">
+    <img src="docs/assets/team-sync-light.svg" alt="A team repository is pinned to a commit; new commits reach your sessions only after you accept them in ctxtra source update" width="100%">
   </picture>
 </p>
 
@@ -106,13 +106,13 @@ A package is a git repo of Markdown files and skills, with bindings that say whe
 it there, with no PRs to the billing repo:
 
 ```bash
-ctxtra add git@github.com:acme/team-ctx.git bindings/billing.yaml
+ctxtra source add git git@github.com:acme/team-ctx.git --include bindings/billing.yaml
 ```
 
-Each person stays at the commit they accepted, like a lockfile. `ctxtra sync` shows the diff of a new commit
+Each person stays at the commit they accepted, like a lockfile. `ctxtra source update` shows the diff of a new commit
 and warns when a binding starts to match more sessions. A package's bindings can point only to its own
 files, never to `~/.ssh` or anything else on your disk. Its text still goes to your agent, though, and
-`ctxtra add` accepts the current commit, so read a package before you add it, as you would read code before
+`ctxtra source add` accepts the current commit, so read a package before you add it, as you would read code before
 you run it.
 
 ## Works with your agents
@@ -122,7 +122,7 @@ Hermes Agent · Muse Code · DeepSeek Harness
 
 Only use Claude Code? You still get notes per repo that you don't commit, in every worktree, and skills
 only in the repos that need them. Unlike a hook of your own that prints a file, ctxtra matches by git
-remote, and `ctxtra explain` says why a file is missing.
+remote, and `ctxtra context explain` says why a file is missing.
 
 The tests run nine of these agents' real binaries against a mock model and check what reaches
 it, and a nightly job runs them against the latest releases. You keep running plain `claude` or `codex`.
@@ -131,7 +131,8 @@ it, and a nightly job runs them against the latest releases. You keep running pl
 
 ```bash
 go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
-ctxtra setup          # say yes when it offers the skills
+ctxtra setup
+ctxtra skill install ctxtra    # lets your agents set up ctxtra for you
 ```
 
 Then open your agent in one of your repos and ask it, for example: "Use ctxtra to add a notes file for this
@@ -139,8 +140,8 @@ repo to every session here." Or do it yourself, in the repo:
 
 ```bash
 mkdir -p ~/notes && touch ~/notes/my-repo.md       # write your notes for this repo in this file
-ctxtra bind my-repo --dir "$PWD" --file ~/notes/my-repo.md
-ctxtra explain        # what a session here gets, and why
+ctxtra binding add my-repo --dir "$PWD" --instruction ~/notes/my-repo.md
+ctxtra context explain    # what a session here gets, and why
 ```
 
 The next session in this repo, or in any worktree of it, gets your notes. To match every clone by its

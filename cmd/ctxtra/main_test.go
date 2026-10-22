@@ -19,12 +19,21 @@ import (
 
 	"github.com/rogpeppe/go-internal/testscript"
 
+	"github.com/atelpis/ctxtra/internal/cli"
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
+// ctxtra-tty is ctxtra as if stdin and stdout were a terminal, for the
+// commands that ask only there.
 func TestMain(m *testing.M) {
-	testscript.Main(m, map[string]func(){"ctxtra": main})
+	testscript.Main(m, map[string]func(){
+		"ctxtra": main,
+		"ctxtra-tty": func() {
+			cli.Interactive = func(cli.IO) bool { return true }
+			main()
+		},
+	})
 }
 
 func TestScript(t *testing.T) {

@@ -42,7 +42,7 @@ bindings:
 
 	// Only what the other repository adds: not the global file, nor the file
 	// and skill that the session's repository has too.
-	for _, args := range [][]string{{"show", other, "--session", svc}, {"show", "--session", svc, other}} {
+	for _, args := range [][]string{{"context", "show", other, "--exclude-session", svc}, {"context", "show", "--exclude-session", svc, other}} {
 		code, out, _ := run(args...)
 		if code != 0 || !strings.Contains(out, "MARK-OTHER") || !strings.Contains(out, "<name>lint</name>") {
 			t.Errorf("%v: %d\n%s", args, code, out)
@@ -62,13 +62,13 @@ bindings:
 			t.Errorf("%v: no list of the files the session has\n%s", args, out)
 		}
 	}
-	code, out, _ := run("show", filepath.Join(svc, "sub"), "--session", svc, "--part", "1")
-	if want := "(nothing is added here beyond what sessions in the --session folders get)\n"; code != 0 || out != want {
+	code, out, _ := run("context", "show", filepath.Join(svc, "sub"), "--exclude-session", svc, "--part", "1")
+	if want := "(nothing is added here beyond what sessions in the --exclude-session folders get)\n"; code != 0 || out != want {
 		t.Errorf("same repository: %d %q, want %q", code, out, want)
 	}
 
 	// Several folders: what each of them gets is left out.
-	code, out, _ = run("show", third, "--session", svc, "--session", other)
+	code, out, _ = run("context", "show", third, "--exclude-session", svc, "--exclude-session", other)
 	if code != 0 || !strings.Contains(out, "MARK-THIRD") || strings.Contains(out, "MARK-SHARED") || strings.Contains(out, "MARK-OTHER") || strings.Contains(out, "MARK-SVC") ||
 		!strings.Contains(out, "- "+filepath.Join(h, "ctx", "shared.md")) || !strings.Contains(out, "- "+filepath.Join(h, "ctx", "other.md")) {
 		t.Errorf("two sessions: %d\n%s", code, out)
@@ -85,10 +85,10 @@ bindings:
     match: {global: true}
     instructions: [~/ctx/svc.md]
 `)
-	if _, out, _ := run("show", other, "--session", svc); strings.Contains(out, "MARK-SVC") || !strings.Contains(out, "- "+filepath.Join(h, "ctx", "svc.md")+" (binding: all ") {
+	if _, out, _ := run("context", "show", other, "--exclude-session", svc); strings.Contains(out, "MARK-SVC") || !strings.Contains(out, "- "+filepath.Join(h, "ctx", "svc.md")+" (binding: all ") {
 		t.Errorf("global here, from a repository binding there:\n%s", out)
 	}
-	if _, out, _ := run("show", other, "--session", h); !strings.Contains(out, "(nothing is added here beyond") {
+	if _, out, _ := run("context", "show", other, "--exclude-session", h); !strings.Contains(out, "(nothing is added here beyond") {
 		t.Errorf("global here and there:\n%s", out)
 	}
 	testenv.Config(t, h, `schema: ctxtra/v1
@@ -108,7 +108,7 @@ bindings:
 	next := regexp.MustCompile(`\n\[ctxtra: part (\d+) of (\d+); for the next part, run the same command with --part (\d+)\]\n$`)
 	var text strings.Builder
 	for n := 1; ; n++ {
-		code, out, errOut := run("show", other, "--session", svc, "--part", fmt.Sprint(n))
+		code, out, errOut := run("context", "show", other, "--exclude-session", svc, "--part", fmt.Sprint(n))
 		if code != 0 {
 			t.Fatalf("part %d: %d %s", n, code, errOut)
 		}
@@ -131,7 +131,7 @@ bindings:
 	if got := strings.Count(text.String(), `MARK-OTHER line\u200b\u200b\u200b of a long file`); got != 400 {
 		t.Errorf("the parts have %d lines of the file, want 400", got)
 	}
-	if code, _, errOut := run("show", other, "--part", "99"); code != 2 || !strings.Contains(errOut, "--part 99: the text has") {
+	if code, _, errOut := run("context", "show", other, "--part", "99"); code != 2 || !strings.Contains(errOut, "--part 99: the text has") {
 		t.Errorf("--part 99: %d %q", code, errOut)
 	}
 
@@ -147,7 +147,7 @@ bindings:
     match: {repos: [{remote: github.com/acme/other}]}
     instructions: [~/ctx/big.md]
 `)
-	if _, out, _ := run("show", other, "--session", svc); !strings.Contains(out, "MARK-BIG") || strings.Contains(out, "Files that ctxtra also adds") {
+	if _, out, _ := run("context", "show", other, "--exclude-session", svc); !strings.Contains(out, "MARK-BIG") || strings.Contains(out, "Files that ctxtra also adds") {
 		t.Errorf("over an agent's limit: the text isn't there\n%.500s", out)
 	}
 }
@@ -170,7 +170,7 @@ bindings:
     instructions: ["`+strings.ReplaceAll(file, "\x1b", `\e`)+`"]
 `)
 	for n := 1; ; n++ {
-		code, out, errOut := run("show", other, "--part", fmt.Sprint(n))
+		code, out, errOut := run("context", "show", other, "--part", fmt.Sprint(n))
 		if code != 0 || !strings.Contains(out, "MARK-LONG") {
 			t.Fatalf("part %d: %d %s\n%.300s", n, code, errOut, out)
 		}

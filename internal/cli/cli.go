@@ -2,18 +2,21 @@
 package cli
 
 import (
+	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 
-	"github.com/atelpis/ctxtra/internal/agent/registry"
+	"github.com/spf13/cobra"
+
 	"github.com/atelpis/ctxtra/internal/hook"
-	"github.com/atelpis/ctxtra/internal/setup"
+	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/atelpis/ctxtra/internal/source"
 	"github.com/atelpis/ctxtra/internal/term"
 )
 
@@ -23,164 +26,168 @@ type IO struct {
 	Out, Err io.Writer
 }
 
-var usage = fmt.Sprintf(`ctxtra: add your instruction files and skills to agent sessions (preview)
+// app holds what one run of ctxtra shares between its commands: the
+// global flags and the command that ran.
+type app struct {
+	IO
+	version string
+	config  string // --config
+	noInput bool   // --no-input
+	ran     *cobra.Command
+}
 
-Usage:
-  ctxtra setup [--agent A]... [--remove] [--dry-run]
-                          add hooks that run this binary to your user-level agent configs;
-                          --remove removes only ctxtra's entries
-  ctxtra add <git URL> [<binding file in the repo>] [--as NAME] [--branch BRANCH]
-                          add a team repository as a pinned source; its files change
-                          only when you accept a new commit with sync
-  ctxtra add <binding file> [--trust] [--as NAME]
-                          include one of your binding files; --trust adds its repository
-                          as a trusted source (read from disk, changes apply right away)
-  ctxtra add --trust <folder>  add a folder of your own files as a trusted source
-  ctxtra add --local-git <clone> [--as NAME]
-                          add your clone of a team repository as a pinned source that
-                          follows its committed HEAD, to try changes before you push
-  ctxtra bind NAME (--global | --dir PATTERN... | --repo REMOTE...) [--file FILE]... [--skill FOLDER]...
-               [--dry-run]
-                          add a binding to the config; it is written only when its
-                          files exist and are trusted; --dry-run only checks it
-  ctxtra remove <source>|<include entry>
-                          remove a source with its include entries, or one entry
-  ctxtra add ctxtra://<source>/<binding file>
-                          include a binding file from a source you have
-  ctxtra sync [--full] [SOURCE]...
-                          fetch pinned sources, show what changed, and accept it;
-                          --full shows changed files you don't use in full too
-  ctxtra sync --restore [SOURCE]...
-                          fetch exactly the commits in the config (a new laptop, a lost
-                          store); changes nothing in the config
-  ctxtra files [DIR]      files and skills a session in DIR gets (default: .)
-  ctxtra show [DIR] [--session FOLDER]... [--part N]
-                          the exact text a session in DIR gets; --session prints only
-                          what DIR adds to a session in FOLDER; --part prints one part
-                          of a long text
-  ctxtra explain [DIR]    why each binding matches or not
-  ctxtra doctor [DIR]     config problems, setup state, Codex trust, recent hook runs
-  ctxtra skill [install] [NAME]
-                          show one of ctxtra's skills; install adds it to every session.
-                          ctxtra (default): lets your agents set up and change ctxtra.
-                          ctxtra-follow: when an agent's work moves to another folder,
-                          it gets your bindings for that folder too
-  ctxtra import [--no-start]
-                          back up the instruction files your agents have of their own,
-                          and start an agent that moves them into ctxtra with the skill;
-                          --no-start (or no terminal) only backs them up and lists them
-  ctxtra help [TOPIC]     this text, or a topic of the docs of this version
-  ctxtra hook AGENT [EVENT [--slot K --of N]]
-                          hook entry point; reads the agent's hook JSON on stdin
-  ctxtra version
+// exitCode ends a command that has said what went wrong.
+type exitCode int
 
-Agents: %s. Without --agent: every agent found on this machine.
-Config: $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml.
+func (e exitCode) Error() string { return "exit status " + strconv.Itoa(int(e)) }
 
-Help topics (ctxtra help TOPIC):
-%s`, strings.Join(registry.Names(), ", "), helpTopics())
+// code is the error for an exit code: nil for 0.
+func code(n int) error {
+	if n == 0 {
+		return nil
+	}
+	return exitCode(n)
+}
 
-// Run runs one command and returns the exit code.
+// Run runs one command and returns the exit code: 0 for success, 1 when
+// the command failed, 2 for a usage error.
 func Run(args []string, stdio IO, version string) int {
+	if len(args) > 0 && args[0] == "hook" {
+		return runHook(args[1:], stdio)
+	}
+	// Output can hold text from sources (selectors, paths, diffs): no
+	// control characters reach the terminal. The hook's stdout is JSON
+	// for the agent and stays as it is.
+	stdio.Out, stdio.Err = term.Writer{W: stdio.Out}, term.Writer{W: stdio.Err}
+	// --config sets $CTXTRA_CONFIG for this run, and for the agent that
+	// import starts.
+	if old, ok := os.LookupEnv("CTXTRA_CONFIG"); ok {
+		defer os.Setenv("CTXTRA_CONFIG", old)
+	} else {
+		defer os.Unsetenv("CTXTRA_CONFIG")
+	}
+	a := &app{IO: stdio, version: version}
+	root := a.root()
+	root.SetArgs(args)
+	cmd, err := root.ExecuteC()
+	n := 0
+	var ec exitCode
+	switch {
+	case errors.As(err, &ec):
+		n = int(ec)
+	case err != nil:
+		path := cmd.CommandPath()
+		fmt.Fprintf(stdio.Err, "%s: %s\n", path, strings.TrimRight(err.Error(), "\n"))
+		use := cmd.UseLine()
+		if !cmd.HasParent() {
+			use = "ctxtra COMMAND [flags]"
+		}
+		fmt.Fprintf(stdio.Err, "Usage: %s\n", use)
+		fmt.Fprintf(stdio.Err, "Run '%s --help' for more.\n", path)
+		n = 2
+	}
+	if a.ran != nil && !slices.Contains(quiet, a.ran.Name()) {
+		setupNotices(stdio.Err)
+	}
+	return n
+}
+
+// run makes f a cobra RunE, and records that the command ran. f returns
+// an exitCode after it has said what went wrong, and any other error for a
+// usage error.
+func (a *app) run(f func(cmd *cobra.Command, args []string) error) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		a.ran = cmd
+		return f(cmd, args)
+	}
+}
+
+// global applies the global flags before a command runs.
+func (a *app) global(cmd *cobra.Command, _ []string) error {
+	source.NoPrompt = !a.prompts()
+	if a.config == "" {
+		return nil
+	}
+	if cmd.Name() == "setup" {
+		return errors.New("--config doesn't apply: the hooks don't carry a config path, sessions read $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml")
+	}
+	abs, err := filepath.Abs(paths.Expand(a.config))
+	if err != nil {
+		return err
+	}
+	return os.Setenv("CTXTRA_CONFIG", abs)
+}
+
+// Interactive reports whether answers can be asked: stdin and stdout are
+// terminals, so the user sees what a question is about. A variable so tests
+// can replace it.
+var Interactive = func(stdio IO) bool { return isTerminal(stdio.In) && isTerminal(stdio.Out) }
+
+func isTerminal(x any) bool {
+	if w, ok := x.(term.Writer); ok {
+		x = w.W
+	}
+	f, ok := x.(*os.File)
+	return ok && term.IsTerminal(f)
+}
+
+// prompts reports whether this run may ask questions.
+func (a *app) prompts() bool { return !a.noInput && Interactive(a.IO) }
+
+// jsonDoc is the output of --json.
+type jsonDoc struct {
+	SchemaVersion int          `json:"schema_version"`
+	Data          any          `json:"data"`
+	Diagnostics   []diagnostic `json:"diagnostics"`
+}
+
+// diagnostic is a problem or a notice, in --json output.
+type diagnostic struct {
+	Severity string `json:"severity"` // error, warning or notice
+	Message  string `json:"message"`
+}
+
+// diagnostics are messages of one severity.
+func diagnostics(severity string, msgs []string) []diagnostic {
+	out := make([]diagnostic, len(msgs))
+	for i, m := range msgs {
+		out[i] = diagnostic{severity, m}
+	}
+	return out
+}
+
+// writeJSON writes data as the one JSON document of the output. It goes
+// around term.Writer: JSON escapes control characters itself.
+func writeJSON(w io.Writer, data any, diags []diagnostic) {
+	if t, ok := w.(term.Writer); ok {
+		w = t.W
+	}
+	if diags == nil {
+		diags = []diagnostic{}
+	}
+	e := json.NewEncoder(w)
+	e.SetEscapeHTML(false)
+	e.SetIndent("", "  ")
+	e.Encode(jsonDoc{1, data, diags})
+}
+
+// runHook is ctxtra hook AGENT [EVENT [--slot K --of N]]. It never fails
+// and parses no flags but its own, so that hooks that any version set up
+// keep running.
+func runHook(args []string, stdio IO) int {
 	if len(args) == 0 {
-		fmt.Fprint(stdio.Out, usage)
+		fmt.Fprintln(stdio.Out, "{}")
 		return 0
 	}
-	cmd, rest := args[0], args[1:]
-	if cmd != "hook" {
-		// Output can hold text from sources (selectors, paths, diffs): no
-		// control characters reach the terminal. The hook's stdout is JSON
-		// for the agent and stays as it is.
-		stdio.Out, stdio.Err = term.Writer{W: stdio.Out}, term.Writer{W: stdio.Err}
+	event := "SessionStart"
+	if len(args) > 1 {
+		event = args[1]
 	}
-	notices := !slices.Contains(quiet, cmd)
-	defer func() {
-		if notices {
-			setupNotices(stdio.Err)
-		}
-	}()
-	switch cmd {
-	case "-h", "--help":
-		fmt.Fprint(stdio.Out, usage)
-		return 0
-	case "help":
-		return runHelp(rest, stdio)
-	case "version":
-		fmt.Fprintln(stdio.Out, version)
-		return 0
-	case "hook": // never fails, never parses flags
-		if len(rest) == 0 {
-			fmt.Fprintln(stdio.Out, "{}")
-			return 0
-		}
-		event := "SessionStart"
-		if len(rest) > 1 {
-			event = rest[1]
-		}
-		args := hook.Args{Slot: -1}
-		if len(rest) > 2 {
-			args = hookArgs(rest[2:])
-		}
-		return hook.RunArgs(rest[0], event, args, hookInput(stdio.In), stdio.Out, term.Writer{W: stdio.Err})
-	case "setup":
-		return runSetup(rest, stdio)
-	case "add":
-		return runAdd(rest, stdio)
-	case "sync":
-		return runSync(rest, stdio)
-	case "bind":
-		return runBind(rest, stdio)
-	case "remove":
-		return runRemove(rest, stdio)
-	case "skill":
-		return runSkill(rest, stdio)
-	case "import":
-		return runImport(rest, stdio)
-	case "files", "show", "explain", "doctor":
-		fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
-		fs.SetOutput(stdio.Err)
-		var opts showOptions
-		if cmd == "show" {
-			fs.Func("session", "print only what DIR adds to a session in `FOLDER` (repeatable)", func(v string) error {
-				opts.sessions = append(opts.sessions, v)
-				return nil
-			})
-			fs.IntVar(&opts.part, "part", 0, fmt.Sprintf("print part `N` of the text, in outputs of at most %d bytes", showPart))
-		}
-		// The folder may come before or after the flags.
-		var pos []string
-		for {
-			if err := fs.Parse(rest); err != nil {
-				return parseError(err)
-			}
-			if fs.NArg() == 0 {
-				break
-			}
-			pos, rest = append(pos, fs.Arg(0)), fs.Args()[1:]
-		}
-		if len(pos) > 1 {
-			fmt.Fprintf(stdio.Err, "ctxtra %s: expected at most one folder\n", cmd)
-			return 2
-		}
-		dir := "."
-		if len(pos) == 1 {
-			dir = pos[0]
-		}
-		r := report{stdio}
-		switch cmd {
-		case "files":
-			return r.files(dir)
-		case "show":
-			return r.show(dir, opts)
-		case "explain":
-			return r.explain(dir)
-		default:
-			return r.doctor(dir)
-		}
+	h := hook.Args{Slot: -1}
+	if len(args) > 2 {
+		h = hookArgs(args[2:])
 	}
-	notices = false
-	fmt.Fprintf(stdio.Err, "unknown command %q\n\n%s", cmd, usage)
-	return 2
+	return hook.RunArgs(args[0], event, h, hookInput(stdio.In), stdio.Out, term.Writer{W: stdio.Err})
 }
 
 // hookArgs reads --slot K and --of N wherever they are, and ignores other
@@ -238,37 +245,4 @@ func hookInput(in io.Reader) io.Reader {
 		}
 	}
 	return in
-}
-
-// listFlag is a flag that may be repeated.
-type listFlag []string
-
-func (l *listFlag) String() string     { return strings.Join(*l, ",") }
-func (l *listFlag) Set(v string) error { *l = append(*l, v); return nil }
-
-func runSetup(args []string, stdio IO) int {
-	fs := flag.NewFlagSet("setup", flag.ContinueOnError)
-	fs.SetOutput(stdio.Err)
-	var agents listFlag
-	fs.Var(&agents, "agent", "agent to change (repeatable): claude, codex, pi, opencode, muse, hermes, dsh, cursor, copilot, antigravity, devin")
-	remove := fs.Bool("remove", false, "remove ctxtra's hooks")
-	dryRun := fs.Bool("dry-run", false, "show what would change")
-	if err := fs.Parse(args); err != nil {
-		return parseError(err)
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stdio.Err, "ctxtra setup: unexpected argument %q\n", fs.Arg(0))
-		return 2
-	}
-	o := setup.Options{Agents: agents}
-	o.Remove, o.DryRun = *remove, *dryRun
-	return setupCmd(stdio, o)
-}
-
-// parseError is the exit code for a flag error: 0 for -h, 2 otherwise.
-func parseError(err error) int {
-	if errors.Is(err, flag.ErrHelp) {
-		return 0
-	}
-	return 2
 }

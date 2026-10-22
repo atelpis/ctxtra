@@ -247,9 +247,9 @@ func (c *Config) inStore(s string, src Source, p string) (string, *Source, error
 	}
 	switch {
 	case src.Commit == "":
-		return "", nil, errUnavailable{fmt.Errorf("%s: the source %s has no accepted commit yet; run: ctxtra sync %s; skipped", s, src.Name, src.Name)}
+		return "", nil, errUnavailable{fmt.Errorf("%s: the source %s has no accepted commit yet; run: ctxtra source update %s; skipped", s, src.Name, src.Name)}
 	case !source.Has(src.Remote(), src.Commit):
-		return "", nil, errUnavailable{fmt.Errorf("%s: %s %s is not in ctxtra's store; run: ctxtra sync --restore; skipped", s, src.Name, source.Short(src.Commit))}
+		return "", nil, errUnavailable{fmt.Errorf("%s: %s %s is not in ctxtra's store; run: ctxtra source restore %s; skipped", s, src.Name, source.Short(src.Commit), src.Name)}
 	}
 	p = filepath.Join(src.Gen(), filepath.FromSlash(p))
 	c.pin(p)

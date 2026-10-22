@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bufio"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -48,66 +46,118 @@ var (
 	startAgent = runAgent
 )
 
-// runImport is ctxtra import: in a terminal, it offers to start an agent
-// that moves the instruction files the agents have of their own into ctxtra,
-// as setup does for a new config. With --no-start, or without a terminal
-// (an agent runs it), it only backs the files up and lists them.
-func runImport(args []string, stdio IO) int {
-	fs := flag.NewFlagSet("import", flag.ContinueOnError)
-	fs.SetOutput(stdio.Err)
-	noStart := fs.Bool("no-start", false, "only back up and list the files")
-	if err := fs.Parse(args); err != nil {
-		return parseError(err)
-	}
-	if fs.NArg() > 0 {
-		fmt.Fprintf(stdio.Err, "ctxtra import: unexpected argument %q\n", fs.Arg(0))
-		return 2
-	}
+// runImport is ctxtra import: it backs up and lists the instruction files
+// that the agents have of their own and, with start, starts that agent to
+// move them into ctxtra with the ctxtra skill.
+func runImport(stdio IO, start string, dryRun, prompts bool) int {
 	files, launchers, err := importCandidates()
 	if err != nil {
 		fmt.Fprintf(stdio.Err, "ctxtra import: %v\n", err)
 		return 1
 	}
+	// Checked before the backup: a start that can't happen backs up nothing.
+	var chosen agent.Agent
+	if start != "" {
+		a, ok := registry.Get(start)
+		_, launches := a.(agent.Launcher)
+		switch {
+		case !ok:
+			fmt.Fprintf(stdio.Err, "ctxtra import: no agent %q; agents: %s\n", start, strings.Join(registry.Names(), ", "))
+			return 2
+		case !launches:
+			fmt.Fprintf(stdio.Err, "ctxtra import: ctxtra can't start %s; give the prompt to it yourself (ctxtra import prints it)\n", start)
+			return 1
+		case !slices.Contains(launchers, a):
+			fmt.Fprintf(stdio.Err, "ctxtra import: %s isn't set up, or its command isn't in PATH\n", start)
+			return 1
+		case !prompts:
+			fmt.Fprintln(stdio.Err, "ctxtra import: --start needs a terminal (or leave out --no-input): the agent works with you there")
+			return 1
+		case skillBound(skill.Base) == nil:
+			fmt.Fprintln(stdio.Err, "ctxtra import: the agent follows the ctxtra skill: install it first with ctxtra skill install ctxtra")
+			return 1
+		}
+		chosen = a
+	}
 	if len(files) == 0 {
 		fmt.Fprintln(stdio.Out, "the agents that are set up have no instruction files of their own")
 		return 0
 	}
-	if *noStart || !interactive(stdio.In) {
-		fmt.Fprintln(stdio.Out, "instruction files of the agents that are set up:")
-		for _, f := range files {
-			fmt.Fprintf(stdio.Out, "  %s\n", f)
-		}
-		if unreadable(stdio, "import", files) {
-			return 1
-		}
-		backup, err := backupFiles(files)
-		if err != nil {
-			fmt.Fprintf(stdio.Err, "ctxtra import: back up the files: %v\n", err)
-			return 1
-		}
-		fmt.Fprintf(stdio.Out, "backed up the files to %s\n", paths.Tilde(backup))
-		return 0
+	term.Fprintf(stdio.Out, term.Bold, "Your agents have instruction files of their own:\n")
+	for _, f := range files {
+		fmt.Fprintf(stdio.Out, "  %s\n", f)
 	}
-	if skillBound(skill.Base) == nil {
-		fmt.Fprintln(stdio.Err, "ctxtra import: the agent follows the ctxtra skill: install it first with ctxtra skill install")
+	if unreadable(stdio, files) {
 		return 1
 	}
-	return importFiles(stdio, bufio.NewReader(stdio.In), "import", files, launchers)
+	if dryRun {
+		if chosen != nil {
+			fmt.Fprintf(stdio.Out, "would back them up and start %s to move them into ctxtra\n", chosen.Delivery().Title)
+		} else {
+			fmt.Fprintln(stdio.Out, "would back them up")
+		}
+		fmt.Fprintln(stdio.Out, "nothing changed (--dry-run)")
+		return 0
+	}
+	backup, err := backupFiles(files)
+	if err != nil {
+		fmt.Fprintf(stdio.Err, "ctxtra import: back up the files: %v\n", err)
+		return 1
+	}
+	term.Fprintf(stdio.Out, term.Green, "backed up the files to %s\n", paths.Tilde(backup))
+	if chosen == nil {
+		return importNext(stdio, files, launchers, backup)
+	}
+	// The prompt names the skill's files: write them, also when they are gone.
+	if _, err := skill.Write(skill.Base); err != nil {
+		fmt.Fprintf(stdio.Err, "ctxtra import: write the ctxtra skill: %v\n", err)
+		return 1
+	}
+	prompt := importPrompt(files, backup)
+	argv := chosen.(agent.Launcher).Launch(prompt)
+	dir := filepath.Join(paths.StateDir(), "import")
+	fmt.Fprintf(stdio.Out, "starting %s in %s with this prompt:\n\n%s\n\n", chosen.Delivery().Title, paths.Tilde(dir), prompt)
+	bin, err := lookPath(argv[0])
+	if err == nil {
+		err = os.MkdirAll(dir, 0o700)
+	}
+	if err == nil {
+		err = startAgent(bin, argv[1:], dir)
+	}
+	if err != nil {
+		fmt.Fprintf(stdio.Err, "ctxtra import: %s: %v; you can give the prompt above to an agent\n", chosen.Delivery().Title, err)
+		return 1
+	}
+	return 0
 }
 
-// offerImport is ctxtra import after setup, for a new config: it asks only
-// in a terminal, with the ctxtra skill installed, and while no binding adds
-// instructions.
-func offerImport(stdio IO, in *bufio.Reader) int {
-	if !interactive(stdio.In) || skillBound(skill.Base) == nil || hasInstructions() {
+// importNext says, after a backup without --start, how the files get into
+// ctxtra: the command that starts an agent for it, or, when ctxtra can
+// start none, the prompt to give one.
+func importNext(stdio IO, files []importFile, launchers []agent.Agent, backup string) int {
+	fmt.Fprint(stdio.Out, `Not imported yet. An agent can move them into ctxtra, so that all your agents
+get them: it merges the rules that repeat and shows you the result. It empties
+the files only if you agree.
+`)
+	if skillBound(skill.Base) == nil {
+		fmt.Fprintln(stdio.Out, "The agent follows the ctxtra skill; install it first: ctxtra skill install ctxtra")
+	}
+	if len(launchers) > 0 {
+		var cmds []string
+		for _, a := range launchers {
+			cmds = append(cmds, "ctxtra import --start "+a.Name())
+		}
+		fmt.Fprintf(stdio.Out, "To start one: %s\n", strings.Join(cmds, ", or "))
 		return 0
 	}
-	files, launchers, err := importCandidates()
-	if err != nil || len(files) == 0 {
-		return 0
+	if skillBound(skill.Base) != nil {
+		if _, err := skill.Write(skill.Base); err != nil {
+			fmt.Fprintf(stdio.Err, "ctxtra import: write the ctxtra skill: %v\n", err)
+			return 1
+		}
+		fmt.Fprintf(stdio.Out, "Start an agent and give it this prompt:\n\n%s\n", importPrompt(files, backup))
 	}
-	fmt.Fprintln(stdio.Out)
-	return importFiles(stdio, in, "setup", files, launchers)
+	return 0
 }
 
 // importCandidates are the instruction files of the agents that setup.json
@@ -147,107 +197,14 @@ func importCandidates() ([]importFile, []agent.Agent, error) {
 	return files, launchers, nil
 }
 
-// importFiles lists the files, asks whether to start an agent for them, or
-// which one, backs them up, and starts the agent with a prompt that names
-// the files and their backup. cmd names the command in messages.
-func importFiles(stdio IO, in *bufio.Reader, cmd string, files []importFile, launchers []agent.Agent) int {
-	term.Fprintf(stdio.Out, term.Bold, "Your agents have instruction files of their own:\n")
-	for _, f := range files {
-		fmt.Fprintf(stdio.Out, "  %s\n", f)
-	}
-	if unreadable(stdio, cmd, files) {
-		return 1
-	}
-	fmt.Fprint(stdio.Out, `An agent can move them into ctxtra, so that all your agents get them: it merges
-the rules that repeat and shows you the result. ctxtra backs the files up
-first; the agent empties them only if you agree.
-`)
-	if len(launchers) == 1 {
-		term.Fprintf(stdio.Out, term.Bold, "Start %s for this now? [Y/n] ", launchers[0].Delivery().Title)
-	} else {
-		term.Fprintf(stdio.Out, term.Bold, "Do this now? [Y/n] ")
-	}
-	var chosen agent.Agent
-	ok, err := confirm(in)
-	switch {
-	case err != nil || !ok:
-	case len(launchers) == 1:
-		chosen = launchers[0]
-	case len(launchers) > 1:
-		chosen, ok = choose(stdio, in, launchers)
-	}
-	if err != nil {
-		fmt.Fprintf(stdio.Err, "ctxtra %s: %v\n", cmd, err)
-		return 1
-	}
-	if !ok {
-		term.Fprintf(stdio.Out, term.Dim, "not started; to do it later: ctxtra import\n")
-		return 0
-	}
-	backup, err := backupFiles(files)
-	if err != nil {
-		fmt.Fprintf(stdio.Err, "ctxtra %s: back up the instruction files: %v\n", cmd, err)
-		return 1
-	}
-	term.Fprintf(stdio.Out, term.Green, "backed up the files to %s\n", paths.Tilde(backup))
-	// The prompt names the skill's files: write them, also when they are gone.
-	if _, err := skill.Write(skill.Base); err != nil {
-		fmt.Fprintf(stdio.Err, "ctxtra %s: write the ctxtra skill: %v\n", cmd, err)
-		return 1
-	}
-	prompt := importPrompt(files, backup)
-	if chosen == nil {
-		fmt.Fprintf(stdio.Out, "start an agent and give it this prompt:\n\n%s\n", prompt)
-		return 0
-	}
-	a := chosen
-	argv := a.(agent.Launcher).Launch(prompt)
-	dir := filepath.Join(paths.StateDir(), "import")
-	fmt.Fprintf(stdio.Out, "starting %s in %s with this prompt:\n\n%s\n\n", a.Delivery().Title, paths.Tilde(dir), prompt)
-	bin, err := lookPath(argv[0])
-	if err == nil {
-		err = os.MkdirAll(dir, 0o700)
-	}
-	if err == nil {
-		err = startAgent(bin, argv[1:], dir)
-	}
-	if err != nil {
-		fmt.Fprintf(stdio.Err, "ctxtra %s: %s: %v; you can give the prompt above to an agent\n", cmd, a.Delivery().Title, err)
-		return 1
-	}
-	return 0
-}
-
 // unreadable reports, and says, whether some of the files can't be read:
 // ctxtra can't back them up, and they would be left out.
-func unreadable(stdio IO, cmd string, files []importFile) bool {
+func unreadable(stdio IO, files []importFile) bool {
 	if !slices.ContainsFunc(files, func(f importFile) bool { return f.Err != nil }) {
 		return false
 	}
-	fmt.Fprintf(stdio.Err, "ctxtra %s: can't read some of the files above: fix or move them, then run ctxtra import\n", cmd)
+	fmt.Fprintln(stdio.Err, "ctxtra import: can't read some of the files above: fix or move them, then run ctxtra import again")
 	return true
-}
-
-// choose asks which of the agents to start; Enter chooses the first. ok is
-// false without a valid choice.
-func choose(stdio IO, in *bufio.Reader, agents []agent.Agent) (_ agent.Agent, ok bool) {
-	term.Fprintf(stdio.Out, term.Bold, "Which agent?\n")
-	for i, a := range agents {
-		fmt.Fprintf(stdio.Out, "  %d) %s\n", i+1, a.Delivery().Title)
-	}
-	term.Fprintf(stdio.Out, term.Bold, "Choose 1-%d [1]: ", len(agents))
-	answer, err := in.ReadString('\n')
-	if err != nil {
-		// Input that ends without a line (Ctrl-D) is no answer.
-		return nil, false
-	}
-	n := 1
-	if a := strings.TrimSpace(answer); a != "" {
-		if n, err = strconv.Atoi(a); err != nil || n < 1 || n > len(agents) {
-			return nil, false
-		}
-	}
-	return agents[n-1], true
 }
 
 // hasInstructions reports whether a binding of the config adds instruction

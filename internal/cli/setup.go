@@ -1,12 +1,12 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/setup"
+	"github.com/atelpis/ctxtra/internal/skill"
 	"github.com/atelpis/ctxtra/internal/state"
 	"github.com/atelpis/ctxtra/internal/term"
 )
@@ -51,14 +51,7 @@ func setupCmd(stdio IO, o setup.Options) int {
 		return 1
 	}
 	if !o.Remove && !o.DryRun {
-		// One reader for every question: a reader of its own would take
-		// the input of the next.
-		in := bufio.NewReader(stdio.In)
-		if err := offerSkills(stdio, in); err != nil {
-			fmt.Fprintf(stdio.Err, "ctxtra skill install: %v\n", err)
-			return 1
-		}
-		return offerImport(stdio, in)
+		nextSteps(stdio)
 	}
 	return 0
 }
@@ -115,4 +108,33 @@ func and(names []string) string {
 		return strings.Join(names, "")
 	}
 	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
+// follow is the skill that gets the bindings of a folder an agent's work
+// moves to.
+const follow = "ctxtra-follow"
+
+// nextSteps says what to run after setup: the commands that install the
+// skills no binding adds, and import while no binding adds instructions.
+func nextSteps(stdio IO) {
+	var steps [][2]string
+	if skillBound(skill.Base) == nil {
+		steps = append(steps, [2]string{"ctxtra skill install ctxtra", "let your agents set up and change ctxtra for you"})
+	}
+	if skillBound(follow) == nil {
+		steps = append(steps, [2]string{"ctxtra skill install " + follow, "agents get your bindings for other folders they work in"})
+	}
+	if !hasInstructions() {
+		if files, _, err := importCandidates(); err == nil && len(files) > 0 {
+			steps = append(steps, [2]string{"ctxtra import", "bring the instruction files your agents have of their own into ctxtra"})
+		}
+	}
+	if len(steps) == 0 {
+		return
+	}
+	fmt.Fprintln(stdio.Out)
+	term.Fprintf(stdio.Out, term.Bold, "Next:\n")
+	for _, s := range steps {
+		fmt.Fprintf(stdio.Out, "  %-34s %s\n", s[0], s[1])
+	}
 }
