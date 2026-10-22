@@ -3,11 +3,11 @@
 # restores the original file.
 
 exec ctxtra setup --agent antigravity
-stdout '^ctxtra setup \(antigravity\): changed$'
+stdout '^ctxtra is set up for Antigravity:$'
 cmpenv .gemini/config/hooks.json want.json
 
 exec ctxtra setup --agent antigravity
-stdout 'nothing to change'
+stdout 'is already set up for'
 
 exec ctxtra doctor
 stdout 'antigravity: set up for \[SessionStart\], runs .*/ctxtra \(ok\)  '
@@ -16,13 +16,13 @@ stdout 'antigravity: set up for \[SessionStart\], runs .*/ctxtra \(ok\)  '
 # Turned off in the App's settings: setup leaves it off, doctor says so.
 expand off.json .gemini/config/hooks.json
 exec ctxtra setup --agent antigravity
-stdout 'nothing to change'
+stdout 'is already set up for'
 ! exec ctxtra doctor
 stdout 'antigravity: set up for \[SessionStart\], runs .*/ctxtra \(ok\); turned off \("enabled": false\)'
 
 expand want.json .gemini/config/hooks.json
 exec ctxtra setup --remove --agent antigravity
-stdout '^ctxtra setup --remove \(antigravity\): changed$'
+stdout '^ctxtra is removed from Antigravity:$'
 cmp .gemini/config/hooks.json original.json
 
 -- .gemini/config/hooks.json --

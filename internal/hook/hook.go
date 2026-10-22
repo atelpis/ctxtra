@@ -195,7 +195,7 @@ func delivery(a agent.Agent, event string, in agent.Input) (d agent.Delivery, up
 // doesn't get in full dropped, and its log entry. The user and the log get
 // the notice upgrade.
 func session(a agent.Agent, d agent.Delivery, upgrade, ts, event string, p payload, dir string) (*resolve.Result, Entry) {
-	// Before resolving: the session lists the skill as it is on disk.
+	// Before resolving: the session lists the skills as they are on disk.
 	skillErr := skill.Refresh()
 	res, _ := resolve.Session(dir, paths.ConfigPath())
 	if upgrade != "" {
@@ -207,7 +207,7 @@ func session(a agent.Agent, d agent.Delivery, upgrade, ts, event string, p paylo
 		e.Problems = append(slices.Clip(e.Problems), upgrade)
 	}
 	if skillErr != nil {
-		e.Problems = append(slices.Clip(e.Problems), "can't update the ctxtra skill: "+skillErr.Error())
+		e.Problems = append(slices.Clip(e.Problems), "can't update ctxtra's skills: "+skillErr.Error())
 	}
 	return res, e
 }

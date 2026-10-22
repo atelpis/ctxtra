@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -26,11 +27,18 @@ type Options struct {
 
 // Report is what Run changed, or would change with DryRun.
 type Report struct {
-	Agents []string
+	Agents []Agent
 	agent.Report
 	Errors []error // per agent; other agents are still handled
 	// Record is why setup.json couldn't be written; the changes stay.
 	Record error
+}
+
+// Agent is what Run did for one agent.
+type Agent struct {
+	agent.Agent
+	Changes []string // the files of Report.Changes that the agent's setup changed
+	Err     error
 }
 
 // Run adds (or removes) the hooks for the selected agents.
@@ -65,8 +73,10 @@ func Run(o Options) (Report, error) {
 	var r Report
 	var done []agent.Agent
 	for _, a := range agents {
-		r.Agents = append(r.Agents, a.Name())
-		if err := a.Setup(o.Options, &r.Report); err != nil {
+		n := len(r.Changes)
+		err := a.Setup(o.Options, &r.Report)
+		r.Agents = append(r.Agents, Agent{a, slices.Clone(r.Changes[n:]), err})
+		if err != nil {
 			r.Errors = append(r.Errors, fmt.Errorf("%s: %w", a.Name(), err))
 			continue
 		}

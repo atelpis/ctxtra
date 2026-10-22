@@ -35,24 +35,35 @@ func (r *Result) Blocks() []chunk.Block {
 }
 
 func (r *Result) fileBlocks() []chunk.Block {
-	blocks := make([]chunk.Block, 0, len(r.Files)+1)
+	blocks := make([]chunk.Block, 0, len(r.Files)+2)
 	for _, h := range r.Files {
 		blocks = append(blocks, chunk.Block{Title: "Contents of " + h.Path, Text: r.block(h)})
+	}
+	if len(r.Known) > 0 {
+		var b strings.Builder
+		fmt.Fprintf(&b, "Files that ctxtra also adds %s, which this session already has:", r.scope(false))
+		for _, h := range r.Known {
+			fmt.Fprintf(&b, "\n- %s (binding: %s)", h.Path, h.Origin)
+		}
+		blocks = append(blocks, chunk.Block{Title: "Files that ctxtra also adds", Text: b.String()})
 	}
 	return blocks
 }
 
 func (r *Result) block(h Hit) string {
-	scope := "for every session"
-	switch {
-	case h.Global:
-	case r.Repo != nil:
-		scope = fmt.Sprintf("for this repository, %s, and all its worktrees", paths.Tilde(r.Repo.Root))
-	default:
-		scope = "for sessions in " + paths.Tilde(r.Dir)
-	}
 	return fmt.Sprintf("Contents of %s (instructions added by ctxtra %s; binding: %s):\n\n%s",
-		h.Path, scope, h.Origin, strings.TrimRight(h.Content, " \t\r\n"))
+		h.Path, r.scope(h.Global), h.Origin, strings.TrimRight(h.Content, " \t\r\n"))
+}
+
+// scope says which sessions get a file, of a global binding or not.
+func (r *Result) scope(global bool) string {
+	switch {
+	case global:
+		return "for every session"
+	case r.Repo != nil:
+		return fmt.Sprintf("for this repository, %s, and all its worktrees", paths.Tilde(r.Repo.Root))
+	}
+	return "for sessions in " + paths.Tilde(r.Dir)
 }
 
 // skillBlock lists the skills in the format Pi uses for its own skills, which

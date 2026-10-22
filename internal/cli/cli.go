@@ -54,11 +54,17 @@ Usage:
                           fetch exactly the commits in the config (a new laptop, a lost
                           store); changes nothing in the config
   ctxtra files [DIR]      files and skills a session in DIR gets (default: .)
-  ctxtra show [DIR]       the exact text a session in DIR gets
+  ctxtra show [DIR] [--session FOLDER]... [--part N]
+                          the exact text a session in DIR gets; --session prints only
+                          what DIR adds to a session in FOLDER; --part prints one part
+                          of a long text
   ctxtra explain [DIR]    why each binding matches or not
   ctxtra doctor [DIR]     config problems, setup state, Codex trust, recent hook runs
-  ctxtra skill [install]  show the ctxtra skill, which lets your agents set up and
-                          change ctxtra; install adds it to every session
+  ctxtra skill [install] [NAME]
+                          show one of ctxtra's skills; install adds it to every session.
+                          ctxtra (default): lets your agents set up and change ctxtra.
+                          ctxtra-follow: when an agent's work moves to another folder,
+                          it gets your bindings for that folder too
   ctxtra import [--no-start]
                           back up the instruction files your agents have of their own,
                           and start an agent that moves them into ctxtra with the skill;
@@ -133,23 +139,39 @@ func Run(args []string, stdio IO, version string) int {
 	case "files", "show", "explain", "doctor":
 		fs := flag.NewFlagSet(cmd, flag.ContinueOnError)
 		fs.SetOutput(stdio.Err)
-		if err := fs.Parse(rest); err != nil {
-			return parseError(err)
+		var opts showOptions
+		if cmd == "show" {
+			fs.Func("session", "print only what DIR adds to a session in `FOLDER` (repeatable)", func(v string) error {
+				opts.sessions = append(opts.sessions, v)
+				return nil
+			})
+			fs.IntVar(&opts.part, "part", 0, fmt.Sprintf("print part `N` of the text, in outputs of at most %d bytes", showPart))
 		}
-		if fs.NArg() > 1 {
+		// The folder may come before or after the flags.
+		var pos []string
+		for {
+			if err := fs.Parse(rest); err != nil {
+				return parseError(err)
+			}
+			if fs.NArg() == 0 {
+				break
+			}
+			pos, rest = append(pos, fs.Arg(0)), fs.Args()[1:]
+		}
+		if len(pos) > 1 {
 			fmt.Fprintf(stdio.Err, "ctxtra %s: expected at most one folder\n", cmd)
 			return 2
 		}
-		dir := fs.Arg(0)
-		if dir == "" {
-			dir = "."
+		dir := "."
+		if len(pos) == 1 {
+			dir = pos[0]
 		}
 		r := report{stdio}
 		switch cmd {
 		case "files":
 			return r.files(dir)
 		case "show":
-			return r.show(dir)
+			return r.show(dir, opts)
 		case "explain":
 			return r.explain(dir)
 		default:

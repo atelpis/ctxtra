@@ -1,6 +1,7 @@
-# help shows topics of the docs of this version; skill shows the ctxtra
-# skill, and skill install writes it and binds it to every session, once.
-# The hook keeps the installed skill at the version of its binary.
+# help shows topics of the docs of this version; skill shows one of
+# ctxtra's skills, the ctxtra skill by default, and skill install writes it
+# and binds it to every session, once. The hook keeps the installed skills
+# at the version of its binary.
 
 exec ctxtra help
 stdout '^  config  *the config format'
@@ -18,14 +19,16 @@ stdout '^name: ctxtra$'
 stdout '^<!-- ctxtra skill file: references/tasks.md -->$'
 stdout '^## First setup$'
 
-# Without a terminal, setup doesn't ask.
+# Without a terminal, setup doesn't ask: it says how to install each skill.
 exec ctxtra setup --agent claude
 stdout '^to let your agents help you set up and change ctxtra: ctxtra skill install$'
+stdout '^to let your agents get your bindings for other folders they work in: ctxtra skill install ctxtra-follow$'
 ! exists .ctxtra/skills
 
 exec ctxtra skill install
-stdout '^wrote the ctxtra skill to ~/.ctxtra/skills/ctxtra$'
-stdout '^added binding ctxtra to ~/.config/ctxtra/config.yaml: every new session gets the skill$'
+stdout '^Installed to ~/.ctxtra/skills/ctxtra$'
+stdout '^Added to ~/.config/ctxtra/config.yaml$'
+stdout '^The skill is ready for new agent sessions in any folder\. Ask your agent to help you get started with ctxtra\.$'
 cmp .config/ctxtra/config.yaml want.yaml
 exists .ctxtra/skills/ctxtra/SKILL.md
 exists .ctxtra/skills/ctxtra/references/tasks.md
@@ -33,12 +36,13 @@ exists .ctxtra/skills/ctxtra/references/tasks.md
 exec ctxtra files notes
 stdout '/.ctxtra/skills/ctxtra/SKILL.md$'
 exec ctxtra setup --agent claude
-! stdout 'ctxtra skill install'
+! stdout 'ctxtra skill install$'
+stdout 'ctxtra skill install ctxtra-follow$'
 
 # Again: nothing changes.
 exec ctxtra skill install
-stdout 'is up to date$'
-stdout '^binding ctxtra \(~/.config/ctxtra/config.yaml\) adds it to sessions$'
+stdout '^The ctxtra skill in ~/.ctxtra/skills/ctxtra is up to date\.$'
+stdout '^Binding ctxtra \(~/.config/ctxtra/config.yaml\) adds the skill to sessions\.$'
 cmp .config/ctxtra/config.yaml want.yaml
 
 # A skill from another version: the hook writes this binary's before it
@@ -50,6 +54,26 @@ stdout 'Set up and change ctxtra'
 ! stdout 'An older ctxtra skill'
 ! grep 'An older ctxtra skill' .ctxtra/skills/ctxtra/SKILL.md
 grep '^## First setup$' .ctxtra/skills/ctxtra/references/tasks.md
+
+# ctxtra's other skills: the same, with a binding of the skill's name.
+exec ctxtra skill ctxtra-follow
+stdout '^name: ctxtra-follow$'
+! exec ctxtra skill nope
+stderr '^ctxtra skill: no skill "nope"; skills: ctxtra, ctxtra-follow$'
+! exec ctxtra skill install ctxtra ctxtra-follow
+stderr '^usage: ctxtra skill \[install\] \[NAME\]$'
+exec ctxtra skill install ctxtra-follow
+stdout '^Installed to ~/.ctxtra/skills/ctxtra-follow$'
+stdout '^Added to ~/.config/ctxtra/config.yaml$'
+stdout '^The skill is ready for new agent sessions in any folder\.$'
+cmp .config/ctxtra/config.yaml want-follow.yaml
+exec ctxtra setup --agent claude
+! stdout 'ctxtra skill install'
+cp old.md .ctxtra/skills/ctxtra-follow/SKILL.md
+runhook claude SessionStart notes
+stdout 'instructions and skills for a folder your work moves to'
+! stdout 'An older ctxtra skill'
+grep '^name: ctxtra-follow$' .ctxtra/skills/ctxtra-follow/SKILL.md
 
 -- .config/ctxtra/config.yaml --
 schema: ctxtra/v1
@@ -72,6 +96,24 @@ bindings:
       global: true
     skills:
       - ~/.ctxtra/skills/ctxtra
+-- want-follow.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: me          # mine
+    match:
+      global: true
+    instructions:
+      - ~/ctx/me.md
+  - name: ctxtra
+    match:
+      global: true
+    skills:
+      - ~/.ctxtra/skills/ctxtra
+  - name: ctxtra-follow
+    match:
+      global: true
+    skills:
+      - ~/.ctxtra/skills/ctxtra-follow
 -- old.md --
 ---
 description: An older ctxtra skill.

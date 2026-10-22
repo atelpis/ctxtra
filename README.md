@@ -111,7 +111,8 @@ skip them.
 instructions.
 
 The skill is part of the binary: each version has a fixed text, which `ctxtra skill` shows. When you upgrade
-ctxtra, the hook of the next session writes the new version to `~/.ctxtra/skills/ctxtra`. Antigravity asks before it reads the skill there (see [Limits](#limits)).
+ctxtra, the hook of the next session writes the new version to `~/.ctxtra/skills/ctxtra`, and the same for
+ctxtra's other skills that you installed. Antigravity asks before it reads the skill there (see [Limits](#limits)).
 
 ## Configure
 
@@ -173,13 +174,37 @@ them for the version you have.
 
 ```bash
 ctxtra files [DIR]      # files and skills a session in DIR gets; problems on stderr
-ctxtra show [DIR]       # the exact text the agent gets
+ctxtra show [DIR]       # the exact text the agent gets; --session FOLDER: only what DIR adds to a session in FOLDER
 ctxtra explain [DIR]    # every binding: matched or not, and why
 ctxtra doctor [DIR]     # config problems, setup state, Codex trust, recent hook runs
 ```
 
 Every hook run is logged to `~/.ctxtra/log.jsonl`. The hook never blocks a session: on any error it adds
 nothing and logs the error.
+
+## Follow the agent to another folder
+
+A session gets what its session folder matches when it starts. When you then ask the agent to also change
+something in another repository ("update the client in ../billing too"), your bindings for that repository
+don't reach the session. ctxtra has an optional skill for this. `ctxtra setup` asks about it separately,
+after the ctxtra skill; to install it at any time:
+
+```bash
+ctxtra skill install ctxtra-follow
+```
+
+Before the agent works in a folder outside the session folder, the skill tells it to run `ctxtra show
+<folder> --session <session folder> --part 1`, once for each folder: the top of another repository, or a
+project folder in a repository with several. That prints only the files and skills the folder adds, not
+what the session has already (a file the session has from another folder is listed by name, so the agent
+knows it applies here too), and the agent follows them for its work there. Each file's header names the
+repository or folder it is for. A long text comes in outputs of at most 8,000 bytes, each saying how to get
+the next, because agents cut long command output.
+
+Unlike session start, this depends on the model: it decides when to use the skill, and it can miss it. The
+agent gets only your own bound files, read with the same trust rules as at session start. A binding for a
+folder below the one the agent ran the command for doesn't reach it. That includes folders under the
+session folder: a binding for `~/dev/mono/billing/**` doesn't reach a session started in `~/dev/mono`.
 
 ## Limits
 
@@ -254,8 +279,8 @@ The contract tests keep upgrades free of `ctxtra setup` (see [the spec](docs/spe
 Layout:
 
 - `cmd/ctxtra`: the binary.
-- `skills/ctxtra`: the ctxtra skill. `embed.go` embeds it and the docs into the binary (`ctxtra skill`,
-  `ctxtra help`).
+- `skills/`: ctxtra's skills, a folder each, named like the skill. `embed.go` embeds them and the docs into
+  the binary (`ctxtra skill`, `ctxtra help`).
 - `internal/config`: loads and validates the config and binding files, and matches `match` blocks.
 - `internal/resolve`: decides what a session gets and renders the text.
 - `internal/chunk`: splits the text into labeled parts for agents that cut a large hook output.

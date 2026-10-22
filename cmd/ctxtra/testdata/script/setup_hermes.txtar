@@ -2,7 +2,7 @@
 # never overwrites someone else's files, and --remove deletes only its own.
 
 exec ctxtra setup --agent hermes
-stdout '^ctxtra setup \(hermes\): changed$'
+stdout '^ctxtra is set up for Hermes:$'
 stdout 'hermes plugins enable ctxtra'
 grep '^# @ctxtra-managed' .hermes/plugins/ctxtra/__init__.py
 grep '^# binary: '$BIN'$' .hermes/plugins/ctxtra/__init__.py
@@ -23,7 +23,7 @@ stdout 'plugin enabled in ~/.hermes/config.yaml'
 ! stderr .
 
 exec ctxtra setup --agent hermes
-stdout '^ctxtra setup \(hermes\): nothing to change$'
+stdout '^ctxtra is already set up for Hermes\.$'
 ! stdout 'hermes plugins enable'
 
 exec ctxtra setup --remove --agent hermes

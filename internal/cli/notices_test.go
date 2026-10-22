@@ -215,7 +215,7 @@ func TestSetupRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, out, errOut := run("setup", "--agent", "claude")
-	if code != 1 || !strings.Contains(out, "changed") || !strings.Contains(errOut, "ctxtra setup: can't write ~/.ctxtra/setup.json: ") {
+	if code != 1 || !strings.Contains(out, "ctxtra is set up for Claude Code:") || !strings.Contains(errOut, "ctxtra setup: can't write ~/.ctxtra/setup.json: ") {
 		t.Errorf("unwritable setup.json: %d %q %q", code, out, errOut)
 	}
 	if b, _ := os.ReadFile(claude.ConfigPath()); !strings.Contains(string(b), "hook claude SessionStart") {

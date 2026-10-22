@@ -45,11 +45,14 @@ type Trace struct {
 
 // Result is what a session in Dir gets.
 type Result struct {
-	Dir      string
-	Repo     *gitrepo.Repo // nil outside git
-	Files    []Hit
-	Skills   []Hit
-	Dropped  []Hit // over budget.max-chars or the agent's capacity, see Hit.Over
+	Dir     string
+	Repo    *gitrepo.Repo // nil outside git
+	Files   []Hit
+	Skills  []Hit
+	Dropped []Hit // over budget.max-chars or the agent's capacity, see Hit.Over
+	// Known are files that apply here too, which the session already has
+	// from another folder: listed after the files, without their text.
+	Known    []Hit
 	Missing  []string
 	Problems []string
 	Notices  []string // about the pinned sources the session uses

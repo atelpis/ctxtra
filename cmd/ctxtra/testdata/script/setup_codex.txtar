@@ -2,8 +2,8 @@
 # state per hook, and --remove leaves another tool's hooks alone.
 
 exec ctxtra setup --agent codex
-stdout '^ctxtra setup \(codex\): changed$'
-stdout 'codex: Codex runs a new or changed hook only after you trust it, and asks once'
+stdout '^ctxtra is set up for Codex:$'
+stdout '^The next time you start Codex, it might ask you to review the newly installed hooks\. Please review them to ensure a smooth integration\.$'
 grep '"statusMessage": "ctxtra: personal instructions"' .codex/hooks.json
 grep '"additionalContextLimit": 250000' .codex/hooks.json
 grep 'other-tool session-start' .codex/hooks.json
@@ -21,7 +21,7 @@ stdout 'trust .*hooks.json:subagent_start:0:0: trust record present'
 
 # No change, so no new request to trust.
 exec ctxtra setup --agent codex
-stdout 'nothing to change'
+stdout 'is already set up for'
 ! stdout 'trust it'
 
 exec ctxtra setup --remove --agent codex

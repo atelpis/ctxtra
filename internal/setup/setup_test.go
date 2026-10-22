@@ -29,7 +29,7 @@ func TestRun(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	o.Agents, o.Binary = nil, "/bin/ctxtra"
 	r, err := Run(o)
-	if err != nil || len(r.Errors) > 0 || len(r.Agents) != 1 || r.Agents[0] != "cursor" || len(r.Changes) != 1 {
+	if err != nil || len(r.Errors) > 0 || len(r.Agents) != 1 || r.Agents[0].Name() != "cursor" || len(r.Agents[0].Changes) != 1 || len(r.Changes) != 1 {
 		t.Fatalf("report %+v, err %v", r, err)
 	}
 	if _, err := os.Stat(filepath.Join(h, ".cursor", "hooks.json")); !os.IsNotExist(err) {
