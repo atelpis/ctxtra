@@ -20,9 +20,12 @@ It's for you if:
 
 ```bash
 go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
-ctxtra setup --dry-run    # lists each agent config it would change
-ctxtra setup              # or only some agents: --agent claude --agent codex
+ctxtra onboard            # guided setup, skills and optional instruction import
 ```
+
+`onboard` sets up hooks, explains and offers the bundled skills, then offers to start an installed agent
+to help bring your existing instructions into ctxtra. It needs an interactive terminal. For scripts or
+hook maintenance, use `ctxtra setup` (`--dry-run` lists the changes without writing them).
 
 `setup` adds its hooks to the agents' user-level configs and backs up each file first. `ctxtra setup --remove`
 takes out only its hooks. Your repos, their `AGENTS.md` and your skill folders stay as they are. If ctxtra
@@ -131,8 +134,7 @@ it, and a nightly job runs them against the latest releases. You keep running pl
 
 ```bash
 go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
-ctxtra setup
-ctxtra skill install ctxtra    # lets your agents set up ctxtra for you
+ctxtra onboard
 ```
 
 Then open your agent in one of your repos and ask it, for example: "Use ctxtra to add a notes file for this

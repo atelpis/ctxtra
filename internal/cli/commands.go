@@ -15,10 +15,10 @@ import (
 	"github.com/atelpis/ctxtra/internal/setup"
 )
 
-// quiet are the commands after which setupNotices doesn't run: setup,
-// which just ran, doctor, which shows the same lines under each agent, and
+// quiet are the commands after which setupNotices doesn't run: setup and
+// onboard, which just ran setup, doctor, which shows the same lines under each agent, and
 // the ones that only print help, the version or a completion script.
-var quiet = []string{"setup", "doctor", "help", "version", "bash", "zsh", "fish", "powershell"}
+var quiet = []string{"setup", "onboard", "doctor", "help", "version", "bash", "zsh", "fish", "powershell"}
 
 // root is the command tree.
 func (a *app) root() *cobra.Command {
@@ -51,7 +51,7 @@ Config: $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml (format: ctxtra help conf
 		&cobra.Group{ID: "help", Title: "Help:"},
 	)
 	root.AddCommand(
-		a.setupCmd(), a.importCmd(),
+		a.onboardCmd(), a.setupCmd(), a.importCmd(),
 		a.sourceCmd(), a.bindingFileCmd(), a.bindingCmd(), a.skillCmd(),
 		a.contextCmd(), a.doctorCmd(),
 		a.versionCmd(), hookCmd(),
@@ -122,6 +122,29 @@ func dirArg(args []string) string {
 		return args[0]
 	}
 	return "."
+}
+
+func (a *app) onboardCmd() *cobra.Command {
+	var agents []string
+	c := &cobra.Command{
+		Use:   "onboard",
+		Short: "Get started with guided hook setup, skills and instruction import",
+		Long: `Set up hooks for your agents, learn about ctxtra's skills and choose which
+ones to install. Then optionally start an installed agent to help move your
+existing instruction files into ctxtra. Each step explains what it changes.
+
+Needs an interactive terminal. For scripts and agents, use setup, skill install
+and import separately. Without --agent, sets up every agent found on this machine.`,
+		Example: `  ctxtra onboard
+  ctxtra onboard --agent claude --agent codex`,
+		Args:    noArgs,
+		GroupID: "setup",
+		RunE: a.run(func(*cobra.Command, []string) error {
+			return code(onboard(a.IO, agents, a.prompts()))
+		}),
+	}
+	c.Flags().StringArrayVar(&agents, "agent", nil, "set up only `AGENT` (repeatable)")
+	return c
 }
 
 func (a *app) setupCmd() *cobra.Command {

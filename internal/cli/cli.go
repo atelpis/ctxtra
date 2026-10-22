@@ -108,7 +108,7 @@ func (a *app) global(cmd *cobra.Command, _ []string) error {
 	if a.config == "" {
 		return nil
 	}
-	if cmd.Name() == "setup" {
+	if cmd.Name() == "setup" || cmd.Name() == "onboard" {
 		return errors.New("--config doesn't apply: the hooks don't carry a config path, sessions read $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml")
 	}
 	abs, err := filepath.Abs(paths.Expand(a.config))

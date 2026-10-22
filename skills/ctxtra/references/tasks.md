@@ -5,6 +5,10 @@ every step.
 
 ## First setup
 
+For a user who wants to walk through setup in their own terminal, suggest `ctxtra onboard`.
+It sets up hooks, offers the bundled skills, then offers to start an installed agent to help
+import existing instructions. When you perform setup for the user, use the steps below.
+
 1. `ctxtra version`. If it fails, ctxtra isn't installed: show the user the install steps from the
    project's README and stop.
 2. `ctxtra doctor`: shows the config path, whether a config exists, and which agents have hooks.

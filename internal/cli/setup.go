@@ -15,6 +15,14 @@ import (
 var binary = setup.Binary
 
 func setupCmd(stdio IO, o setup.Options) int {
+	code := setupHooks(stdio, o)
+	if code == 0 && !o.Remove && !o.DryRun {
+		nextSteps(stdio)
+	}
+	return code
+}
+
+func setupHooks(stdio IO, o setup.Options) int {
 	if !o.Remove {
 		bin, warnings, err := binary()
 		if err != nil {
@@ -49,9 +57,6 @@ func setupCmd(stdio IO, o setup.Options) int {
 	}
 	if len(r.Errors) > 0 {
 		return 1
-	}
-	if !o.Remove && !o.DryRun {
-		nextSteps(stdio)
 	}
 	return 0
 }
@@ -133,6 +138,7 @@ func nextSteps(stdio IO) {
 		return
 	}
 	fmt.Fprintln(stdio.Out)
+	fmt.Fprintln(stdio.Out, "For guided setup, run ctxtra onboard.")
 	term.Fprintf(stdio.Out, term.Bold, "Next:\n")
 	for _, s := range steps {
 		fmt.Fprintf(stdio.Out, "  %-34s %s\n", s[0], s[1])
