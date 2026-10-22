@@ -99,7 +99,7 @@ def hero_body(c, w, h, top=0, animate=True, paths=True):
     b.append(f'<text x="64" y="{t+304}" font-size="19" fill="{c["MUTED"]}">Nothing written into your repos.</text>')
     b.append(f'<text x="64" y="{t+331}" font-size="19" fill="{c["MUTED"]}">Nothing to set up per worktree.</text>')
     x = 64
-    for name in ["Claude Code", "Codex", "Pi", "OpenCode", "Cursor CLI"]:
+    for name in ["Claude Code", "Codex", "Pi", "OpenCode", "Cursor"]:
         cw = 22 + len(name) * 8.9
         b.append(f'<rect x="{x}" y="{t+362}" width="{cw:.0f}" height="34" rx="17" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>')
         b.append(f'<text x="{x + cw/2:.0f}" y="{t+385}" font-size="15" fill="{c["TEXT"]}" text-anchor="middle">{name}</text>')
@@ -459,7 +459,7 @@ def story(theme):
         return f'<g transform="translate({cx - size/2:g} {cy - size/2:g}) scale({k:g})" fill="{fill}" fill-rule="evenodd">{paths}</g>'
 
     # Long labels sit next to short ones, so that they don't run into each other.
-    agents = [("claude", "Claude"), ("codex", "Codex"), ("opencode", "OpenCode"), ("pi", "Pi"), ("cursor", "Cursor CLI")]
+    agents = [("claude", "Claude"), ("codex", "Codex"), ("opencode", "OpenCode"), ("pi", "Pi"), ("cursor", "Cursor")]
 
     def agent(cx, cy, name, label):
         return icon(name, cx, cy - 8, 30) + sans(cx, cy + 24, label, 10.5 if len(label) > 7 else 12, "MUTED")
@@ -519,7 +519,7 @@ def story(theme):
     gx = M - 110
     fx = [gx - 198, gx, gx + 198]
     files = ["CLAUDE.md", "AGENTS.md", ".cursor/rules/"]
-    gen_agents = [("claude", "Claude Code"), ("codex", "Codex"), ("cursor", "Cursor CLI")]
+    gen_agents = [("claude", "Claude Code"), ("codex", "Codex"), ("cursor", "Cursor")]
     b.append(line(Path(gx, A + 22).L(gx, 238), s, z))
     for i, x in enumerate(fx):
         b.append(line(Path(gx, 274).C((gx, 300), (x, 298), (x, 324)), s, z, draw=(s + 1.0, s + 1.4)))

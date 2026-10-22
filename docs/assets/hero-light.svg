@@ -18,9 +18,9 @@
 <text x="286" y="385" font-size="15" fill="#1F2328" text-anchor="middle">Pi</text>
 <rect x="314.2" y="362" width="93" height="34" rx="17" fill="#F6F8FA" stroke="#D0D7DE"/>
 <text x="361" y="385" font-size="15" fill="#1F2328" text-anchor="middle">OpenCode</text>
-<rect x="415.4" y="362" width="111" height="34" rx="17" fill="#F6F8FA" stroke="#D0D7DE"/>
-<text x="471" y="385" font-size="15" fill="#1F2328" text-anchor="middle">Cursor CLI</text>
-<text x="536.4" y="385" font-size="16" fill="#57606A">+ more</text>
+<rect x="415.4" y="362" width="75" height="34" rx="17" fill="#F6F8FA" stroke="#D0D7DE"/>
+<text x="453" y="385" font-size="15" fill="#1F2328" text-anchor="middle">Cursor</text>
+<text x="500.79999999999995" y="385" font-size="16" fill="#57606A">+ more</text>
 <rect x="640" y="50" width="232" height="160" rx="12" fill="#F6F8FA" stroke="#D0D7DE"/>
 <text x="654" y="74" font-size="14" font-weight="700" fill="#57606A" letter-spacing="1">PERSONAL</text>
 <text x="858" y="74" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace" font-size="13" fill="#1A7F37" text-anchor="end">live</text>

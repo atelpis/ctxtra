@@ -124,7 +124,7 @@ you run it.
 
 ## Works with your agents
 
-Claude Code · Codex CLI · GitHub Copilot CLI · Cursor Agent CLI · OpenCode · Pi · Antigravity · Devin ·
+Claude Code · Codex CLI · GitHub Copilot CLI · Cursor (CLI and app) · OpenCode · Pi · Antigravity · Devin ·
 Hermes Agent · Muse Code · DeepSeek Harness
 
 Only use Claude Code? You still get notes per repo that you don't commit, in every worktree, and skills
@@ -136,20 +136,22 @@ it, and a nightly job runs them against the latest releases. You keep running pl
 
 ## Quick start
 
-After `ctxtra setup`, ask your agent, or bind a file yourself. For example, keep your notes for a repo in
-`~/notes/billing.md` instead of a `CLAUDE.local.md`, and bind them to the repo's remote, so every worktree
-gets them:
-
-```text
-$ ctxtra bind billing --repo github.com/acme/billing --file ~/notes/billing.md
-added binding billing to ~/.config/ctxtra/config.yaml: for github.com/acme/billing
-  instructions: ~/notes/billing.md
-
-$ cd ~/wt/billing-fix && claude
-✓ ctxtra added 1 instruction
-Instructions:
-- billing.md
+```bash
+go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
+ctxtra setup          # say yes when it offers the skills
 ```
+
+Then open your agent in one of your repos and ask it, for example: "Use ctxtra to add a notes file for this
+repo to every session here." Or do it yourself, in the repo:
+
+```bash
+mkdir -p ~/notes && touch ~/notes/my-repo.md       # write your notes for this repo in this file
+ctxtra bind my-repo --dir "$PWD" --file ~/notes/my-repo.md
+ctxtra explain        # what a session here gets, and why
+```
+
+The next session in this repo, or in any worktree of it, gets your notes. To match every clone by its
+remote instead, use `--repo github.com/you/my-repo`.
 
 ## Docs
 
