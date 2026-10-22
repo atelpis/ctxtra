@@ -246,6 +246,77 @@ def demo():
     write("demo.svg", "\n".join(b), w, h, "ctxtra demo: four sessions in four folders get four different sets of files from one config")
 
 
+# ---------------------------------------------------------------- skill chat
+
+def skill_chat(theme):
+    """A chat with an agent that has the ctxtra skill: it shows each change first, and answers why."""
+    c = THEMES[theme]
+    w, h = 1100, 522
+    T = 17.0
+    b = [frame(c, w, h, 14)]
+    b.append(f'<rect x="1" y="1" width="{w-2}" height="44" rx="13" fill="{c["PANEL"]}"/>')
+    b.append(f'<rect x="1" y="30" width="{w-2}" height="15" fill="{c["PANEL"]}"/>')
+    b.append(f'<line x1="1" y1="45" x2="{w-1}" y2="45" stroke="{c["EDGE"]}"/>')
+    for i, dot in enumerate(["#FF5F57", "#FEBC2E", "#28C840"]):
+        b.append(f'<circle cx="{26+i*22}" cy="23" r="6.5" fill="{dot}"/>')
+    b.append(f'<text x="{w/2}" y="28" font-size="14" fill="{c["MUTED"]}" text-anchor="middle">your agent, with the ctxtra skill</text>')
+
+    def appear(t):
+        kt = ";".join(f"{x/T:.4f}" for x in [0, t, t + 0.25, T - 0.9, T - 0.3, T])
+        return f'<animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="{kt}" dur="{T}s" repeatCount="indefinite"/>'
+
+    def typing(x, y, a, z):
+        """Three dots while the agent works on its answer."""
+        kt = ";".join(f"{v/T:.4f}" for v in [0, a, a + 0.01, z, z + 0.01, T])
+        dots = "".join(f'<circle cx="{x + 18 + i*14}" cy="{y + 21}" r="3.5" fill="{c["MUTED"]}"/>' for i in range(3))
+        return (f'<g opacity="0"><animate attributeName="opacity" values="0;0;1;1;0;0" keyTimes="{kt}" dur="{T}s" repeatCount="indefinite"/>'
+                f'<rect x="{x}" y="{y}" width="64" height="42" rx="12" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>{dots}</g>')
+
+    # (who, rows, time); a row is (kind, text): p plain, c a command to run, r a command the agent ran
+    msgs = [
+        ("you", [("p", "Add my Go notes to every acme repo")], 0.6),
+        ("agent", [("p", "I'll add this binding. OK to run it?"),
+                   ("c", "ctxtra bind go --repo 'github.com/acme/**' --file ~/notes/go-style.md")], 2.4),
+        ("you", [("p", "Yes")], 4.6),
+        ("agent", [("p", "✓ Done. New sessions in acme repos get go-style.md, in every agent.")], 5.8),
+        ("you", [("p", "Why didn't my billing session get the deploy skill?")], 8.2),
+        ("agent", [("r", "ran ctxtra explain ~/dev/acme/billing"),
+                   ("p", "Your team repo is pinned to a1b2c3d, and deploy came in a later commit."),
+                   ("p", "To review that commit and accept it, run in your terminal:"),
+                   ("c", "ctxtra sync")], 10.4),
+    ]
+    rh = {"p": 22, "r": 22, "c": 32}
+    y = 70
+    for who, rows, t in msgs:
+        bh = sum(rh[k] for k, _ in rows) + 20
+        bw = max((len(s) * (8.4 if k != "p" else 8.0)) + (16 if k == "c" else 0) for k, s in rows) + 32
+        if who == "you":
+            x = w - 40 - bw
+            box = f'<rect x="{x:g}" y="{y}" width="{bw:g}" height="{bh}" rx="12" fill="{c["VIOLET"]}" fill-opacity="{c["TINT"]}" stroke="{c["VIOLET"]}" stroke-opacity="0.5"/>'
+        else:
+            x = 96
+            b.append(typing(x, y, t - 1.0, t))
+            box = (f'<rect x="40" y="{y}" width="40" height="40" rx="10" fill="none" stroke="{c["TEXT"]}" stroke-width="2"/>'
+                   f'<text x="60" y="{y+26}" font-family="{MONO}" font-size="15" font-weight="700" fill="{c["TEXT"]}" text-anchor="middle">&gt;_</text>'
+                   f'<rect x="{x}" y="{y}" width="{bw:g}" height="{bh}" rx="12" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>')
+        parts, ry = [box], y + 10
+        for k, s in rows:
+            if k == "c":
+                parts.append(f'<rect x="{x+12:g}" y="{ry+3}" width="{bw-24:g}" height="26" rx="6" fill="{c["BG"]}" stroke="{c["EDGE"]}"/>'
+                             f'<text x="{x+22:g}" y="{ry+21}" font-family="{MONO}" font-size="14" fill="{c["CYAN"]}" xml:space="preserve">{escape(s)}</text>')
+            elif k == "r":
+                parts.append(f'<text x="{x+16:g}" y="{ry+16}" font-family="{MONO}" font-size="13" fill="{c["DIM"]}">{escape(s)}</text>')
+            else:
+                col = c["GREEN"] if s.startswith("✓") else c["TEXT"]
+                parts.append(f'<text x="{x+16:g}" y="{ry+16}" font-size="15" fill="{col}">{escape(s)}</text>')
+            ry += rh[k]
+        b.append(f'<g opacity="0">{appear(t)}{"".join(parts)}</g>')
+        y += bh + 12
+    write(f"skill-chat-{theme}.svg", "\n".join(b), w, h,
+          "An agent with the ctxtra skill shows the ctxtra bind command and runs it after you say yes, then explains "
+          "why a session didn't get a skill")
+
+
 # ---------------------------------------------------------------- team sync
 
 def team_sync(theme):
@@ -578,5 +649,6 @@ for theme in THEMES:
     hero(theme)
     team_sync(theme)
     story(theme)
+    skill_chat(theme)
 demo()
 social()

@@ -12,17 +12,18 @@
   <img src="https://img.shields.io/badge/status-preview-F59E0B" alt="Status: preview">
 </p>
 
-Keep your agent instructions and skills in your own folder or in a team repo, and choose which repos get
-them. ctxtra adds them when a session starts, in every clone and worktree, in Claude Code, Codex, Copilot CLI
+ctxtra gives each coding agent session the instructions and skills you chose for that repo. Keep them in
+your own folder or in a team repo, and choose which repos get them. ctxtra adds them when a session starts, in every clone and worktree, in Claude Code, Codex, Copilot CLI
 and eight more agents. Nothing is written into your repos.
 
 It's for you if:
 
+- your team has common rules for a specific set of repos, like all your Go services, and copies them into
+  each one with a PR,
 - you have notes for a repo that you can't or don't want to commit, like a client's repo or your team's,
 - you run agents in worktrees, and a new worktree starts without your `CLAUDE.local.md`,
 - you use more than one agent, and keep copying text between `CLAUDE.md` and `AGENTS.md` (setup offers
-  to merge them into one file),
-- your team keeps the same conventions in dozens of repos and updates them with PRs to each one.
+  to merge them into one file, and backs up the originals).
 
 ```bash
 go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
@@ -30,8 +31,9 @@ ctxtra setup --dry-run    # lists each agent config it would change
 ctxtra setup              # or only some agents: --agent claude --agent codex
 ```
 
-`setup` adds its hooks to the agents' user-level configs, and `ctxtra setup --remove` takes out only those.
-Your repos, their `AGENTS.md` and your skill folders stay as they are.
+`setup` adds its hooks to the agents' user-level configs and backs up each file first. `ctxtra setup --remove`
+takes out only its hooks. Your repos, their `AGENTS.md` and your skill folders stay as they are. If ctxtra
+fails or goes missing, sessions start as usual, without the files. ctxtra's hook never uses the network.
 
 <p align="center">
   <picture>
@@ -42,9 +44,9 @@ Your repos, their `AGENTS.md` and your skill folders stay as they are.
 
 ## Bind your files, don't copy them
 
-Generators write each agent's files into your repo. If you commit them, every edit means a rerun and a
-generated diff, and your personal notes end up in a shared repo. If you don't, every new clone and worktree
-needs a rerun. ctxtra leaves your files where they are and binds them instead:
+Generators write each agent's files into your repo. Commit them, and every edit means a rerun and a generated
+diff. Don't commit them, and every new clone and worktree needs a rerun. ctxtra leaves your files where they
+are and binds them instead:
 
 ```yaml
 bindings:
@@ -61,13 +63,30 @@ bindings:
 - Your Markdown, your config and your code can each live in a different place: a notes folder, your
   dotfiles, a team repo on GitHub.
 - Bind instructions and skills the same way. Globs work too: `~/notes/**/*.md`.
-- The agents' own `AGENTS.md` and `CLAUDE.md` files keep working. ctxtra only adds to them.
+- The agents' own `AGENTS.md` and `CLAUDE.md` files keep working. ctxtra only adds to them. Already commit
+  rules with a generator, or sync your skills? Keep that, and use ctxtra for the rest: notes you don't
+  commit, and rules for only some repos.
 - Each session gets the files for the folder it starts in. If the agent then works in another repo, the
   optional `ctxtra-follow` skill tells it how to get that repo's files, but like any skill, the model can
   miss it.
 
 <p align="center">
   <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get four different sets of files from one config" width="100%">
+</p>
+
+## Ask your agent to set it up
+
+ctxtra ships with skills that teach your agents its commands and config, so you can try it without reading
+the docs. `setup` offers to add them. Then ask any agent in your own words: to add your notes to some repos,
+to add your team's repo, to move your existing `CLAUDE.md` and `AGENTS.md` into ctxtra, or why a session
+didn't get a file. The agent shows you each command before it runs it and waits for your OK. It never
+trusts a repo or accepts a team update for you.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/skill-chat-dark.svg">
+    <img src="docs/assets/skill-chat-light.svg" alt="An agent with the ctxtra skill shows the ctxtra bind command and runs it after you say yes, then explains why a session didn't get a skill" width="100%">
+  </picture>
 </p>
 
 ## In context from the first message
@@ -103,23 +122,16 @@ files, never to `~/.ssh` or anything else on your disk. Its text still goes to y
 `ctxtra add` accepts the current commit, so read a package before you add it, as you would read code before
 you run it.
 
-## Your agent sets it up, you approve
-
-You don't need to learn the config. ctxtra comes with a skill that teaches your agents how to use it. Ask
-"add my Go notes to every session in my work repos": the agent shows you the change and asks before it
-writes anything. It never trusts a repo or accepts a team update for you.
-
-Already have a `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`? `setup` can move them into one file that all
-your agents get, if you want it to. An agent merges them and shows you the result, and the old files change
-only if you agree.
-
 ## Works with your agents
 
 Claude Code · Codex CLI · GitHub Copilot CLI · Cursor Agent CLI · OpenCode · Pi · Antigravity · Devin ·
 Hermes Agent · Muse Code · DeepSeek Harness
 
-Only use Claude Code? You still get notes per repo that you don't have to commit, and the same files in every
-worktree. The tests run nine of these agents' real binaries against a mock model and check what reaches
+Only use Claude Code? You still get notes per repo that you don't commit, in every worktree, and skills
+only in the repos that need them. Unlike a hook of your own that prints a file, ctxtra matches by git
+remote, and `ctxtra explain` says why a file is missing.
+
+The tests run nine of these agents' real binaries against a mock model and check what reaches
 it, and a nightly job runs them against the latest releases. You keep running plain `claude` or `codex`.
 
 ## Quick start
@@ -145,4 +157,5 @@ Instructions:
 - [Scenarios](docs/scenarios.md): step by step, from your own notes to a team repo.
 - [Config spec](docs/spec.md).
 
-ctxtra is in preview, and the config format may still change. It runs on macOS and Linux.
+ctxtra is in preview, and the config format may still change. It runs on macOS and Linux. Made by
+[Alex Telpis](https://github.com/atelpis).
