@@ -1,0 +1,76 @@
+# Local expansion is shared by bind, previews and hooks.
+exec ctxtra bind local --global --file '~/notes/**/*.md'
+exec ctxtra files .
+stdout 'notes/a.md'
+stdout 'notes/sub/b.md'
+exec ctxtra show .
+stdout 'LOCAL_A'
+stdout 'LOCAL_B'
+! stdout 'EXCLUDED'
+exec ctxtra setup --agent claude
+runhook claude SessionStart .
+stdout 'LOCAL_A'
+stdout 'LOCAL_B'
+
+# Pinned patterns must include additions in review without a binding edit.
+gitrepo srv/team
+exec ctxtra add $GITSRV/team bindings.yaml
+exec ctxtra show .
+stdout 'PINNED_A'
+stdout 'OLD_MATCH'
+exec ctxtra bind own --global --file 'ctxtra://team/notes/*.md'
+rm srv/team/notes/old.md
+cp new.md srv/team/notes/new.md
+cp old.md srv/team/notes/a.md
+gitcommit srv/team
+exec ctxtra show .
+! stdout 'NEW_MATCH'
+stdin no.txt
+exec ctxtra sync
+stdout '\+NEW_MATCH'
+stdout '\+CHANGED_MATCH'
+stdout '-OLD_MATCH'
+stdout 'not accepted'
+exec ctxtra show .
+! stdout 'NEW_MATCH'
+stdin yes.txt
+exec ctxtra sync
+stdout '\+NEW_MATCH'
+exec ctxtra show .
+stdout 'NEW_MATCH'
+stdout 'CHANGED_MATCH'
+
+# New glob errors in the user's config must be visible during sync.
+exec ctxtra bind last --global --file 'ctxtra://team/notes/new*.md'
+rm srv/team/notes/new.md
+gitcommit srv/team
+stdin no.txt
+exec ctxtra sync
+stdout 'ERROR: .*ctxtra://team/notes/new\*.md.*glob matches no instructions'
+exec ctxtra show .
+stdout 'NEW_MATCH'
+
+-- notes/a.md --
+LOCAL_A
+-- notes/sub/b.md --
+LOCAL_B
+-- notes/excluded.txt --
+EXCLUDED
+-- srv/team/bindings.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: pinned
+    match: {global: true}
+    instructions: ['notes/**/*.md']
+-- srv/team/notes/old.md --
+OLD_MATCH
+-- srv/team/notes/a.md --
+PINNED_A
+-- new.md --
+NEW_MATCH
+-- old.md --
+CHANGED_MATCH
+-- no.txt --
+n
+-- yes.txt --
+y

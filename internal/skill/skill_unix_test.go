@@ -14,10 +14,10 @@ import (
 
 func TestRefreshRefuses(t *testing.T) {
 	testenv.Home(t)
-	file := filepath.Join(paths.SkillDir(), "SKILL.md")
+	file := filepath.Join(paths.SkillDir(Base), "SKILL.md")
 
 	// A FIFO in place of SKILL.md doesn't block; it is replaced.
-	os.MkdirAll(paths.SkillDir(), 0o755)
+	os.MkdirAll(paths.SkillDir(Base), 0o755)
 	if err := syscall.Mkfifo(file, 0o644); err != nil {
 		t.Skip(err)
 	}
@@ -32,8 +32,8 @@ func TestRefreshRefuses(t *testing.T) {
 	other := filepath.Join(t.TempDir(), "mine")
 	os.MkdirAll(other, 0o755)
 	os.WriteFile(filepath.Join(other, "SKILL.md"), []byte("mine"), 0o644)
-	os.RemoveAll(paths.SkillDir())
-	if err := os.Symlink(other, paths.SkillDir()); err != nil {
+	os.RemoveAll(paths.SkillDir(Base))
+	if err := os.Symlink(other, paths.SkillDir(Base)); err != nil {
 		t.Fatal(err)
 	}
 	if err := Refresh(); err == nil {

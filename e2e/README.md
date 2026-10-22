@@ -61,9 +61,19 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestCtxtraSkill` | The ctxtra skill that `ctxtra skill install` binds is listed like any other skill, and its body reaches the model only when the agent loads it |
 | `TestCoexist` | Another tool's session-start hook keeps working next to ctxtra's and after `setup --remove` |
 | `TestUntrustedHookAddsNothing` | Codex without hook trust: the session works and gets nothing from ctxtra |
-| `TestUserMessage` | Claude and Muse get the one-line message for the user from the hook |
+| `TestUserMessage` | Claude and Muse get the summary message for the user from the hook |
+| `TestMissingBinary` | Claude and Muse: with the binary that the hooks run gone, the session starts, and the hook command gives the message for the user that the binary is missing |
 | `TestOutsideGit` | Outside git, only `global` and `dirs` bindings apply |
 | `TestResume` | Copilot and Muse: a resumed session has the current version of the files, once |
+| `TestCapacity` | About 315K characters of bound files (a third for Copilot), Unicode and emoji included, reach the model at session start: every line once, in config order (parts that arrive out of order are put back by their labels). Agents that get the text from several hooks resolve the files once |
+| `TestCapacitySubagent` | The same text reaches a subagent in full, and the main agent still has it once after tool calls |
+| `TestOverCapacity` | Above the agent's capacity (see `capacity` in [capacity_test.go](capacity_test.go)), whole files are dropped from the end: the files before them arrive in full, the dropped one not at all; the log and the user message name it |
+| `TestCopilotCompactionDropsText` | Documents a known Copilot limit: after Copilot compacts a long conversation, the hook's text is gone and the hook doesn't run again. Fails when Copilot changes that |
+| `TestUpgradeFromRelease` | Every agent with each setup that a release wrote (`testdata/clients/<id>/<agent>` at the repository root, with the binary under test linked at `$HOME/bin/ctxtra`), with text below, near and above what that setup can carry from this binary (`carries` in [upgrade_test.go](upgrade_test.go)): every file up to that amount, files over it dropped whole, and the log (and the user message, where the agent shows one) says to run `ctxtra setup` only when a setup now would carry more |
+| `TestCodexTrustTUI` | Interactive Codex in tmux: one "Trust all and continue" in the hook review trusts ctxtra's hooks, which set a finite `additionalContextLimit`; the session gets the text in full; `setup` run again asks for no new trust. Needs tmux |
+| `TestCodexUpgradeKeepsTrust` | Interactive Codex in tmux: after the user trusted ctxtra's hooks, a newer binary at the same path asks for no new trust, and the session gets the text in full. Needs tmux |
+| `TestImportTUI` | `ctxtra setup` in tmux: Enter installs the skill and accepts the import, setup backs up the agent's own instruction file and starts the agent's interactive app through a shim pointed at the mock (Hermes, which has no such file, moves Claude Code's; DSH, without a terminal app, gets the prompt that setup prints). The first request has the import prompt with the file and its backup, and the ctxtra skill. It doesn't check what a real model does with them. Needs tmux |
+| `TestNativeFiles` | The files that `ctxtra import --no-start` lists for an agent are the user-level files that reach its model, out of a set of candidates, apart from files it leaves out on purpose (`nativeExcluded`); a file it lists as not read now doesn't reach it |
 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped
 with the reason for the others. A declared capability that stops working fails the test.
@@ -72,9 +82,16 @@ Not covered here, and checked by hand before a release:
 
 - What the interactive TUI shows (the session-start message on screen), `/clear`, `/compact`, and resume in
   Claude, Codex, Pi and OpenCode. These need a pseudo-terminal runner.
-- Codex hook trust through `/hooks`. These tests run Codex with `--dangerously-bypass-hook-trust`, which
-  checks delivery only.
-- Cursor Agent CLI: its model protocol can't be mocked.
+- What a real model makes of the import that `ctxtra setup` and `ctxtra import` start: the merged file,
+  its questions, and the cleanup of the old files.
+- Codex hook trust through `/hooks`. The other tests run Codex with `--dangerously-bypass-hook-trust`;
+  `TestCodexTrustTUI` and `TestCodexUpgradeKeepsTrust` cover the startup hook review only.
+- Cursor (Agent CLI and desktop app): its model protocol can't be mocked. [cursorkit](cursorkit) checks it by
+  hand with the real model: `go run ./cursorkit prepare -dir DIR -chars N [-delay D]` makes a test folder
+  whose project hook binds a file with random codewords, `go run ./cursorkit cli -dir DIR` runs a CLI chat,
+  and `go run ./cursorkit verify -dir DIR` checks a desktop chat opened in `DIR/workspace`: every codeword
+  in the answer, read from Cursor's transcript, and no tool call. The codewords are samples: they show that
+  the text arrived at those places, not every line between them or their order.
 - The Antigravity App and IDE. They read the same hook file as the CLI.
 - Hermes with `plugins.isolation: host`.
 - DSH's web UI and TUI: the tests run its headless profile. DSH 0.2.0-rc.2's headless profile exits before a

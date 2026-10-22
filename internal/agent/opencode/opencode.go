@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/extfile"
@@ -17,7 +18,12 @@ import (
 // Agent is OpenCode.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent        = Agent{}
+	_ agent.PluginClient = Agent{}
+	_ agent.Native       = Agent{}
+	_ agent.Launcher     = Agent{}
+)
 
 func (Agent) Name() string { return "opencode" }
 
@@ -54,7 +60,14 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 	return extfile.Setup(a.ConfigPath(), Plugin(o.Binary), o, r)
 }
 
-func (a Agent) Status() agent.Status { return extfile.Status(a.ConfigPath()) }
+func (a Agent) Status(bin string, known bool) agent.Status {
+	return extfile.Status(a.ConfigPath(), a.Check(bin, known))
+}
+
+func (a Agent) Check(bin string, known bool) []string {
+	notices, _ := extfile.CheckSetup(extfile.Ext{Path: a.ConfigPath(), Agent: a.Name(), Noun: "plugin"}, bin, known)
+	return notices
+}
 
 // Answer is the files as one text for the system prompt, and the skills with
 // their SKILL.md body: OpenCode's skill tool gives the model the body the
@@ -76,10 +89,19 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 	return map[string]any{"text": res.RenderFiles(), "skills": skills}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: OpenCode gets 1,200,000 characters in full (measured with OpenCode
+// 2.0.29).
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "OpenCode", Capacity: 1_000_000}
+}
+
+// protocol is the version of the plugin, which it sends as ctxtra_plugin.
+const protocol = 1
+
+func (Agent) Protocol() int { return protocol }
 
 // Plugin is the plugin that runs bin.
-func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, pluginBody) }
+func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, protocol, pluginBody) }
 
 // pluginBody runs the binary asynchronously, like Pi's extension, with a 10
 // second timeout and room for the largest output ctxtra can produce.
@@ -94,7 +116,7 @@ func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin,
 // background service, so the skills found at setup are updated when a new
 // session gets a different list; OpenCode applies them from the next
 // request.
-const pluginBody = `// Written by ctxtra setup. Adds the instruction files and skills that
+var pluginBody = `// Written by ctxtra setup. Adds the instruction files and skills that
 // ctxtra binds to the session's folder. Safe to delete; ` + "`ctxtra setup --remove`" + ` removes it.
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
@@ -118,7 +140,7 @@ function run(ev: string, cwd: string): Promise<Answer> {
 					}
 				});
 			child.stdin?.on("error", () => {});
-			child.stdin?.end(JSON.stringify({ cwd }));
+			child.stdin?.end(JSON.stringify({ cwd, ctxtra_plugin: ` + strconv.Itoa(protocol) + ` }));
 		} catch {
 			resolve({});
 		}
@@ -175,3 +197,14 @@ export default {
 	},
 };
 `
+
+// NativeFiles: OpenCode 2 reads AGENTS.md in its config folder; it doesn't
+// read ~/.claude/CLAUDE.md, as OpenCode 1 did.
+func (Agent) NativeFiles() []agent.NativeFile {
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "AGENTS.md")); ok {
+		return []agent.NativeFile{f}
+	}
+	return nil
+}
+
+func (Agent) Launch(prompt string) []string { return []string{"opencode", "--prompt", prompt} }

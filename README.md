@@ -55,6 +55,9 @@ what ctxtra adds and where; ctxtra doesn't make that content safe.
 - **Your agent can set it up.** `ctxtra skill install` adds a skill that teaches agents ctxtra's commands.
   Ask "add my Go notes to every session in my work repos". The agent asks you before each change, and never
   trusts a repository or accepts a team update for you.
+- **Your existing files, moved in once.** `setup` finds the instruction files your agents already have,
+  `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` and the others, and offers to merge them into one file that
+  every agent gets.
 
 <details>
 <summary>Why not a symlink, an <code>@import</code> or <code>CLAUDE.local.md</code>?</summary>
@@ -99,7 +102,12 @@ added binding go to ~/.config/ctxtra/config.yaml: for ~/dev/**, github.com/acme/
   skills: ~/dev/dotfiles/skills/review
 
 $ cd ~/dev/acme/billing && claude
-ctxtra: added 2 files (me.md, go-style.md) and 1 skill (review)
+✓ ctxtra added 2 instructions and 1 skill
+Instructions:
+- me.md
+- go-style.md
+Skills:
+- review
 ```
 
 `--trust` makes ctxtra read the repo from disk, so an edit reaches the next session. `bind` writes the binding
@@ -132,8 +140,10 @@ sources:
 Or let an agent do it: `ctxtra skill install` adds the ctxtra skill to every session (`setup` offers it too),
 and then you can ask any agent, for example "add my notes to every session in my work repositories".
 
-Already have notes in `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`? Move them into one file, bind it with
-`--global`, and empty the old files so the text isn't added twice.
+Already have notes in `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md` or another agent's own files? `setup`
+offers to move them into ctxtra: it backs them up and starts an agent that merges them into one file, asks
+you about rules that fit only one agent, and binds the result. It removes the old copies only if you agree.
+`ctxtra import` makes the same offer later.
 
 <details>
 <summary>The setup behind the pictures: a personal package and a team package</summary>
@@ -196,6 +206,9 @@ A binding applies when any entry of its `match` block matches the folder the ses
 | `repos: [github.com/acme/**]` | Any clone with a matching remote, and its worktrees. `git@` and `https://` forms are the same. |
 | `repos: [{remote: github.com/acme/mono, subpath: services/billing/**}]` | One part of a monorepo. |
 
+`instructions` and `skills` take globs too: `'~/notes/**/*.md'` binds every note, and `skills/**` every
+folder with a `SKILL.md`.
+
 Files are plain Markdown, and skills are folders with a `SKILL.md`, the format the agents already use.
 Nothing in them is specific to ctxtra.
 
@@ -224,7 +237,9 @@ what reaches the model. A nightly job runs it against the latest agent releases.
 
 `setup` changes only its own entries in the agents' user-level configs and backs up each file to
 `~/.ctxtra/backups`. `ctxtra setup --remove` removes them. Codex runs the hook after you trust it once
-(`/hooks`), and Hermes loads the plugin after `hermes plugins enable ctxtra`.
+(`/hooks`), and Hermes loads the plugin after `hermes plugins enable ctxtra`. An upgrade doesn't need
+`setup` again, unless the release notes say so. When an agent's setup needs you, every ctxtra command says
+so, with the command that fixes it.
 
 ## See exactly what the agent gets
 
@@ -242,9 +257,9 @@ total: 2 files, 0 skills, 650 chars (about 162 tokens)
 
 The total counts the whole text the agent gets, with the header ctxtra puts before each file.
 
-Claude Code, Hermes, and Codex by default, show the model only a preview of hook output above about 10,000
-characters, and Antigravity drops everything after about 48,000 bytes. `explain` and `doctor` warn above
-that, and `budget.max-chars` in the config drops whole files from the end until the text fits.
+Large texts arrive in full: 360,000 characters in Claude Code, and more in most other agents. Where an agent
+cuts a large hook output, ctxtra splits the text into labeled parts. Above an agent's limit, or the
+`budget.max-chars` you set, whole files are dropped from the end, and `explain` names them.
 
 <details>
 <summary>All inspect commands</summary>
@@ -252,7 +267,7 @@ that, and `budget.max-chars` in the config drops whole files from the end until 
 | Command | Shows |
 |---|---|
 | `ctxtra files [DIR]` | The files and skills a session in DIR gets. |
-| `ctxtra show [DIR]` | The exact text the agent gets. |
+| `ctxtra show [DIR]` | The exact text the agent gets. `--session FOLDER`: only what DIR adds to a session in FOLDER. |
 | `ctxtra explain [DIR]` | Every binding: matched or not, and why. |
 | `ctxtra doctor [DIR]` | Config problems, setup state, Codex trust, recent hook runs. |
 
@@ -260,6 +275,19 @@ Every hook run is logged to `~/.ctxtra/log.jsonl`. The hook never breaks a sessi
 missing file is skipped and reported, and on any other error the hook adds nothing and logs the error.
 
 </details>
+
+## When the agent moves to another repo
+
+A session gets what its start folder matches. Ask the agent to "also update the client in ../billing", and
+your billing bindings don't reach it. The optional `ctxtra-follow` skill handles this (`setup` offers it):
+
+```bash
+ctxtra skill install ctxtra-follow
+```
+
+Before the agent works in another folder, the skill tells it to run `ctxtra show <folder> --session <start
+folder>`, which prints only the files and skills that folder adds. Unlike session start, this depends on the
+model: it decides when to use the skill, and it can miss it.
 
 ## Share a package with your team
 
@@ -330,6 +358,8 @@ agent: bind only files you wrote or reviewed.
   during the review.
 - **Contract tests against real agents**, as above, with pinned agent versions and a nightly run on the
   latest ones.
+- **Upgrades without setup.** Contract tests compare what `setup` writes with a frozen contract, and run
+  the hooks that every earlier release set up, so a new binary keeps serving an old setup.
 - **Docs in the binary.** `ctxtra help config`, `ctxtra help scenarios` and `ctxtra skill` print the docs and
   the skill of the version you run, so an agent never reads docs for another version.
 
@@ -338,9 +368,15 @@ Details: [docs/spec.md](docs/spec.md).
 <details>
 <summary><b>Limits</b></summary>
 
+- Each agent takes a limited amount of text in full: 360,000 characters in Claude Code and Muse, 1,000,000
+  bytes in Codex, 650,000 bytes in Antigravity, 140,000 bytes in Copilot, 1,000,000 characters in the
+  others (not measured in Cursor and Devin). See [the spec](docs/spec.md#capacity).
+- Codex gets the text in full from version 0.145.0; older versions show the model about 10,000 characters,
+  and `doctor` warns.
 - Resumed sessions don't get the text again in most agents, because the transcript already has it.
   `/compact` and `/clear` add it again in Claude Code and Codex. Copilot and Muse add the current version on
-  resume, and Pi and OpenCode add it to every request.
+  resume, and Pi and OpenCode add it to every request. When Copilot compacts a long conversation, the text
+  is gone for the rest of the session.
 - A subagent gets the files when it starts, so it can see a newer version than its parent.
 - Codex asks you to trust a hook again after every change to it, for example after the binary moved.
   `doctor` shows whether a trust record exists.
@@ -350,8 +386,10 @@ Details: [docs/spec.md](docs/spec.md).
   skill folders in its settings to skip the question.
 - Hermes with `plugins.isolation: host` may not know the session folder; then `dirs` and `repos` can match
   the wrong place.
-- Devin also runs Claude Code's hooks: with both set up, Claude's hook adds nothing in Devin sessions.
-  Devin and Cursor are checked by the CLI tests only, not with the real agent.
+- Devin and Cursor also run Claude Code's hooks: with both set up, Claude's hook adds nothing in their
+  sessions. Devin is checked by the CLI tests only, not with the real agent.
+- Cursor's desktop app doesn't wait for the session-start hook, so a large text can miss the first
+  message: 30,000 characters arrived in tests, 100,000 didn't. The Agent CLI waits.
 - `setup` follows `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `COPILOT_HOME`, `DSH_HOME` and `XDG_CONFIG_HOME` when
   they are set.
 - macOS and Linux. Windows isn't supported yet.

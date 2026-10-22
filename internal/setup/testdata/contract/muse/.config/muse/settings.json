@@ -1,0 +1,729 @@
+{
+  "schema_version": 1,
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 0 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{\\\"systemMessage\\\":\\\"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent muse with the new binary\\\"}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 1 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 2 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 3 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 4 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 5 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 6 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 7 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 8 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 9 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 10 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 11 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 12 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 13 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 14 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 15 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 16 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 17 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 18 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 19 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 20 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 21 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 22 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 23 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 24 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 25 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 26 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 27 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 28 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 29 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 30 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 31 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 32 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 33 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 34 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 35 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 36 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 37 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 38 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SessionStart --slot 39 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 0 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 1 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 2 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 3 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 4 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 5 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 6 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 7 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 8 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 9 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 10 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 11 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 12 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 13 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 14 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 15 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 16 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 17 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 18 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 19 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 20 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 21 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 22 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 23 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 24 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 25 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 26 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 27 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 28 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 29 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 30 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 31 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 32 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 33 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 34 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 35 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 36 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 37 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 38 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"$HOME/bin/ctxtra\"; if [ -x \"$f\" ]; then exec \"$f\" hook muse SubagentStart --slot 39 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

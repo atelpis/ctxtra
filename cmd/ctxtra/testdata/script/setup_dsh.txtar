@@ -4,7 +4,7 @@
 # DSH needs.
 
 exec ctxtra setup --agent dsh
-stdout '^ctxtra setup \(dsh\): changed$'
+stdout '^ctxtra is set up for DSH:$'
 grep '^// @ctxtra-managed' .dsh/ctxtra.mjs
 grep '^// binary: '$BIN'$' .dsh/ctxtra.mjs
 expand want-patch.yml want-patch-expanded.yml
@@ -12,10 +12,11 @@ cmp .dsh/cordis.patch.yml want-patch-expanded.yml
 
 exec ctxtra doctor
 stdout 'dsh: set up, runs .*/ctxtra \(ok\)'
+! stderr .
 
 # Setup again changes nothing.
 exec ctxtra setup --agent dsh
-stdout '^ctxtra setup \(dsh\): nothing to change$'
+stdout '^ctxtra is already set up for DSH\.$'
 
 exec ctxtra setup --remove --agent dsh
 ! exists .dsh/ctxtra.mjs

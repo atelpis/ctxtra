@@ -19,6 +19,7 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
+	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -26,7 +27,10 @@ import (
 // Agent is Devin CLI and Devin Local.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent   = Agent{}
+	_ agent.Missing = Agent{}
+)
 
 // events: Devin has no subagent-start event, and its matchers match tool
 // names, so SessionStart has none.
@@ -53,13 +57,13 @@ func (Agent) Detect() bool {
 }
 
 func (a Agent) hooks() hookjson.Config {
-	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events}
+	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events, Missing: a}
 }
 
 // Setup refuses a config with comments, which Devin allows: ctxtra writes
 // plain JSON and would drop them.
 func (a Agent) Setup(o agent.Options, r *agent.Report) error {
-	b, err := os.ReadFile(a.ConfigPath())
+	b, err := fsutil.ReadBounded(a.ConfigPath(), agent.MaxConfig)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -69,13 +73,20 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 	return a.hooks().Apply(o, r)
 }
 
-func (a Agent) Status() agent.Status { return a.hooks().Status() }
+func (a Agent) Status(bin string, known bool) agent.Status { return a.hooks().Status(bin, known) }
+
+func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
 
 func (Agent) Answer(event string, res *resolve.Result) any {
 	return agent.AdditionalContext(event, res)
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+func (Agent) MissingAnswer(event, msg string) string { return agent.SystemMessage(event, msg) }
+
+// Delivery: not measured; Devin may cut large hook output.
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Devin", Capacity: 1_000_000}
+}
 
 // UnderDevin reports whether this hook process was started by Devin and
 // ctxtra's Devin hook is set up, so that Devin's hook adds the files for

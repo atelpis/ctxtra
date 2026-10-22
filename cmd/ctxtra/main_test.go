@@ -19,6 +19,7 @@ import (
 
 	"github.com/rogpeppe/go-internal/testscript"
 
+	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
@@ -37,6 +38,7 @@ func TestScript(t *testing.T) {
 			"gitrepo":   gitRepo,
 			"gitcommit": gitCommit,
 			"expand":    expandFile,
+			"slots":     collapseSlots,
 		},
 	})
 }
@@ -151,8 +153,9 @@ func expandFile(ts *testscript.TestScript, neg bool, args []string) {
 // agent's config for EVENT, with the hook input the agent sends for a
 // session in DIR, and makes its output available to stdout/stderr. For Pi,
 // OpenCode, Hermes and DSH, whose extensions aren't shell commands, it runs
-// the binary named in the extension the way the extension does. Antigravity
-// gets its own input and working folder.
+// the binary named in the extension the way the extension does, with the
+// protocol version and Hermes's slot count that it sends. Antigravity gets
+// its own input and working folder.
 func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	if len(args) != 3 {
 		ts.Fatalf("usage: runhook AGENT EVENT DIR")
@@ -183,12 +186,18 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	case "pi", "opencode", "hermes", "dsh":
 		path := map[string]string{"pi": ".pi/agent/extensions/ctxtra.ts", "opencode": ".config/opencode/plugins/ctxtra.ts",
 			"hermes": ".hermes/plugins/ctxtra/__init__.py", "dsh": ".dsh/ctxtra.mjs"}[agent]
-		m := regexp.MustCompile(`(?m)^(?://|#) binary: (.+)$`).FindStringSubmatch(ts.ReadFile(filepath.Join(home, path)))
-		if m == nil {
-			ts.Fatalf("no binary in %s", path)
+		ext := ts.ReadFile(filepath.Join(home, path))
+		m := regexp.MustCompile(`(?m)^(?://|#) binary: (.+)$`).FindStringSubmatch(ext)
+		v := regexp.MustCompile(`(?m)^(?://|#) protocol: (\d+)$`).FindStringSubmatch(ext)
+		if m == nil || v == nil {
+			ts.Fatalf("no binary or protocol in %s", path)
 		}
 		bin := strings.Replace(m[1], "$HOME", home, 1)
-		input, _ = json.Marshal(map[string]string{"cwd": dir})
+		in := map[string]any{"cwd": dir, "ctxtra_plugin": json.Number(v[1])}
+		if n := regexp.MustCompile(`(?m)^SLOTS = (\d+)$`).FindStringSubmatch(ext); n != nil {
+			in["ctxtra_slots"] = json.Number(n[1])
+		}
+		input, _ = json.Marshal(in)
 		cmd = exec.Command(bin, "hook", agent, event)
 	default:
 		ts.Fatalf("runhook: unknown agent %q", agent)
@@ -213,9 +222,77 @@ func runHook(ts *testscript.TestScript, neg bool, args []string) {
 	}
 }
 
+// slots FILE: rewrites a Claude or Muse hook file so that each run of
+// entries that differ only in their slot, A to B in order, is one entry
+// with "--slot A..B", for cmp. A run of one entry stays as it is: slot 0 of
+// a session start, which has the message for a missing binary. Slots count
+// up from 0 in each event; it fails on slots out of order.
+func collapseSlots(ts *testscript.TestScript, neg bool, args []string) {
+	if neg || len(args) != 1 {
+		ts.Fatalf("usage: slots FILE")
+	}
+	path := ts.MkAbs(args[0])
+	data, err := jsonorder.ReadFile(path)
+	ts.Check(err)
+	re := regexp.MustCompile(` --slot (\d+)( --of \d+)?;`)
+	hv, _ := data.Get("hooks")
+	hooks, ok := hv.(*jsonorder.Map)
+	if !ok {
+		ts.Fatalf("%s: no hooks", path)
+	}
+	for _, ev := range hooks.Keys {
+		v, _ := hooks.Get(ev)
+		list, _ := v.([]any)
+		var kept []any
+		var first any
+		var runStart, prev string
+		n, next := 0, 0
+		flush := func() {
+			switch {
+			case n == 1:
+				kept = append(kept, first)
+			case n > 1:
+				e, err := jsonorder.Decode([]byte(strings.Replace(runStart, " --slot N", fmt.Sprintf(" --slot %d..%d", next-n, next-1), 1)))
+				ts.Check(err)
+				kept = append(kept, e)
+			}
+			n = 0
+		}
+		for _, e := range list {
+			b, err := jsonorder.Marshal(e)
+			ts.Check(err)
+			m := re.FindStringSubmatch(string(b))
+			if m == nil {
+				flush()
+				kept = append(kept, e)
+				continue
+			}
+			norm := re.ReplaceAllString(string(b), " --slot N$2;")
+			if n > 0 && norm != prev {
+				flush()
+			}
+			if m[1] != fmt.Sprint(next) {
+				ts.Fatalf("%s: %s: slot %s where %d belongs", path, ev, m[1], next)
+			}
+			if n == 0 {
+				runStart, first = norm, e
+			}
+			prev = norm
+			n++
+			next++
+		}
+		flush()
+		hooks.Set(ev, kept)
+	}
+	out, err := jsonorder.MarshalIndent(data)
+	ts.Check(err)
+	ts.Check(os.WriteFile(path, out, 0o644))
+}
+
 // hookCommand is the one ctxtra command among the hooks for event in a
 // Claude, Codex, Muse or Devin hook file, or a flat one (Copilot) where each
-// entry is a handler.
+// entry is a handler. Of slot commands (Claude, Muse), it is slot 0's: it
+// adds all of a short text.
 func hookCommand(ts *testscript.TestScript, path, event string) string {
 	type handler struct{ Command string }
 	var cfg struct {
@@ -228,7 +305,8 @@ func hookCommand(ts *testscript.TestScript, path, event string) string {
 	var found []string
 	for _, g := range cfg.Hooks[event] {
 		for _, h := range append(g.Hooks, g.handler) {
-			if strings.Contains(h.Command, " hook ") && strings.Contains(h.Command, "ctxtra") {
+			if strings.Contains(h.Command, " hook ") && strings.Contains(h.Command, "ctxtra") &&
+				(!strings.Contains(h.Command, " --slot ") || strings.Contains(h.Command, " --slot 0;") || strings.Contains(h.Command, " --slot 0 ")) {
 				found = append(found, h.Command)
 			}
 		}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -22,7 +23,11 @@ import (
 // Agent is DeepSeek Harness.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent        = Agent{}
+	_ agent.PluginClient = Agent{}
+	_ agent.Native       = Agent{}
+)
 
 func (Agent) Name() string { return "dsh" }
 
@@ -67,7 +72,7 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error {
 
 func (a Agent) setupPatch(o agent.Options, r *agent.Report) error {
 	path := a.ConfigPath()
-	old, err := os.ReadFile(path)
+	old, err := fsutil.ReadBounded(path, agent.MaxConfig)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -90,11 +95,12 @@ func (a Agent) setupPatch(o agent.Options, r *agent.Report) error {
 }
 
 // Status needs both the plugin and the row that loads it.
-func (a Agent) Status() agent.Status {
-	st := extfile.Status(a.PluginPath())
-	b, err := os.ReadFile(a.ConfigPath())
+func (a Agent) Status(bin string, known bool) agent.Status {
+	notices := a.Check(bin, known)
+	st := extfile.Status(a.PluginPath(), notices)
+	b, err := fsutil.ReadBounded(a.ConfigPath(), agent.MaxConfig)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return agent.Status{State: "unreadable: " + err.Error()}
+		return agent.Status{State: "unreadable: " + err.Error(), Details: notices}
 	}
 	loaded, ok := patchPlugin(string(b))
 	plugin := st.State != "not set up"
@@ -102,13 +108,40 @@ func (a Agent) Status() agent.Status {
 	case !ok && !plugin:
 		return st
 	case !ok:
-		return agent.Status{State: "plugin written, but cordis.patch.yml doesn't load it; run ctxtra setup"}
+		return agent.Status{State: "plugin written, but cordis.patch.yml doesn't load it", Details: notices}
 	case loaded != a.PluginPath():
-		return agent.Status{State: "cordis.patch.yml loads " + paths.Tilde(loaded) + "; run ctxtra setup"}
+		return agent.Status{State: "cordis.patch.yml loads " + paths.Tilde(loaded), Details: notices}
 	case !plugin:
-		return agent.Status{State: "cordis.patch.yml loads a missing plugin; run ctxtra setup"}
+		return agent.Status{State: "cordis.patch.yml loads a missing plugin", Details: notices}
 	}
 	return st
+}
+
+// Check needs both the plugin and the row that loads it. setup.json lists
+// the patch file, ConfigPath.
+func (a Agent) Check(bin string, known bool) []string {
+	repair := agent.Repair(a.Name())
+	b, err := fsutil.ReadBounded(a.ConfigPath(), agent.MaxConfig)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return []string{agent.UnreadableNotice(a.ConfigPath(), err)}
+	}
+	loaded, row := patchPlugin(string(b))
+	notices, plugin := extfile.CheckSetup(extfile.Ext{Path: a.PluginPath(), Agent: a.Name(), Noun: "plugin"}, bin, false)
+	switch {
+	case len(notices) > 0 && !plugin: // can't read the plugin
+	case !row && !plugin:
+		if known {
+			notices = append(notices, agent.GoneNotice("ctxtra's patch row is", a.ConfigPath(), a.Name(), repair))
+		}
+	case !row:
+		notices = append(notices, "the patch row that loads ctxtra's plugin is missing; "+repair)
+	case loaded != a.PluginPath():
+		notices = append(notices, fmt.Sprintf("%s loads %s, not ctxtra's plugin %s; %s", paths.Tilde(a.ConfigPath()),
+			paths.Tilde(loaded), paths.Tilde(a.PluginPath()), repair))
+	case !plugin:
+		notices = append(notices, fmt.Sprintf("the patch row loads ctxtra's plugin %s, which is missing; %s", paths.Tilde(a.PluginPath()), repair))
+	}
+	return notices
 }
 
 // Answer is the files and the list of skills as one text, which the plugin
@@ -118,10 +151,18 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 	return map[string]any{"text": res.Render()}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: DSH gets 1,200,000 characters in full (measured with DSH 0.2.1-rc.2).
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "DSH", Capacity: 1_000_000}
+}
+
+// protocol is the version of the plugin, which it sends as ctxtra_plugin.
+const protocol = 1
+
+func (Agent) Protocol() int { return protocol }
 
 // Plugin is the plugin that runs bin.
-func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, pluginBody) }
+func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin, protocol, pluginBody) }
 
 // pluginBody runs the binary asynchronously, like Pi's extension, with a 10
 // second timeout and room for the largest output ctxtra can produce.
@@ -132,7 +173,7 @@ func Plugin(bin string) string { return extfile.Content(extfile.TypeScript, bin,
 // it. The plugin is plain JavaScript and imports only Node's modules: it is
 // loaded from outside any DSH profile, where DSH's own packages don't
 // resolve.
-const pluginBody = `// Written by ctxtra setup and loaded by its row in cordis.patch.yml. Adds the
+var pluginBody = `// Written by ctxtra setup and loaded by its row in cordis.patch.yml. Adds the
 // instruction files and skills that ctxtra binds to the session's folder.
 // ` + "`ctxtra setup --remove`" + ` removes both.
 import { execFile } from "node:child_process";
@@ -155,7 +196,7 @@ function run(ev, cwd, signal) {
 					}
 				});
 			child.stdin?.on("error", () => {});
-			child.stdin?.end(JSON.stringify({ cwd }));
+			child.stdin?.end(JSON.stringify({ cwd, ctxtra_plugin: ` + strconv.Itoa(protocol) + ` }));
 		} catch {
 			resolve({});
 		}
@@ -205,3 +246,12 @@ export function apply(ctx) {
 	});
 }
 `
+
+// NativeFiles: DSH reads AGENTS.md in $DSH_HOME. It has no terminal app to
+// start with a prompt: its interactive app is a web page.
+func (Agent) NativeFiles() []agent.NativeFile {
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "AGENTS.md")); ok {
+		return []agent.NativeFile{f}
+	}
+	return nil
+}

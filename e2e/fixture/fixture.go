@@ -162,7 +162,8 @@ func (f *Fixture) Ctxtra(args ...string) string {
 type LogEntry struct {
 	Harness, Event, Dir, Repo, Source, Error string
 	AgentType                                string `json:"agent_type"`
-	Files, Skills, Missing                   []string
+	Files, Skills, Missing, Dropped          []string
+	Problems                                 []string
 }
 
 // Log is ctxtra's hook log in the home folder.

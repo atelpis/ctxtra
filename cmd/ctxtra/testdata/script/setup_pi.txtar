@@ -2,13 +2,14 @@
 # and --remove deletes only its own.
 
 exec ctxtra setup --agent pi
-stdout '^ctxtra setup \(pi\): changed$'
+stdout '^ctxtra is set up for Pi:$'
 grep '^// @ctxtra-managed' .pi/agent/extensions/ctxtra.ts
 grep '^// binary: '$BIN'$' .pi/agent/extensions/ctxtra.ts
 exists .pi/agent/extensions/other.ts
 
 exec ctxtra doctor
 stdout 'pi: set up, runs .*/ctxtra \(ok\)'
+! stderr .
 
 exec ctxtra setup --remove --agent pi
 ! exists .pi/agent/extensions/ctxtra.ts

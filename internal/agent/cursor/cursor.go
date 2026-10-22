@@ -37,9 +37,18 @@ func (a Agent) hooks() hookjson.Config {
 		Flat: true, Version: 1}
 }
 
+// HookSetUp reports whether ctxtra's sessionStart hook is in Cursor's hook
+// file.
+func HookSetUp() bool {
+	cmds, err := Agent{}.hooks().Commands()
+	return err == nil && len(cmds["sessionStart"]) > 0
+}
+
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
 
-func (a Agent) Status() agent.Status { return a.hooks().Status() }
+func (a Agent) Status(bin string, known bool) agent.Status { return a.hooks().Status(bin, known) }
+
+func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
 
 func (Agent) Answer(_ string, res *resolve.Result) any {
 	text := res.Render()
@@ -49,4 +58,7 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 	return map[string]any{"additional_context": text}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: not measured; Cursor may cut large hook output.
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Cursor", Capacity: 1_000_000}
+}

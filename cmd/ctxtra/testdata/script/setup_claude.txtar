@@ -1,30 +1,32 @@
 # setup adds ctxtra's hooks after another tool's, keeps the rest of the
 # file, is idempotent, backs up what it changes, and --remove restores the
-# original file.
+# original file. Claude gets 40 hooks per event, one per part of the text.
 
 exec ctxtra setup --dry-run --agent claude
-stdout '^ctxtra setup \(claude\): would change$'
+stdout '^Setup would change these files:$'
 cmp .claude/settings.json original.json
 
 exec ctxtra setup --agent claude
-stdout '^ctxtra setup \(claude\): changed$'
-stdout '^hooks run '$BIN'$'
-cmpenv .claude/settings.json want.json
+stdout '^ctxtra is set up for Claude Code:$'
+cp .claude/settings.json got.json
+slots got.json
+cmpenv got.json want.json
 exists .ctxtra/backups
 
 exec ctxtra setup --agent claude
-stdout 'nothing to change'
-cmpenv .claude/settings.json want.json
+stdout 'is already set up for'
 
 exec ctxtra doctor
 stdout 'claude: set up for \[SessionStart SubagentStart\], runs .*/ctxtra \(ok\)'
+! stdout 'of the 40 ctxtra hooks'
+! stderr .
 
 exec ctxtra setup --remove --agent claude
-stdout '^ctxtra setup --remove \(claude\): changed$'
+stdout '^ctxtra is removed from Claude Code:$'
 cmp .claude/settings.json original.json
 
 exec ctxtra setup --remove --agent claude
-stdout 'nothing to change'
+stdout 'isn''t set up for'
 
 -- .claude/settings.json --
 {
@@ -96,7 +98,17 @@ stdout 'nothing to change'
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook claude SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook claude SessionStart --slot 0 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{\\\"systemMessage\\\":\\\"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent claude with the new binary\\\"}\"; fi'",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook claude SessionStart --slot 1..39 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]
@@ -117,7 +129,7 @@ stdout 'nothing to change'
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook claude SubagentStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook claude SubagentStart --slot 0..39 --of 40; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
             "timeout": 10
           }
         ]

@@ -9,11 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/registry"
+	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/atelpis/ctxtra/internal/state"
 )
 
 // Options select what Run does.
@@ -24,9 +27,18 @@ type Options struct {
 
 // Report is what Run changed, or would change with DryRun.
 type Report struct {
-	Agents []string
+	Agents []Agent
 	agent.Report
 	Errors []error // per agent; other agents are still handled
+	// Record is why setup.json couldn't be written; the changes stay.
+	Record error
+}
+
+// Agent is what Run did for one agent.
+type Agent struct {
+	agent.Agent
+	Changes []string // the files of Report.Changes that the agent's setup changed
+	Err     error
 }
 
 // Run adds (or removes) the hooks for the selected agents.
@@ -51,14 +63,68 @@ func Run(o Options) (Report, error) {
 			return Report{}, err
 		}
 	}
-	var r Report
-	for _, a := range agents {
-		r.Agents = append(r.Agents, a.Name())
-		if err := a.Setup(o.Options, &r.Report); err != nil {
-			r.Errors = append(r.Errors, fmt.Errorf("%s: %w", a.Name(), err))
+	if !o.DryRun {
+		unlock, err := fsutil.Lock(state.SetupsLock())
+		if err != nil {
+			return Report{}, err
 		}
+		defer unlock()
+	}
+	var r Report
+	var done []agent.Agent
+	for _, a := range agents {
+		n := len(r.Changes)
+		err := a.Setup(o.Options, &r.Report)
+		r.Agents = append(r.Agents, Agent{a, slices.Clone(r.Changes[n:]), err})
+		if err != nil {
+			r.Errors = append(r.Errors, fmt.Errorf("%s: %w", a.Name(), err))
+			continue
+		}
+		done = append(done, a)
+	}
+	if !o.DryRun {
+		r.Record = record(o.Remove, done)
 	}
 	return r, nil
+}
+
+// record adds to setup.json the agents that this run set up, or removes
+// those it removed, and every agent found on this machine. A broken
+// setup.json is replaced.
+func record(remove bool, done []agent.Agent) error {
+	s, _, err := state.LoadSetups()
+	if err != nil {
+		s = state.Setups{}
+	}
+	for _, a := range done {
+		if remove {
+			s.Uninstall(a.Name(), a.ConfigPath())
+		} else {
+			s.Install(a.Name(), a.ConfigPath())
+		}
+	}
+	for _, a := range registry.All() {
+		if a.Detect() {
+			s.Detect(a.Name())
+		}
+	}
+	return state.WriteSetups(s)
+}
+
+// Running is this binary, for comparing it with the binary that a setup
+// runs; "" when it is in a temporary folder (go run, tests), where it is
+// never the one that setup wrote.
+func Running() string {
+	exe, err := os.Executable()
+	if err != nil || inTemp(exe) {
+		return ""
+	}
+	return filepath.Clean(exe)
+}
+
+func inTemp(p string) bool {
+	tmp := paths.Real(os.TempDir())
+	return strings.HasPrefix(paths.Real(p), tmp+string(filepath.Separator))
 }
 
 // Binary is the path the hooks run: this executable as it is found in PATH,
@@ -71,7 +137,7 @@ func Binary() (bin string, warnings []string, err error) {
 		return "", nil, err
 	}
 	exe = filepath.Clean(exe)
-	if tmp := paths.Real(os.TempDir()); strings.HasPrefix(paths.Real(exe), tmp+string(filepath.Separator)) {
+	if inTemp(exe) {
 		return "", nil, errors.New("this ctxtra is in a temporary folder (go run?); install it first, for example with go install ./cmd/ctxtra")
 	}
 	bin = exe

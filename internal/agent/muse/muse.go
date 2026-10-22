@@ -4,12 +4,16 @@
 package muse
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
+	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -17,7 +21,13 @@ import (
 // Agent is Muse Code.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent    = Agent{}
+	_ agent.Slotted  = Agent{}
+	_ agent.Missing  = Agent{}
+	_ agent.Native   = Agent{}
+	_ agent.Launcher = Agent{}
+)
 
 // events: SessionStart also runs on resume, without a matcher. Muse replaces
 // the text a hook added before, so a resumed session gets the current files
@@ -53,16 +63,115 @@ func (Agent) Detect() bool {
 // "schema_version": 1.
 func (a Agent) hooks() hookjson.Config {
 	return hookjson.Config{Agent: a.Name(), Path: a.ConfigPath(), Events: events,
-		Version: 1, VersionKey: "schema_version"}
+		Version: 1, VersionKey: "schema_version", Slots: a.Delivery().Slots, Missing: a}
 }
 
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
 
-func (a Agent) Status() agent.Status { return a.hooks().Status() }
+func (a Agent) Status(bin string, known bool) agent.Status { return a.hooks().Status(bin, known) }
 
+func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
+
+// Answer is the whole text in one hook. The hooks that setup writes have
+// slots, and get SlotAnswer.
 func (Agent) Answer(event string, res *resolve.Result) any {
-	return agent.AdditionalContext(event, res)
+	return agent.ContextAnswer(event, res.Render(), clip(agent.Summary(res)))
 }
 
-// PreviewLimit: Muse gives the model the whole hook text.
-func (Agent) PreviewLimit() int { return 0 }
+func (Agent) SlotAnswer(event, text, summary string) any {
+	return agent.ContextAnswer(event, text, clip(summary))
+}
+
+// MissingAnswer: Muse shows systemMessage like Claude Code.
+func (Agent) MissingAnswer(event, msg string) string { return agent.SystemMessage(event, msg) }
+
+// maxSummary is the most of the summary in a hook answer, in bytes of
+// JSON. Muse counts the whole answer, not only the text: with 13,000 bytes
+// of text, one with a summary of 3,000 bytes passed, one with 8,000 was
+// dropped (measured with Muse 1.4.10).
+const maxSummary = 2000
+
+// clip omits list entries before truncating diagnostics to fit maxSummary.
+func clip(summary string) string {
+	for chunk.JSON.Len(summary) > maxSummary {
+		lines := strings.Split(summary, "\n")
+		longest := -1
+		inList := false
+		for i, line := range lines {
+			if line == "Instructions:" || line == "Skills:" {
+				inList = true
+				continue
+			}
+			if !strings.HasPrefix(line, "- ") {
+				inList = false
+			}
+			if !inList {
+				continue
+			}
+			if _, ok := omitted(line); ok {
+				continue
+			}
+			if longest < 0 || chunk.JSON.Len(line) > chunk.JSON.Len(lines[longest]) {
+				longest = i
+			}
+		}
+		if longest < 0 {
+			break
+		}
+		end := longest + 1
+		for end < len(lines) && strings.HasPrefix(lines[end], "- ") {
+			end++
+		}
+		count := 1
+		if end > longest+1 {
+			if n, ok := omitted(lines[end-1]); ok {
+				count += n
+				lines = append(lines[:end-1], lines[end:]...)
+				end--
+			}
+		}
+		lines = append(lines[:longest], lines[longest+1:]...)
+		end--
+		lines = append(lines[:end], append([]string{fmt.Sprintf("- +%d more", count)}, lines[end:]...)...)
+		summary = strings.Join(lines, "\n")
+	}
+	if chunk.JSON.Len(summary) <= maxSummary {
+		return summary
+	}
+	n := 0
+	for i, r := range summary {
+		if n += chunk.JSON.Len(string(r)); n > maxSummary-len("…") {
+			return summary[:i] + "…"
+		}
+	}
+	return summary
+}
+
+func omitted(line string) (int, bool) {
+	if !strings.HasPrefix(line, "- +") || !strings.HasSuffix(line, " more") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimPrefix(line, "- +"), " more"))
+	return n, err == nil && n > 0
+}
+
+// Delivery: Muse drops all of a hook's text, without a word, above 15,040
+// to 16,256 bytes, but gets the text of every hook of an event (measured
+// with Muse 1.4.10): 40 hooks of up to 13,000 bytes each, counted as the
+// text is in the hook's JSON answer, with its escapes. That leaves room for
+// the rest of the answer and the summary. Text that isn't ASCII, and text
+// with many quotes or backslashes, needs more parts, and fewer files fit
+// then.
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Muse", Capacity: 360_000, Unit: chunk.UTF16, Chunk: 13_000, ChunkJSON: true, Slots: 40}
+}
+
+// NativeFiles: Muse reads AGENTS.md in its config folder.
+func (Agent) NativeFiles() []agent.NativeFile {
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "AGENTS.md")); ok {
+		return []agent.NativeFile{f}
+	}
+	return nil
+}
+
+func (Agent) Launch(prompt string) []string { return []string{"muse", prompt} }

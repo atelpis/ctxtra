@@ -98,8 +98,41 @@ func TestBudgetDropsFromTheEnd(t *testing.T) {
 	if got := names(res.Files); !slices.Equal(got, []string{"a.md"}) {
 		t.Errorf("kept %v, dropped %v, %d chars", got, names(res.Dropped), Chars(res.Render()))
 	}
+	if len(res.Dropped) != 2 || res.Dropped[0].Over != "budget.max-chars" {
+		t.Errorf("dropped %+v", res.Dropped)
+	}
 	if len(res.Skills) != 1 || Chars(res.Render()) > 1500 || len(res.Render()) <= 1500 {
 		t.Errorf("skills %v, %d chars, %d bytes", names(res.Skills), Chars(res.Render()), len(res.Render()))
+	}
+}
+
+// Fit drops files from the end, before the ones dropped already, and the
+// text it keeps is the same as without them.
+func TestFit(t *testing.T) {
+	res := &Result{Dir: "/x", Skills: []Hit{{Name: "s", Description: "d", Path: "/s/SKILL.md"}},
+		Dropped: []Hit{{Path: "/n/e.md", Over: "budget.max-chars"}}}
+	for _, n := range []string{"a", "b", "c", "d"} {
+		res.Files = append(res.Files, Hit{Path: "/n/" + n + ".md", Content: strings.Repeat(n, 100), Global: true})
+	}
+	calls := 0
+	res.Fit(func(r *Result) bool { calls++; return len(r.Files) <= 1 }, "Codex's limit")
+	if got := names(res.Files); !slices.Equal(got, []string{"a.md"}) || calls > 4 {
+		t.Errorf("kept %v after %d calls", got, calls)
+	}
+	var over []string
+	for _, h := range res.Dropped {
+		over = append(over, filepath.Base(h.Path)+": "+h.Over)
+	}
+	if want := []string{"b.md: Codex's limit", "c.md: Codex's limit", "d.md: Codex's limit", "e.md: budget.max-chars"}; !slices.Equal(over, want) {
+		t.Errorf("dropped %v", over)
+	}
+	if text := res.Render(); !strings.Contains(text, "aaa") || strings.Contains(text, "bbb") || !strings.Contains(text, "<name>s</name>") {
+		t.Errorf("text:\n%s", text)
+	}
+	// Nothing fits: every file is dropped, the skill list stays.
+	res.Fit(func(r *Result) bool { return false }, "x")
+	if len(res.Files) != 0 || len(res.Dropped) != 5 || res.Render() == "" {
+		t.Errorf("files %v, dropped %v", names(res.Files), names(res.Dropped))
 	}
 }
 

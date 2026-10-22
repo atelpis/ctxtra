@@ -2,9 +2,10 @@
 # state per hook, and --remove leaves another tool's hooks alone.
 
 exec ctxtra setup --agent codex
-stdout '^ctxtra setup \(codex\): changed$'
-stdout 'codex: hooks run only after you trust them'
+stdout '^ctxtra is set up for Codex:$'
+stdout '^The next time you start Codex, it might ask you to review the newly installed hooks\. Please review them to ensure a smooth integration\.$'
 grep '"statusMessage": "ctxtra: personal instructions"' .codex/hooks.json
+grep '"additionalContextLimit": 250000' .codex/hooks.json
 grep 'other-tool session-start' .codex/hooks.json
 
 # Ours is the second SessionStart entry: Codex keys trust by position.
@@ -16,11 +17,12 @@ expand trusted.toml .codex/config.toml
 exec ctxtra doctor
 stdout 'trust .*hooks.json:session_start:1:0: trust record present'
 stdout 'trust .*hooks.json:subagent_start:0:0: trust record present'
+! stderr .
 
 # No change, so no new request to trust.
 exec ctxtra setup --agent codex
-stdout 'nothing to change'
-! stdout 'trust them'
+stdout 'is already set up for'
+! stdout 'trust it'
 
 exec ctxtra setup --remove --agent codex
 cmp .codex/hooks.json original.json

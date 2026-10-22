@@ -1,0 +1,17 @@
+//go:build darwin || dragonfly || freebsd || linux || netbsd || openbsd
+
+package term
+
+import (
+	"os"
+
+	"golang.org/x/sys/unix"
+)
+
+// IsTerminal reports whether f is a terminal.
+func IsTerminal(f *os.File) bool {
+	_, err := unix.IoctlGetTermios(int(f.Fd()), ioctlReadTermios)
+	return err == nil
+}
+
+func showsColors(f *os.File) bool { return IsTerminal(f) }

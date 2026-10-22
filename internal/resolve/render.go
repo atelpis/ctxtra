@@ -4,23 +4,13 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/paths"
 )
 
-const blockSep = "\n\n"
-
 // Render is the text given to the agent: each file with a short header, then
 // the list of skills. A nil Result renders as "".
-func (r *Result) Render() string {
-	if r == nil {
-		return ""
-	}
-	blocks := r.fileBlocks()
-	if len(r.Skills) > 0 {
-		blocks = append(blocks, r.skillBlock())
-	}
-	return strings.Join(blocks, blockSep)
-}
+func (r *Result) Render() string { return chunk.Join(r.Blocks()) }
 
 // RenderFiles is Render without the list of skills, for agents that get the
 // skills as native skills.
@@ -28,28 +18,52 @@ func (r *Result) RenderFiles() string {
 	if r == nil {
 		return ""
 	}
-	return strings.Join(r.fileBlocks(), blockSep)
+	return chunk.Join(r.fileBlocks())
 }
 
-func (r *Result) fileBlocks() []string {
-	blocks := make([]string, 0, len(r.Files)+1)
+// Blocks are the parts of Render: a block per file, then one for the list
+// of skills.
+func (r *Result) Blocks() []chunk.Block {
+	if r == nil {
+		return nil
+	}
+	blocks := r.fileBlocks()
+	if len(r.Skills) > 0 {
+		blocks = append(blocks, chunk.Block{Title: "Skills added by ctxtra", Text: r.skillBlock()})
+	}
+	return blocks
+}
+
+func (r *Result) fileBlocks() []chunk.Block {
+	blocks := make([]chunk.Block, 0, len(r.Files)+2)
 	for _, h := range r.Files {
-		blocks = append(blocks, r.block(h))
+		blocks = append(blocks, chunk.Block{Title: "Contents of " + h.Path, Text: r.block(h)})
+	}
+	if len(r.Known) > 0 {
+		var b strings.Builder
+		fmt.Fprintf(&b, "Files that ctxtra also adds %s, which this session already has:", r.scope(false))
+		for _, h := range r.Known {
+			fmt.Fprintf(&b, "\n- %s (binding: %s)", h.Path, h.Origin)
+		}
+		blocks = append(blocks, chunk.Block{Title: "Files that ctxtra also adds", Text: b.String()})
 	}
 	return blocks
 }
 
 func (r *Result) block(h Hit) string {
-	scope := "for every session"
-	switch {
-	case h.Global:
-	case r.Repo != nil:
-		scope = fmt.Sprintf("for this repository, %s, and all its worktrees", paths.Tilde(r.Repo.Root))
-	default:
-		scope = "for sessions in " + paths.Tilde(r.Dir)
-	}
 	return fmt.Sprintf("Contents of %s (instructions added by ctxtra %s; binding: %s):\n\n%s",
-		h.Path, scope, h.Origin, strings.TrimRight(h.Content, " \t\r\n"))
+		h.Path, r.scope(h.Global), h.Origin, strings.TrimRight(h.Content, " \t\r\n"))
+}
+
+// scope says which sessions get a file, of a global binding or not.
+func (r *Result) scope(global bool) string {
+	switch {
+	case global:
+		return "for every session"
+	case r.Repo != nil:
+		return fmt.Sprintf("for this repository, %s, and all its worktrees", paths.Tilde(r.Repo.Root))
+	}
+	return "for sessions in " + paths.Tilde(r.Dir)
 }
 
 // skillBlock lists the skills in the format Pi uses for its own skills, which

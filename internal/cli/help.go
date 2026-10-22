@@ -15,6 +15,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/skill"
+	"github.com/atelpis/ctxtra/internal/term"
 )
 
 // topic is a docs page that ctxtra help shows: a file, or one section of it.
@@ -82,43 +83,54 @@ func (t topic) read() (string, error) {
 	return t.section + "\n" + rest, nil
 }
 
-// skillBinding is the name of the binding that skill install adds.
-const skillBinding = "ctxtra"
-
-// runSkill shows the ctxtra skill, or installs it.
+// runSkill shows one of ctxtra's skills, or installs it: the ctxtra skill
+// when no name is given.
 func runSkill(args []string, stdio IO) int {
-	switch {
-	case len(args) == 0:
-		if err := printSkill(stdio.Out); err != nil {
-			fmt.Fprintf(stdio.Err, "ctxtra skill: %v\n", err)
-			return 1
-		}
-		return 0
-	case len(args) == 1 && args[0] == "install":
-		if err := installSkill(stdio); err != nil {
+	install := len(args) > 0 && args[0] == "install"
+	if install {
+		args = args[1:]
+	}
+	if len(args) > 1 {
+		fmt.Fprintf(stdio.Err, "usage: ctxtra skill [install] [NAME]\nskills: %s\n", strings.Join(ctxtra.SkillNames(), ", "))
+		return 2
+	}
+	name := skill.Base
+	if len(args) == 1 {
+		name = args[0]
+	}
+	if ctxtra.Skill(name) == nil {
+		fmt.Fprintf(stdio.Err, "ctxtra skill: no skill %q; skills: %s\n", name, strings.Join(ctxtra.SkillNames(), ", "))
+		return 2
+	}
+	if install {
+		if err := installSkill(stdio, name); err != nil {
 			fmt.Fprintf(stdio.Err, "ctxtra skill install: %v\n", err)
 			return 1
 		}
 		return 0
 	}
-	fmt.Fprintln(stdio.Err, "usage: ctxtra skill [install]")
-	return 2
+	if err := printSkill(stdio.Out, name); err != nil {
+		fmt.Fprintf(stdio.Err, "ctxtra skill: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
-// printSkill writes SKILL.md, then each other file of the skill after a
-// line that names it, so that the output pasted into an agent is the whole
-// skill.
-func printSkill(w io.Writer) error {
-	b, err := fs.ReadFile(ctxtra.Skill(), "SKILL.md")
+// printSkill writes SKILL.md of the skill name, then each other file of it
+// after a line that names it, so that the output pasted into an agent is
+// the whole skill.
+func printSkill(w io.Writer, name string) error {
+	src := ctxtra.Skill(name)
+	b, err := fs.ReadFile(src, "SKILL.md")
 	if err != nil {
 		return err
 	}
 	w.Write(b)
-	return fs.WalkDir(ctxtra.Skill(), ".", func(p string, d fs.DirEntry, err error) error {
+	return fs.WalkDir(src, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || p == "SKILL.md" {
 			return err
 		}
-		b, err := fs.ReadFile(ctxtra.Skill(), p)
+		b, err := fs.ReadFile(src, p)
 		if err != nil {
 			return err
 		}
@@ -128,39 +140,49 @@ func printSkill(w io.Writer) error {
 	})
 }
 
-// installSkill writes the skill to paths.SkillDir, and adds a binding that
-// adds it to every session, unless a binding has it already.
-func installSkill(stdio IO) error {
-	changed, err := skill.Write()
+// installSkill writes the skill name to paths.SkillDir, and adds a binding
+// of the same name that adds it to every session, unless a binding has it
+// already.
+func installSkill(stdio IO, name string) error {
+	changed, err := skill.Write(name)
 	if err != nil {
 		return err
 	}
-	dir := paths.Tilde(paths.SkillDir())
+	dir := paths.Tilde(paths.SkillDir(name))
 	if changed {
-		fmt.Fprintf(stdio.Out, "wrote the ctxtra skill to %s\n", dir)
+		term.Fprintf(stdio.Out, term.Green, "Installed to %s\n", dir)
 	} else {
-		fmt.Fprintf(stdio.Out, "the ctxtra skill in %s is up to date\n", dir)
+		fmt.Fprintf(stdio.Out, "The %s skill in %s is up to date.\n", name, dir)
 	}
-	s := newSources(stdio)
-	if b := skillBound(); b != nil {
-		fmt.Fprintf(stdio.Out, "binding %s adds it to sessions\n", b.ID())
+	if b := skillBound(name); b != nil {
+		fmt.Fprintf(stdio.Out, "Binding %s adds the skill to sessions.\n", b.ID())
 		return nil
 	}
-	err = s.edit(func(old []byte) ([]byte, error) {
-		return config.AddBinding(old, config.NewBinding{Name: skillBinding, Global: true, Skills: []string{dir}})
+	s := newSources(stdio)
+	created, err := s.change(func(old []byte) ([]byte, error) {
+		return config.AddBinding(old, config.NewBinding{Name: name, Global: true, Skills: []string{dir}})
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stdio.Out, "added binding %s to %s: every new session gets the skill\n", skillBinding, paths.Tilde(s.file))
+	if created {
+		term.Fprintf(stdio.Out, term.Green, "Created %s\n", paths.Tilde(s.file))
+	} else {
+		term.Fprintf(stdio.Out, term.Green, "Added to %s\n", paths.Tilde(s.file))
+	}
+	ready := "The skill is ready for new agent sessions in any folder."
+	if name == skill.Base {
+		ready += " Ask your agent to help you get started with ctxtra."
+	}
+	fmt.Fprintln(stdio.Out, ready)
 	return nil
 }
 
 // skillBound is the first binding of the config that adds the installed
-// skill, or nil.
-func skillBound() *config.Binding {
+// skill name, or nil.
+func skillBound(name string) *config.Binding {
 	cfg := config.Load(paths.ConfigPath(), fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes))
-	dir := paths.Real(paths.SkillDir())
+	dir := paths.Real(paths.SkillDir(name))
 	for i, b := range cfg.Bindings {
 		if slices.ContainsFunc(b.Skills, func(s string) bool { return paths.Real(s) == dir }) {
 			return &cfg.Bindings[i]
@@ -173,38 +195,63 @@ func skillBound() *config.Binding {
 // replace it.
 var interactive = func(in io.Reader) bool {
 	f, ok := in.(*os.File)
-	if !ok {
-		return false
-	}
-	st, err := f.Stat()
-	return err == nil && st.Mode()&os.ModeCharDevice != 0
+	return ok && term.IsTerminal(f)
 }
 
-// offerSkill asks, after setup, whether to install the skill; Enter says
-// yes. Without a terminal, for example when an agent runs setup, it says
-// how instead.
-func offerSkill(stdio IO) error {
-	if skillBound() != nil {
-		return nil
+// offers are the skills that setup offers, in order: a hint for a session
+// without a terminal, and the title and text of the question.
+var offers = []struct{ name, hint, title, about string }{
+	{skill.Base, "to let your agents help you set up and change ctxtra: ctxtra skill install", "Your agents can set up ctxtra for you",
+		"ctxtra comes with a skill that makes getting started easy. Your agents can create your bindings, change your config, and bring the instructions you already have into ctxtra."},
+	{follow, "to let your agents get your bindings for other folders they work in: ctxtra skill install " + follow, "Work across multiple projects in one session?",
+		"The " + follow + " skill helps your agent pick up the instructions and skills you've configured for each project as your work moves between them."},
+}
+
+// follow is the skill that gets the bindings of a folder an agent's work
+// moves to.
+const follow = "ctxtra-follow"
+
+// offerSkills asks, after setup, whether to install each skill of offers
+// that no binding adds; Enter says yes. Without a terminal, for example
+// when an agent runs setup, it says how instead.
+func offerSkills(stdio IO, in *bufio.Reader) error {
+	for _, o := range offers {
+		if skillBound(o.name) != nil {
+			continue
+		}
+		if !interactive(stdio.In) {
+			fmt.Fprintln(stdio.Out, o.hint)
+			continue
+		}
+		fmt.Fprintln(stdio.Out)
+		term.Fprintf(stdio.Out, term.Bold, "%s\n", o.title)
+		fmt.Fprintf(stdio.Out, "%s\n\n", o.about)
+		term.Fprintf(stdio.Out, term.Bold, "Install the %s skill? [Y/n] ", o.name)
+		ok, err := confirm(in)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			later := "ctxtra skill install"
+			if o.name != skill.Base {
+				later += " " + o.name
+			}
+			term.Fprintf(stdio.Out, term.Dim, "Skipped. To install it later: %s\n", later)
+			continue
+		}
+		fmt.Fprintln(stdio.Out)
+		if err := installSkill(stdio, o.name); err != nil {
+			return err
+		}
 	}
-	if !interactive(stdio.In) {
-		fmt.Fprintln(stdio.Out, "to let your agents help you set up and change ctxtra: ctxtra skill install")
-		return nil
-	}
-	fmt.Fprint(stdio.Out, `
-ctxtra comes with a skill for your agents:
-it helps you get started, manage your config, and fix problems.
-You can install it later with: ctxtra skill install
-Install it now? [Y/n] `)
-	answer, err := bufio.NewReader(stdio.In).ReadString('\n')
+	return nil
+}
+
+func confirm(in *bufio.Reader) (bool, error) {
+	answer, err := in.ReadString('\n')
 	if err != nil && !errors.Is(err, io.EOF) {
-		return err
+		return false, err
 	}
-	// Input that ends without a line (Ctrl-D) is no answer.
 	a := strings.ToLower(strings.TrimSpace(answer))
-	if err != nil || a != "" && a != "y" && a != "yes" {
-		fmt.Fprintln(stdio.Out, "not installed")
-		return nil
-	}
-	return installSkill(stdio)
+	return err == nil && (a == "" || a == "y" || a == "yes"), nil
 }

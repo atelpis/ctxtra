@@ -2,15 +2,16 @@
 # answers with additionalContext, and --remove deletes only its own file.
 
 exec ctxtra setup --agent copilot
-stdout '^ctxtra setup \(copilot\): changed$'
+stdout '^ctxtra is set up for Copilot:$'
 cmpenv .copilot/hooks/ctxtra.json want.json
 exists .copilot/hooks/other.json
 
 exec ctxtra setup --agent copilot
-stdout 'nothing to change'
+stdout 'is already set up for'
 
 exec ctxtra doctor
 stdout 'copilot: set up for \[sessionStart subagentStart\], runs .*/ctxtra \(ok\)'
+! stderr .
 
 runhook copilot sessionStart .
 stdout '"additionalContext":"[^"]*CTXMARK-ME'
@@ -18,7 +19,7 @@ runhook copilot subagentStart .
 stdout 'CTXMARK-ME'
 
 exec ctxtra setup --remove --agent copilot
-stdout '^ctxtra setup --remove \(copilot\): changed$'
+stdout '^ctxtra is removed from Copilot:$'
 ! exists .copilot/hooks/ctxtra.json
 cmp .copilot/hooks/other.json other.json
 

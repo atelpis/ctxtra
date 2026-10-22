@@ -10,6 +10,7 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
+	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -17,7 +18,11 @@ import (
 // Agent is GitHub Copilot CLI.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent    = Agent{}
+	_ agent.Native   = Agent{}
+	_ agent.Launcher = Agent{}
+)
 
 // events: sessionStart also runs for resumed sessions, and adds the text
 // again. Copilot doesn't keep a hook's text in the session, so a resumed
@@ -49,7 +54,9 @@ func (a Agent) hooks() hookjson.Config {
 
 func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().Apply(o, r) }
 
-func (a Agent) Status() agent.Status { return a.hooks().Status() }
+func (a Agent) Status(bin string, known bool) agent.Status { return a.hooks().Status(bin, known) }
+
+func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
 
 func (Agent) Answer(_ string, res *resolve.Result) any {
 	text := res.Render()
@@ -59,4 +66,27 @@ func (Agent) Answer(_ string, res *resolve.Result) any {
 	return map[string]any{"additionalContext": text}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: Copilot drops all hook text, without a word, when it doesn't fit
+// the model's context window; several hooks count together. With Copilot
+// 1.0.98 and an unknown model, about 150,000 tokens pass: 600,000 ASCII
+// characters of plain prose, but 150,000 CJK characters, and not 194,000
+// characters of short words and punctuation ("x!x!"). A tokenizer that
+// works on bytes makes at most one token of a byte, so bytes of UTF-8 are an
+// upper bound on the tokens of any text: a capacity of 140,000 bytes leaves
+// room for Copilot's own prompt. It costs English text: about 140,000
+// characters fit, where about 600,000 would.
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Copilot", Capacity: 140_000, Unit: chunk.Bytes}
+}
+
+// NativeFiles: copilot-instructions.md, then the .instructions.md files in
+// instructions/ and its subfolders.
+func (Agent) NativeFiles() []agent.NativeFile {
+	var out []agent.NativeFile
+	if f, ok := agent.ReadNative(filepath.Join(dir(), "copilot-instructions.md")); ok {
+		out = append(out, f)
+	}
+	return append(out, agent.WalkNative(filepath.Join(dir(), "instructions"), ".instructions.md")...)
+}
+
+func (Agent) Launch(prompt string) []string { return []string{"copilot", "-i", prompt} }

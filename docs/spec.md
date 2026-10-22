@@ -328,7 +328,22 @@ any of them matches.
 - `instructions` and `skills` are lists. A binding needs at least one of them.
 - Each path is absolute, starts with `~`, is relative to the folder of the file the binding is in (the
   config or a binding file), or is a `ctxtra://<source>/<path>` reference.
-- Globs are not supported: list each file and skill folder by name.
+- `instructions` and `skills` support the same doublestar globs as `match`. Quote patterns in YAML
+  and on the command line, for example `instructions: ['notes/**/*.md']` or
+  `ctxtra bind notes --global --file '~/notes/**/*.md'`. Skill patterns select folders containing a regular `SKILL.md`, so `skills/**` can select skills
+  recursively without selecting their parent folders.
+- Glob metacharacters in a path are interpreted as patterns; for literal braces use character classes,
+  for example `notes/[{]draft[}].md` to select `notes/{draft}.md`. Metacharacters in a resolved parent
+  folder (such as the home or config folder) remain literal.
+- Entries apply in list order; each pattern expands in lexical path order. Overlapping entries are
+  deduplicated at their first position. A pattern with no matches is reported and skipped.
+- Glob expansion skips symlink entries and does not descend into symlinked folders. Symlinks in the
+  fixed prefix retain the usual trust checks. Every local file still needs to be trusted.
+- Each pattern is limited to 10,000 directory entries and operations, with a maximum traversal depth of
+  64. A traversal error or exceeded limit skips the whole pattern, with a problem.
+- Pinned-source patterns expand only against the selected commit. `sync` reviews matching files from
+  both the old and proposed commits, including newly matched files. Local patterns are expanded live:
+  new matching files apply immediately. Use `files`, `show` or `explain` to inspect the result.
 - Each file is added once per session, at its first position, and the same for each skill. Two skills with
   the same `name`: the first is used, the other is reported.
 - `SKILL.md` must start with YAML frontmatter that has a `description`. `name` is optional (default: the
@@ -345,6 +360,123 @@ in order.
 With `budget.max-chars`, whole files are dropped from the end until the added text fits. The budget counts
 characters (Unicode code points), not bytes, and covers the whole added text, headers included. The skill
 list is never dropped. `ctxtra explain` shows what was dropped.
+
+## Capacity
+
+Each agent gets a limited amount of text in full, its capacity. Above it, whole files are dropped from the
+end, the same way as with `budget.max-chars`; with both, the lower limit applies. The skill list is never
+dropped. The message at session start (in the agents that show one), the log, `explain` and `doctor` name
+the dropped files.
+
+| Agent | Capacity | How the text gets there |
+|---|---|---|
+| Claude Code | 360,000 characters, counted in UTF-16 | 40 hooks per event, a part of up to 9,000 each |
+| Muse | 360,000 characters, counted in UTF-16 | 40 hooks per event, a part of up to 13,000 bytes each, counted as in the JSON answer, and a summary of up to 2,000; text that isn't ASCII, or has many quotes or backslashes, needs more parts, so fewer files fit |
+| Codex | 1,000,000 bytes | one hook with `additionalContextLimit` (250,000 tokens of 4 bytes); Codex 0.145.0 or later |
+| Hermes | 1,000,000 characters | a plugin callback per part of up to 9,000 characters, or `hooks.output_spill.max_chars` if lower; the capacity shrinks with it |
+| Antigravity | 650,000 bytes | one hook, an injected step per part of up to 40,000 bytes |
+| Copilot | 140,000 bytes | one hook |
+| Pi, OpenCode, DSH | 1,000,000 characters | one plugin |
+| Cursor | 1,000,000 characters | one hook; not measured in full: in the Agent CLI every sampled codeword of 800,000 characters arrived, the desktop app doesn't wait for the hook (see README) |
+| Devin | 1,000,000 characters | one hook; not measured |
+
+Characters are Unicode code points; Claude Code and Muse count UTF-16 units, where an emoji or another
+character outside the Basic Multilingual Plane counts 2. Copilot counts tokens, and ctxtra counts bytes of
+UTF-8 for it: a tokenizer that works on bytes makes at most one token of a byte, so bytes are an upper bound
+on the tokens of any text. Copilot passed about 150,000 tokens, and 140,000 bytes leave room for its own
+prompt. The bound costs English text, about 140,000 characters fit where about 600,000 would, but no
+estimate per character holds for every text: Copilot dropped all of 194,000 characters of short words and
+punctuation (`x!x!`). Non-Latin text counts more in the agents that count bytes: a CJK character is 3
+bytes in Codex, Antigravity and Copilot. Copilot drops all of the text, without a word, when it doesn't fit
+the model's context window; ctxtra drops files before that.
+When Copilot compacts a long conversation, ctxtra's text is gone for the rest of the session: Copilot
+doesn't run the hook again.
+
+Text that fits one part is given as it is. Otherwise each part starts with a label, `[ctxtra part 3 of 12]`,
+and the first one says that the parts are one text, in part order. A file that continues from the part
+before starts with `Contents of PATH, continued (part 2 of 4):`. A part ends before a file when little room
+is left, else at a line end; a line longer than a part is split between characters.
+
+Claude Code and Muse run the hooks of an event at once. The first one resolves the session and writes the
+parts to `~/.ctxtra/slots/`, readable by you only; the others read them there, so the session is resolved
+and logged once. The hook input doesn't tell two session starts of the same session, event and source
+apart, for example two `/clear` in a row, or a retry after a start that didn't finish. So the parts are
+pinned: a hook that starts within 3 seconds after they were written, or after a hook last read them, uses
+them, and a hook that starts later resolves the session again, in a folder of its own. The hooks of one
+session start begin within a second or so of each other, so they read one text, never parts of two. The
+cost: a second session start within 3 seconds gets the text as it was at the first one, also when a file
+changed in between; its log entry says `reused` with how much earlier. Each read starts the 3 seconds
+again, so session starts that keep coming less than 3 seconds apart keep getting that first text, however
+old it gets. The file stays after the hooks ended: a session start deletes the folders that no hook used
+for a minute, never one that a hook used more recently. When the folder can't be written, for example
+in a sandbox, each hook resolves the session on its own. Claude Code orders the texts by when the hooks
+end, so each hook waits for the one before it, up to 2 seconds; the labels keep the text correct in any
+order. Each hook's command says how many hooks its setup has (`--slot 3 --of 40`, and `ctxtra_slots` from
+the Hermes plugin), and the text is split into at most that many parts.
+
+A Claude Code or Muse hook without `--slot K --of N`, a Hermes plugin that doesn't send `ctxtra_slots`, and
+a plugin that doesn't send `ctxtra_plugin` add nothing, and the log says why: no release writes such a
+setup, and without the slot count each hook would get the whole text. `ctxtra hook` ignores command-line arguments it doesn't know, so hooks that a later
+version set up still run after a downgrade.
+
+When the binary that a hook runs is gone, Claude Code, Codex, Muse and Devin show `ctxtra: the ctxtra binary
+that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent claude with the new binary`
+(with the agent's name) at session start, and Pi shows it as a warning. The other agents add nothing, without
+a word. `ctxtra doctor` and the [setup notices](#setup-notices) show the missing binary. Setup leaves a config
+alone that has a ctxtra hook changed by hand, and says so, instead of adding a second hook next to it.
+
+## Setup compatibility
+
+What `ctxtra setup` writes is a contract between the agents and the `ctxtra` binary: the hook entries
+(events, matchers, command lines, the slot count, timeouts, other keys such as `additionalContextLimit`), the
+plugin files (the events they send, their input fields, the answer fields they read, their constants), and the
+arguments of `ctxtra hook`. A new version changes only the binary, and the binary keeps serving every setup
+that a released version wrote with what that setup was promised.
+
+The contract holds from 0.1, the first public release, on. Setups written before 0.1 aren't supported:
+`ctxtra doctor` says what to delete or set up again.
+
+An upgrade keeps existing setups working with the same capacity. New features may need another
+`ctxtra setup`; a capacity increase may need it too. In either case, the release notes explain when to
+run setup, and `ctxtra doctor` reports what the existing setup is missing. In Codex, changing the hooks
+also requires trusting them again.
+
+Answers only grow: fields are added, never renamed or given a new meaning, and a field that a released setup
+reads is sent while that setup is supported. The hooks and plugins ignore fields they don't know. The
+arguments and event names that a released setup sends are accepted forever, and `ctxtra hook` ignores
+arguments it doesn't know, so an older binary still runs a newer setup.
+
+### Setup notices
+
+After every command but `hook`, `setup`, `doctor`, `help` and `version`, ctxtra prints a line on stderr for
+each setup that needs you, with the command that repairs it. The lines never change the exit code; `doctor`
+shows the same lines under each agent instead:
+
+| When | Notice |
+|---|---|
+| The binary in the setup is gone | `claude: the hooks run ~/Downloads/ctxtra-0.3/ctxtra, which doesn't exist; run ctxtra setup --agent claude` |
+| The setup runs another binary | `claude: the hooks run /usr/local/bin/ctxtra, not this ctxtra (/opt/homebrew/bin/ctxtra); to switch, run ctxtra setup --agent claude` |
+| An older version set it up, with less room (after a capacity change) | `codex: set up by an older ctxtra, with Codex's limit of 1,000,000 bytes; run ctxtra setup --agent codex (Codex will then ask you to trust the hooks again)` |
+| Part of the setup is missing | `claude: SessionStart has 3 of the 40 ctxtra hooks; run ctxtra setup --agent claude`, `dsh: the patch row that loads ctxtra's plugin is missing; run ctxtra setup --agent dsh` |
+| The Hermes plugin isn't enabled | `hermes: the ctxtra plugin is installed but not enabled; run hermes plugins enable ctxtra` |
+| A setup is gone from its file | `claude: ctxtra's hooks are gone from ~/.claude/settings.json; if that wasn't on purpose, run ctxtra setup --agent claude; if it was, ctxtra setup --remove --agent claude stops this notice` |
+| An agent was found since the last setup | `cursor: found since the last ctxtra setup; to add ctxtra to it, run ctxtra setup --agent cursor` |
+
+A new agent is told about once: ctxtra then adds it to `detected` in `~/.ctxtra/setup.json`, unless a setup
+is running or the file can't be written, and then tells again next time. `doctor` still lists it as not set
+up. Each command names its agent, so a repair doesn't set up agents you left out, and a command that changes
+Codex's hooks says that Codex will ask to trust them. The binary isn't compared when this ctxtra runs from a
+temporary folder (`go run`). Apart from that record, the notices only read files: regular files of at most
+16 MiB, so a FIFO or a huge file in place of a config is one line that it can't be checked, never a command
+that hangs.
+
+`setup` records in `~/.ctxtra/setup.json` where it set up each agent (`installed`, by config path, until
+`setup --remove` removes it) and every agent it found (`detected`, also those left out with `--agent`). The
+notices use it to tell a setup that is gone from one that never was, and to find new agents (and add the ones
+they told about to `detected`): without the file there are no such notices, and a broken one is one notice, `~/.ctxtra/setup.json is unreadable: notices
+about new or removed setups are off until the next ctxtra setup`. The file never decides a change of an
+agent config. One setup runs at a time (`~/.ctxtra/setup.lock`); `--dry-run` doesn't write the file. When
+setup can't write it, setup fails with exit code 1, and the config changes it made stay.
 
 ## Validation
 
@@ -366,8 +498,9 @@ Problems never make ctxtra add more than the config says:
 
 | Limit | Value |
 |---|---|
-| Any one file (config, binding file, instruction file, `SKILL.md`) | 1 MiB |
-| Everything read for one session, the config and binding files included | 4 MiB |
+| Any one file (config, binding file, instruction file, `SKILL.md`) | 4 MiB |
+| Everything read for one session, the config and binding files included | 16 MiB |
+| Text an agent gets in full | its capacity, see [Capacity](#capacity) |
 | Skill description | 1024 bytes, longer ones are cut and end with `…` |
 
 ## Reference

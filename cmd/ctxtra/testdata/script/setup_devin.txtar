@@ -4,18 +4,19 @@
 # up, only Devin's hook adds the files.
 
 exec ctxtra setup --agent devin
-stdout '^ctxtra setup \(devin\): changed$'
+stdout '^ctxtra is set up for Devin:$'
 cmpenv .config/devin/config.json want.json
 
 exec ctxtra setup --agent devin
-stdout 'nothing to change'
+stdout 'is already set up for'
 
 exec ctxtra doctor
 stdout 'devin: set up for \[SessionStart\], runs .*/ctxtra \(ok\)'
+! stderr .
 
 runhook devin SessionStart repo
 stdout '"additionalContext":"[^"]*CTXMARK-ME","hookEventName":"SessionStart"'
-stdout '"systemMessage":"ctxtra: added 1 file \(me.md\)"'
+stdout '"systemMessage":"✓ ctxtra added 1 instruction\\nInstructions:\\n- me.md"'
 
 # Devin runs Claude's hook too, with DEVIN_PROJECT_DIR set: it adds nothing,
 # and doctor says why.
@@ -40,7 +41,7 @@ runhook claude SessionStart repo
 stdout CTXMARK-ME
 
 exec ctxtra setup --remove --agent devin
-stdout '^ctxtra setup --remove \(devin\): changed$'
+stdout '^ctxtra is removed from Devin:$'
 cmp .config/devin/config.json original.json
 
 # Devin allows comments, which ctxtra would drop: setup leaves such a file
@@ -113,7 +114,7 @@ cmp .config/devin/config.json commented.json
         "hooks": [
           {
             "type": "command",
-            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook devin SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{}\"; fi'",
+            "command": "/bin/sh -c 'f=\"${BIN}\"; if [ -x \"${$}f\" ]; then exec \"${$}f\" hook devin SessionStart; else /bin/cat >/dev/null 2>&1; echo \"{\\\"systemMessage\\\":\\\"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent devin with the new binary\\\"}\"; fi'",
             "timeout": 10
           }
         ]

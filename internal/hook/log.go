@@ -32,6 +32,7 @@ type Entry struct {
 	AgentType string   `json:"agent_type,omitempty"`
 	Error     string   `json:"error,omitempty"`
 	Skipped   string   `json:"skipped,omitempty"` // why the hook added nothing, see agent.Skipper
+	Reused    string   `json:"reused,omitempty"`  // the session start got an earlier one's text, see slot.go
 }
 
 func newEntry(ts, harness, event string, p payload, res *resolve.Result, chars int) Entry {

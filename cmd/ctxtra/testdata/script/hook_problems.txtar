@@ -6,7 +6,7 @@ exec ctxtra setup --agent claude
 # A missing bound file is skipped and reported to the user.
 runhook claude SessionStart notes
 stdout 'CTXMARK-PERSONAL'
-stdout '"systemMessage":"ctxtra: added 2 files \(me.md, notes.md\); 1 not found \(run ctxtra doctor\)"'
+stdout '"systemMessage":"✓ ctxtra added 2 instructions; 1 not found \(run ctxtra doctor\)\\nInstructions:\\n- me.md\\n- notes.md"'
 stderr 'ctxtra: bound file not found: .*/ctx/gone.md'
 
 # Outside git, repos don't match; global and dirs do.
@@ -21,17 +21,22 @@ stdout 'systemMessage'
 ! exec ctxtra doctor
 stdout 'schema must be ctxtra/v1 \(found "ctxtra/v9"\)'
 
-# The hook command answers {} when the binary is gone. Set up from a copy
-# of the binary, then delete the copy.
+# When the binary is gone, the hook command tells the user at session
+# start, and answers {} for a subagent. Set up from a copy of the binary,
+# then delete the copy.
 mkdir bin
 exec cp $BIN bin/ctxtra
 exec bin/ctxtra setup --agent claude
-stdout 'hooks run ~/bin/ctxtra'
 rm bin/ctxtra
 runhook claude SessionStart notes
+stdout '^\{"systemMessage":"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent claude with the new binary"\}$'
+runhook claude SubagentStart notes
 stdout '^\{\}$'
 ! exec ctxtra doctor
 stdout 'claude: .*MISSING'
+! stderr .
+! exec ctxtra files
+stderr '^claude: the hooks run ~/bin/ctxtra, which doesn''t exist; run ctxtra setup --agent claude$'
 
 -- .config/ctxtra/config.yaml --
 schema: ctxtra/v1

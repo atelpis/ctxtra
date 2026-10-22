@@ -39,18 +39,21 @@ func TestSetupAndStatus(t *testing.T) {
 	if err := os.Chmod(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	orig := version
+	version = func() string { return "" }
+	t.Cleanup(func() { version = orig })
 	var a Agent
 	var r agent.Report
 	if err := a.Setup(agent.Options{Binary: bin}, &r); err != nil || len(r.Notes) != 1 {
 		t.Fatalf("setup: %v, notes %v", err, r.Notes)
 	}
-	st := a.Status()
+	st := a.Status("", false)
 	if st.OK || len(st.Details) != 2 || !strings.Contains(st.Details[0], "NOT TRUSTED") {
 		t.Errorf("status %+v", st)
 	}
 	key := a.ConfigPath() + ":session_start:0:0"
 	testenv.Write(t, filepath.Join(h, ".codex", "config.toml"), "[hooks.state.\""+key+"\"]\ntrusted_hash = \"x\"\n")
-	if st := a.Status(); !strings.Contains(st.Details[0], "trust record present") || !strings.Contains(st.Details[1], "NOT TRUSTED") {
+	if st := a.Status("", false); !strings.Contains(st.Details[0], "trust record present") || !strings.Contains(st.Details[1], "NOT TRUSTED") {
 		t.Errorf("status %+v", st)
 	}
 	r = agent.Report{}
@@ -59,5 +62,42 @@ func TestSetupAndStatus(t *testing.T) {
 	}
 	if err := a.Setup(agent.Options{Binary: filepath.Join(h, "other", "ctxtra")}, &r); err != nil || len(r.Notes) != 1 {
 		t.Errorf("changed setup: %v, notes %v", err, r.Notes)
+	}
+}
+
+func TestVersion(t *testing.T) {
+	testenv.Home(t)
+	orig := version
+	t.Cleanup(func() { version = orig })
+	for v, warn := range map[string]bool{"0.144.3": true, "0.99.0": true, "0.145.0": false, "0.162.1": false, "1.0.0": false} {
+		version = func() string { return v }
+		st := Agent{}.Status("", false)
+		if got := slices.ContainsFunc(st.Details, func(d string) bool { return strings.Contains(d, "update to 0.145.0") }); got != warn {
+			t.Errorf("%s: warning %v, want %v: %v", v, got, warn, st.Details)
+		}
+	}
+}
+
+// Codex trusts a hook by a hash of its entry: the commands must stay
+// byte-identical across versions. Only the session start's tells the user
+// that the binary is gone.
+func TestCommands(t *testing.T) {
+	h := testenv.Home(t)
+	var r agent.Report
+	if err := (Agent{}).Setup(agent.Options{Binary: filepath.Join(h, "go", "bin", "ctxtra")}, &r); err != nil {
+		t.Fatal(err)
+	}
+	cmds, err := Agent{}.hooks().Commands()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for ev, want := range map[string]string{
+		"SessionStart": `/bin/sh -c 'f="$HOME/go/bin/ctxtra"; if [ -x "$f" ]; then exec "$f" hook codex SessionStart; else /bin/cat >/dev/null 2>&1; ` +
+			`echo "{\"systemMessage\":\"ctxtra: the ctxtra binary that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent codex with the new binary (Codex will then ask you to trust the hooks again)\"}"; fi'`,
+		"SubagentStart": `/bin/sh -c 'f="$HOME/go/bin/ctxtra"; if [ -x "$f" ]; then exec "$f" hook codex SubagentStart; else /bin/cat >/dev/null 2>&1; echo "{}"; fi'`,
+	} {
+		if len(cmds[ev]) != 1 || cmds[ev][0].Text != want {
+			t.Errorf("%s: %+v\nwant %s", ev, cmds[ev], want)
+		}
 	}
 }

@@ -2,13 +2,14 @@
 # and --remove deletes only its own.
 
 exec ctxtra setup --agent opencode
-stdout '^ctxtra setup \(opencode\): changed$'
+stdout '^ctxtra is set up for OpenCode:$'
 grep '^// @ctxtra-managed' .config/opencode/plugins/ctxtra.ts
 grep '^// binary: '$BIN'$' .config/opencode/plugins/ctxtra.ts
 exists .config/opencode/plugins/other.ts
 
 exec ctxtra doctor
 stdout 'opencode: set up, runs .*/ctxtra \(ok\)'
+! stderr .
 
 exec ctxtra setup --remove --agent opencode
 ! exists .config/opencode/plugins/ctxtra.ts

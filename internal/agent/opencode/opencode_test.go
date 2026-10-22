@@ -27,14 +27,14 @@ func TestSetup(t *testing.T) {
 	if err := a.Setup(agent.Options{Binary: bin}, &r); err != nil {
 		t.Fatal(err)
 	}
-	if st := a.Status(); !st.OK || st.State != "set up, runs ~/go/bin/ctxtra (ok)" {
+	if st := a.Status("", false); !st.OK || st.State != "set up, runs ~/go/bin/ctxtra (ok)" {
 		t.Errorf("status %+v", st)
 	}
 	if b, _ := os.ReadFile(a.ConfigPath()); !strings.Contains(string(b), `const bin = join(homedir(), "go/bin/ctxtra");`) {
 		t.Errorf("binary path in the plugin:\n%s", b)
 	}
-	if err := a.Setup(agent.Options{Remove: true}, &r); err != nil || a.Status().State != "not set up" {
-		t.Fatalf("remove: %v, %+v", err, a.Status())
+	if err := a.Setup(agent.Options{Remove: true}, &r); err != nil || a.Status("", false).State != "not set up" {
+		t.Fatalf("remove: %v, %+v", err, a.Status("", false))
 	}
 	// A plugin that isn't ours is left alone.
 	testenv.Write(t, a.ConfigPath(), "someone else's")
@@ -131,7 +131,7 @@ console.log(JSON.stringify({ plugin: plugin.id, before: before.map((s) => s.id +
 	}
 	// One run at setup, then one per session, not one per request.
 	calls, _ := os.ReadFile(bin + ".calls")
-	if want := "hook opencode setup {\"cwd\":\"/a\"}\nhook opencode context {\"cwd\":\"/a\"}\nhook opencode context {\"cwd\":\"/b\"}\n"; string(calls) != want {
+	if want := "hook opencode setup {\"cwd\":\"/a\",\"ctxtra_plugin\":1}\nhook opencode context {\"cwd\":\"/a\",\"ctxtra_plugin\":1}\nhook opencode context {\"cwd\":\"/b\",\"ctxtra_plugin\":1}\n"; string(calls) != want {
 		t.Errorf("calls:\n%s", calls)
 	}
 	if r := run(filepath.Join(dir, "missing")); strings.Join(r.Before, ",") != "mine:USER" || len(r.Sizes) != 3 || r.Sizes[0] != 0 || r.Reloads != 0 {

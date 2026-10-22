@@ -51,7 +51,9 @@ bindings:
 
 ```text
 $ cd ~/dev/anything && claude
-ctxtra: added 1 file (me.md)
+✓ ctxtra added 1 instruction
+Instructions:
+- me.md
 ```
 
 Edit your file, and the next session gets the new text. There is no ctxtra command to run.
@@ -85,7 +87,10 @@ Change a file on laptop A, commit and push. On laptop B:
 ```text
 $ git -C ~/dev/dotfiles pull
 $ cd ~/dev/acme/billing && claude
-ctxtra: added 2 files (me.md, work.md)
+✓ ctxtra added 2 instructions
+Instructions:
+- me.md
+- work.md
 ```
 
 The new text is used right away. Trusted sources need no `ctxtra sync`.
@@ -146,7 +151,11 @@ ctxtra's store.
 
 ```text
 $ cd ~/dev/acme/billing && claude
-ctxtra: added 3 files (work.md, services-overview.md, jira-ticket.md)
+✓ ctxtra added 3 instructions
+Instructions:
+- work.md
+- services-overview.md
+- jira-ticket.md
 ```
 
 **Two weeks later** the maintainer changed `services-overview.md`. Sessions never fetch, so ctxtra doesn't
@@ -154,7 +163,11 @@ know about it, but it knows when it last checked:
 
 ```text
 $ claude
-ctxtra: added 3 files (work.md, services-overview.md, jira-ticket.md)
+✓ ctxtra added 3 instructions
+Instructions:
+- work.md
+- services-overview.md
+- jira-ticket.md
 ctxtra: team-ctx last checked 14 days ago; run ctxtra sync to check for changes
 ```
 
@@ -296,7 +309,7 @@ Where it can surprise you:
 $ git -C ~/notes remote add origin git@github.com:acme/my-notes
 $ git -C ~/notes push -u origin main
 $ claude
-ctxtra: added nothing; 1 problem (run ctxtra doctor)
+ctxtra added nothing; 1 problem (run ctxtra doctor)
 $ ctxtra doctor
   PROBLEM: me (~/.config/ctxtra/config.yaml): ~/notes/agents/me.md is in ~/notes, which has the remote
     github.com/acme/my-notes and is not a trusted source; skipped. If only you push to the repository:
@@ -319,7 +332,11 @@ You added the source from `~/dev/team-ctx` (case 3b), then:
 ```text
 $ mv ~/dev/team-ctx ~/src/team-ctx
 $ claude
-ctxtra: added 3 files (work.md, services-overview.md, jira-ticket.md)
+✓ ctxtra added 3 instructions
+Instructions:
+- work.md
+- services-overview.md
+- jira-ticket.md
 ```
 
 Nothing changes: the files come from ctxtra's store, and `~/dev/team-ctx/jira-ticket.md` in your binding

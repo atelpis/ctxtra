@@ -11,6 +11,8 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/hookjson"
+	"github.com/atelpis/ctxtra/internal/chunk"
+	"github.com/atelpis/ctxtra/internal/fsutil"
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
@@ -19,7 +21,11 @@ import (
 // Agent is Google Antigravity.
 type Agent struct{}
 
-var _ agent.Agent = Agent{}
+var (
+	_ agent.Agent    = Agent{}
+	_ agent.Native   = Agent{}
+	_ agent.Launcher = Agent{}
+)
 
 // hookName is the key of our hook in hooks.json.
 const hookName = "ctxtra"
@@ -51,10 +57,15 @@ func (a Agent) Setup(o agent.Options, r *agent.Report) error { return a.hooks().
 
 // Status also reports a hook turned off with "enabled": false, for example
 // in the App's settings.
-func (a Agent) Status() agent.Status {
-	s := a.hooks().Status()
-	data, err := jsonorder.ReadFile(a.ConfigPath())
+func (a Agent) Status(bin string, known bool) agent.Status {
+	s := a.hooks().Status(bin, known)
+	b, err := fsutil.ReadBounded(a.ConfigPath(), agent.MaxConfig)
 	if err != nil {
+		return s
+	}
+	v, _ := jsonorder.Decode(b)
+	data, ok := v.(*jsonorder.Map)
+	if !ok {
 		return s
 	}
 	if v, _ := data.Get(hookName); v != nil {
@@ -68,20 +79,38 @@ func (a Agent) Status() agent.Status {
 	return s
 }
 
-// Answer injects the text as a system message. Antigravity has no message
-// for the user.
-func (Agent) Answer(_ string, res *resolve.Result) any {
-	text := res.Render()
-	if text == "" {
+func (a Agent) Check(bin string, known bool) []string { return a.hooks().Check(bin, known) }
+
+// Answer injects the text as system messages, a step per part.
+// Antigravity has no message for the user.
+func (a Agent) Answer(_ string, res *resolve.Result) any {
+	var steps []any
+	for _, text := range a.Delivery().Chunks(res) {
+		steps = append(steps, map[string]any{"systemMessage": map[string]any{"systemMessage": text}})
+	}
+	if len(steps) == 0 {
 		return map[string]any{}
 	}
-	return map[string]any{"injectSteps": []any{map[string]any{"systemMessage": map[string]any{"systemMessage": text}}}}
+	return map[string]any{"injectSteps": steps}
 }
 
-func (Agent) PreviewLimit() int { return 0 }
+// Delivery: the CLI cuts an injected step after about 48,900 bytes, and of
+// all steps together keeps the last 686,000 bytes or so: the earlier steps
+// are lost (measured with agy 1.4.0).
+func (Agent) Delivery() agent.Delivery {
+	return agent.Delivery{Title: "Antigravity", Capacity: 650_000, Unit: chunk.Bytes, Chunk: 40_000}
+}
 
-var _ agent.ByteLimiter = Agent{}
+// NativeFiles: the Antigravity CLI reads AGENTS.md, GEMINI.md and
+// config/GEMINI.md in ~/.gemini, all of them.
+func (Agent) NativeFiles() []agent.NativeFile {
+	var out []agent.NativeFile
+	for _, rel := range []string{"AGENTS.md", "GEMINI.md", filepath.Join("config", "GEMINI.md")} {
+		if f, ok := agent.ReadNative(filepath.Join(dir(), rel)); ok {
+			out = append(out, f)
+		}
+	}
+	return out
+}
 
-// ByteLimit: the CLI cuts hook text after about 48,900 bytes (measured with
-// agy 1.4.0).
-func (Agent) ByteLimit() int { return 48000 }
+func (Agent) Launch(prompt string) []string { return []string{"agy", "-i", prompt} }
