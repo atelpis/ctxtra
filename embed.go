@@ -10,7 +10,7 @@ import (
 	"slices"
 )
 
-//go:embed README.md docs/spec.md docs/scenarios.md
+//go:embed docs/guide.md docs/spec.md docs/scenarios.md
 var docs embed.FS
 
 //go:embed skills

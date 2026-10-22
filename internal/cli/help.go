@@ -27,7 +27,7 @@ type topic struct {
 var topics = []topic{
 	{"config", "docs/spec.md", "", "the config format and its rules: match, sources, trust, updates, limits"},
 	{"scenarios", "docs/scenarios.md", "", "use cases step by step, and what ctxtra protects you from"},
-	{"agents", "README.md", "## Limits", "what differs between agents: size limits, resumed sessions, subagents"},
+	{"agents", "docs/guide.md", "## Limits", "what differs between agents: size limits, resumed sessions, subagents"},
 }
 
 func findTopic(name string) (topic, bool) {
