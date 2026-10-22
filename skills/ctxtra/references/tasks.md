@@ -89,6 +89,10 @@ so that every agent gets them. Do every step; don't skip the files of an agent.
    hook setup for the agent, and whether the hook ran in that folder.
 3. Check the limits of the agent in `ctxtra help agents`: some show the model only the start of a long
    text, some don't add the text again in a resumed session.
+4. If the file is bound to another repository than the session folder's, for example a session started in
+   one repository that then worked in another: the session gets only what its own folder matches. The
+   optional `ctxtra-follow` skill gets the other repository's files when the agent works there. Offer
+   `ctxtra skill install ctxtra-follow`, and say that the agent decides when to use it.
 
 ## Remove something
 

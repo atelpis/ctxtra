@@ -10,3 +10,5 @@ func IsTerminal(f *os.File) bool {
 	st, err := f.Stat()
 	return err == nil && st.Mode()&os.ModeCharDevice != 0
 }
+
+func showsColors(*os.File) bool { return false }

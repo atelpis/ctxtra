@@ -13,3 +13,5 @@ func IsTerminal(f *os.File) bool {
 	_, err := unix.IoctlGetTermios(int(f.Fd()), ioctlReadTermios)
 	return err == nil
 }
+
+func showsColors(f *os.File) bool { return IsTerminal(f) }

@@ -3,7 +3,7 @@
 # --remove restores the original file.
 
 exec ctxtra setup --agent muse
-stdout '^ctxtra setup \(muse\): changed$'
+stdout '^ctxtra is set up for Muse:$'
 cp .config/muse/settings.json got.json
 slots got.json
 cmpenv got.json new.json
@@ -23,7 +23,7 @@ slots got.json
 cmpenv got.json want.json
 
 exec ctxtra setup --agent muse
-stdout 'nothing to change'
+stdout 'is already set up for'
 
 exec ctxtra setup --remove --agent muse
 cmp .config/muse/settings.json original.json

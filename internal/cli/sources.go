@@ -19,6 +19,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/source"
 	"github.com/atelpis/ctxtra/internal/state"
+	"github.com/atelpis/ctxtra/internal/term"
 	"github.com/atelpis/ctxtra/internal/trust"
 )
 
@@ -84,18 +85,24 @@ func (s *sources) current() (*config.Config, error) {
 	return c, nil
 }
 
-// edit changes the config, and says so when it creates it. The config is
-// registered, so that cleaning the store keeps its accepted commits.
+// edit changes the config, and says so when it creates it.
 func (s *sources) edit(fn func(old []byte) ([]byte, error)) error {
+	created, err := s.change(fn)
+	if created {
+		term.Fprintf(s.Out, term.Green, "created %s\n", paths.Tilde(s.file))
+	}
+	return err
+}
+
+// change changes the config, and reports whether it created it. The config
+// is registered, so that cleaning the store keeps its accepted commits.
+func (s *sources) change(fn func(old []byte) ([]byte, error)) (created bool, err error) {
 	existed := source.Exists(s.file)
 	if err := config.Edit(s.file, fn); err != nil {
-		return err
+		return false, err
 	}
 	s.register()
-	if !existed {
-		fmt.Fprintf(s.Out, "created %s\n", paths.Tilde(s.file))
-	}
-	return nil
+	return !existed, nil
 }
 
 // register records the config in configs.json, so that cleaning the store

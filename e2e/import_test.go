@@ -60,9 +60,13 @@ func TestImportTUI(t *testing.T) {
 			}
 		})
 
-		tui.until(t, "Install it now? [Y/n]")
+		// Each question waits for a line that only it shows: an answer typed
+		// early would answer the question before.
+		tui.until(t, "Your agents can set up ctxtra for you")
 		tui.keys("Enter")
-		tui.until(t, "now? [Y/n]")
+		tui.until(t, "Work across multiple projects in one session?")
+		tui.keys("n", "Enter")
+		tui.until(t, "this now? [Y/n]")
 		tui.keys("Enter")
 		var text string
 		if isTUI {

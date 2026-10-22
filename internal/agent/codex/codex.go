@@ -41,9 +41,8 @@ var (
 // then asks the user to trust them again.
 var events = []hookjson.Event{{Name: "SessionStart", Matcher: "startup|clear|compact"}, {Name: "SubagentStart"}}
 
-// trustNote tells the user how to trust the hooks.
-const trustNote = "codex: Codex runs a new or changed hook only after you trust it, and asks once at its next start: " +
-	"choose \"Trust all and continue\", or trust the ctxtra entries in /hooks."
+// trustNote says that Codex runs the hooks only once the user trusts them.
+const trustNote = "The next time you start Codex, it might ask you to review the newly installed hooks. Please review them to ensure a smooth integration."
 
 // contextLimit is the hooks' additionalContextLimit, in tokens: Codex counts
 // 4 bytes as a token, so 250,000 tokens are 1,000,000 bytes.

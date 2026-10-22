@@ -62,8 +62,7 @@ bindings:
 			t.Errorf("%v: exit %d, want 0", args, code)
 		}
 	}
-	if code, out, _ := run("setup", "--agent", "claude", "--dry-run"); code != 0 || !strings.Contains(out, "would change") ||
-		!strings.Contains(out, "hooks run /opt/homebrew/bin/ctxtra") {
+	if code, out, _ := run("setup", "--agent", "claude", "--dry-run"); code != 0 || !strings.Contains(out, "Setup would change these files:\n  Claude Code   ~/.claude/settings.json\n") {
 		t.Errorf("setup dry run: %d %q", code, out)
 	}
 }
@@ -100,7 +99,8 @@ func TestSizeWarnings(t *testing.T) {
 	}
 }
 
-// In a terminal, setup offers the skill once; the answer decides.
+// In a terminal, setup offers each skill that isn't installed, with a
+// question of its own; the answer decides.
 func TestSetupOffersSkill(t *testing.T) {
 	h := testenv.Home(t)
 	isTerminal := interactive
@@ -114,18 +114,48 @@ func TestSetupOffersSkill(t *testing.T) {
 		}
 		return o.String()
 	}
-	for _, answer := range []string{"n\n", "no\n", "x\n", ""} {
-		if out := setupWith(answer); !strings.Contains(out, "Install it now? [Y/n]") || !strings.Contains(out, "not installed") {
+	const base, follow = "Your agents can set up ctxtra for you\n", "Work across multiple projects in one session?\n"
+	for _, answer := range []string{"n\nn\n", "no\nx\n", "n\n", ""} {
+		out := setupWith(answer)
+		if !strings.Contains(out, base) || !strings.Contains(out, follow) || strings.Count(out, " skill? [Y/n] Skipped. To install it later: ctxtra skill install") != 2 {
 			t.Errorf("declined with %q:\n%s", answer, out)
 		}
 	}
 	if _, err := os.Stat(filepath.Join(h, ".ctxtra", "skills")); err == nil {
-		t.Error("declined, but the skill was written")
+		t.Error("declined, but a skill was written")
 	}
-	if out := setupWith("\n"); !strings.Contains(out, "added binding ctxtra") {
-		t.Errorf("accepted with Enter:\n%s", out)
+	want := `ctxtra is already set up for Claude Code.
+
+Your agents can set up ctxtra for you
+ctxtra comes with a skill that makes getting started easy. Your agents can create your bindings, change your config, and bring the instructions you already have into ctxtra.
+
+Install the ctxtra skill? [Y/n] 
+Installed to ~/.ctxtra/skills/ctxtra
+Created ~/.config/ctxtra/config.yaml
+The skill is ready for new agent sessions in any folder. Ask your agent to help you get started with ctxtra.
+
+Work across multiple projects in one session?
+The ctxtra-follow skill helps your agent pick up the instructions and skills you've configured for each project as your work moves between them.
+
+Install the ctxtra-follow skill? [Y/n] Skipped. To install it later: ctxtra skill install ctxtra-follow
+`
+	if out := setupWith("\nn\n"); out != want {
+		t.Errorf("accepted the first with Enter, declined the second:\n%s\nwant:\n%s", out, want)
 	}
-	if out := setupWith(""); strings.Contains(out, "ctxtra skill") {
+	want = `ctxtra is already set up for Claude Code.
+
+Work across multiple projects in one session?
+The ctxtra-follow skill helps your agent pick up the instructions and skills you've configured for each project as your work moves between them.
+
+Install the ctxtra-follow skill? [Y/n] 
+Installed to ~/.ctxtra/skills/ctxtra-follow
+Added to ~/.config/ctxtra/config.yaml
+The skill is ready for new agent sessions in any folder.
+`
+	if out := setupWith("\n"); out != want {
+		t.Errorf("accepted the second with Enter:\n%s\nwant:\n%s", out, want)
+	}
+	if out := setupWith(""); strings.Contains(out, "skill? [Y/n]") {
 		t.Errorf("installed, but asked again:\n%s", out)
 	}
 }

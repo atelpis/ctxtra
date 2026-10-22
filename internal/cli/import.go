@@ -22,6 +22,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/skill"
 	"github.com/atelpis/ctxtra/internal/state"
+	"github.com/atelpis/ctxtra/internal/term"
 )
 
 // importFile is a user-level instruction file of an agent.
@@ -87,7 +88,7 @@ func runImport(args []string, stdio IO) int {
 		fmt.Fprintf(stdio.Out, "backed up the files to %s\n", paths.Tilde(backup))
 		return 0
 	}
-	if skillBound() == nil {
+	if skillBound(skill.Base) == nil {
 		fmt.Fprintln(stdio.Err, "ctxtra import: the agent follows the ctxtra skill: install it first with ctxtra skill install")
 		return 1
 	}
@@ -98,7 +99,7 @@ func runImport(args []string, stdio IO) int {
 // in a terminal, with the ctxtra skill installed, and while no binding adds
 // instructions.
 func offerImport(stdio IO, in *bufio.Reader) int {
-	if !interactive(stdio.In) || skillBound() == nil || hasInstructions() {
+	if !interactive(stdio.In) || skillBound(skill.Base) == nil || hasInstructions() {
 		return 0
 	}
 	files, launchers, err := importCandidates()
@@ -150,7 +151,7 @@ func importCandidates() ([]importFile, []agent.Agent, error) {
 // which one, backs them up, and starts the agent with a prompt that names
 // the files and their backup. cmd names the command in messages.
 func importFiles(stdio IO, in *bufio.Reader, cmd string, files []importFile, launchers []agent.Agent) int {
-	fmt.Fprintln(stdio.Out, "Your agents have instruction files of their own:")
+	term.Fprintf(stdio.Out, term.Bold, "Your agents have instruction files of their own:\n")
 	for _, f := range files {
 		fmt.Fprintf(stdio.Out, "  %s\n", f)
 	}
@@ -162,9 +163,9 @@ the rules that repeat and shows you the result. ctxtra backs the files up
 first; the agent empties them only if you agree.
 `)
 	if len(launchers) == 1 {
-		fmt.Fprintf(stdio.Out, "Start %s for this now? [Y/n] ", launchers[0].Delivery().Title)
+		term.Fprintf(stdio.Out, term.Bold, "Start %s for this now? [Y/n] ", launchers[0].Delivery().Title)
 	} else {
-		fmt.Fprint(stdio.Out, "Do this now? [Y/n] ")
+		term.Fprintf(stdio.Out, term.Bold, "Do this now? [Y/n] ")
 	}
 	var chosen agent.Agent
 	ok, err := confirm(in)
@@ -180,7 +181,7 @@ first; the agent empties them only if you agree.
 		return 1
 	}
 	if !ok {
-		fmt.Fprintln(stdio.Out, "not started; to do it later: ctxtra import")
+		term.Fprintf(stdio.Out, term.Dim, "not started; to do it later: ctxtra import\n")
 		return 0
 	}
 	backup, err := backupFiles(files)
@@ -188,9 +189,9 @@ first; the agent empties them only if you agree.
 		fmt.Fprintf(stdio.Err, "ctxtra %s: back up the instruction files: %v\n", cmd, err)
 		return 1
 	}
-	fmt.Fprintf(stdio.Out, "backed up the files to %s\n", paths.Tilde(backup))
+	term.Fprintf(stdio.Out, term.Green, "backed up the files to %s\n", paths.Tilde(backup))
 	// The prompt names the skill's files: write them, also when they are gone.
-	if _, err := skill.Write(); err != nil {
+	if _, err := skill.Write(skill.Base); err != nil {
 		fmt.Fprintf(stdio.Err, "ctxtra %s: write the ctxtra skill: %v\n", cmd, err)
 		return 1
 	}
@@ -230,11 +231,11 @@ func unreadable(stdio IO, cmd string, files []importFile) bool {
 // choose asks which of the agents to start; Enter chooses the first. ok is
 // false without a valid choice.
 func choose(stdio IO, in *bufio.Reader, agents []agent.Agent) (_ agent.Agent, ok bool) {
-	fmt.Fprintln(stdio.Out, "Which agent?")
+	term.Fprintf(stdio.Out, term.Bold, "Which agent?\n")
 	for i, a := range agents {
 		fmt.Fprintf(stdio.Out, "  %d) %s\n", i+1, a.Delivery().Title)
 	}
-	fmt.Fprintf(stdio.Out, "Choose 1-%d [1]: ", len(agents))
+	term.Fprintf(stdio.Out, term.Bold, "Choose 1-%d [1]: ", len(agents))
 	answer, err := in.ReadString('\n')
 	if err != nil {
 		// Input that ends without a line (Ctrl-D) is no answer.
@@ -295,7 +296,7 @@ func backupFiles(files []importFile) (string, error) {
 func importPrompt(files []importFile, backup string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Use the ctxtra skill (%s), task \"Import existing instructions\".\n",
-		paths.Tilde(filepath.Join(paths.SkillDir(), "SKILL.md")))
+		paths.Tilde(filepath.Join(paths.SkillDir(skill.Base), "SKILL.md")))
 	b.WriteString("The files:\n")
 	for _, f := range files {
 		fmt.Fprintf(&b, "- %s\n", f)

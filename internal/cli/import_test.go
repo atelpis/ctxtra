@@ -73,8 +73,8 @@ func TestSetupOffersImport(t *testing.T) {
 		return o.String()
 	}
 
-	// Enter installs the skill, Enter accepts, 2 chooses Codex.
-	out := setupWith("\n\n2\n")
+	// Enter installs each skill, Enter accepts, 2 chooses Codex.
+	out := setupWith("\n\n\n2\n")
 	for _, want := range []string{
 		"  ~/.claude/CLAUDE.md (Claude Code)\n  ~/.claude/rules/go/style.md (Claude Code)\n" +
 			"  ~/.claude/rules/shared/team.md (Claude Code)\n" +
