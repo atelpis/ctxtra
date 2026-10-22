@@ -223,3 +223,34 @@ include:
 		t.Errorf("flow list: %v\n%s", err, out)
 	}
 }
+
+func TestRemoveBinding(t *testing.T) {
+	in := `schema: ctxtra/v1
+bindings:            # mine
+  - name: me
+    match: {global: true}
+    instructions: [me.md]
+  - name: work       # the job
+    match:
+      dirs: [~/work/**]
+    instructions:
+      - work.md
+budget:
+  max-chars: 100
+`
+	out, err := RemoveBinding([]byte(in), "work")
+	if want := strings.Replace(in, "  - name: work       # the job\n    match:\n      dirs: [~/work/**]\n    instructions:\n      - work.md\n", "", 1); err != nil || string(out) != want {
+		t.Errorf("remove the last of two: %v\n%s", err, out)
+	}
+	out, err = RemoveBinding([]byte(in), "me")
+	if want := strings.Replace(in, "  - name: me\n    match: {global: true}\n    instructions: [me.md]\n", "", 1); err != nil || string(out) != want {
+		t.Errorf("remove the first: %v\n%s", err, out)
+	}
+	out, _ = RemoveBinding(out, "work")
+	if string(out) != "schema: ctxtra/v1\nbudget:\n  max-chars: 100\n" {
+		t.Errorf("the last binding takes its key with it:\n%s", out)
+	}
+	if _, err := RemoveBinding([]byte(in), "nope"); err == nil {
+		t.Error("removing a missing binding")
+	}
+}

@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"errors"
-	"flag"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -17,53 +16,18 @@ import (
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
 
-const bindUsage = `usage: ctxtra bind NAME (--global | --dir PATTERN... | --repo REMOTE...) [--file FILE]... [--skill FOLDER]... [--dry-run]
-Quote patterns, or the shell expands them: --dir '~/dev/work/**'.
-`
-
-// runBind adds a binding to the config. Only a binding that works is
+// bindingAdd adds a binding to the config. Only a binding that works is
 // written: its files exist and are trusted, as a session would read them.
-func runBind(args []string, stdio IO) int {
-	fs := flag.NewFlagSet("bind", flag.ContinueOnError)
-	fs.SetOutput(stdio.Err)
-	fs.Usage = func() {
-		fmt.Fprint(stdio.Err, bindUsage)
-		fs.PrintDefaults()
-	}
-	var b config.NewBinding
-	var dirs, repos, files, skills listFlag
-	fs.BoolVar(&b.Global, "global", false, "add it to every session")
-	fs.Var(&dirs, "dir", "a folder pattern (repeatable); x/** also matches x")
-	fs.Var(&repos, "repo", "a remote pattern (repeatable), such as github.com/acme/**")
-	fs.Var(&files, "file", "an instruction file (repeatable)")
-	fs.Var(&skills, "skill", "a skill folder with a SKILL.md (repeatable)")
-	dryRun := fs.Bool("dry-run", false, "check the binding and show it; change nothing")
-	// The name may come before or after the flags.
-	var pos []string
-	for {
-		if err := fs.Parse(args); err != nil {
-			return parseError(err)
-		}
-		if fs.NArg() == 0 {
-			break
-		}
-		pos, args = append(pos, fs.Arg(0)), fs.Args()[1:]
-	}
-	fail := func(msg string) int {
-		fmt.Fprintf(stdio.Err, "ctxtra bind: %s\n%s", msg, bindUsage)
-		return 2
-	}
+func bindingAdd(stdio IO, b config.NewBinding, dryRun bool) error {
 	switch {
-	case len(pos) != 1:
-		return fail("expected one binding name")
-	case !config.ValidName(pos[0]):
-		return fail(fmt.Sprintf("name %q may only contain letters, digits, '.', '_' and '-'", pos[0]))
-	case !b.Global && len(dirs) == 0 && len(repos) == 0:
-		return fail("say which sessions get it: --global, --dir or --repo")
-	case b.Global && (len(dirs) > 0 || len(repos) > 0):
-		return fail("--global already matches every session; leave out --dir and --repo")
-	case len(files) == 0 && len(skills) == 0:
-		return fail("add at least one --file or --skill")
+	case !config.ValidName(b.Name):
+		return fmt.Errorf("name %q may only contain letters, digits, '.', '_' and '-'", b.Name)
+	case !b.Global && len(b.Dirs) == 0 && len(b.Repos) == 0:
+		return errors.New("say which sessions get it: --global, --dir or --repo")
+	case b.Global && (len(b.Dirs) > 0 || len(b.Repos) > 0):
+		return errors.New("--global already matches every session; leave out --dir and --repo")
+	case len(b.Instructions) == 0 && len(b.Skills) == 0:
+		return errors.New("add at least one --instruction or --skill")
 	}
 	// Paths are relative to the current folder here, and are written
 	// absolute: in the config, they would be relative to its folder.
@@ -74,8 +38,7 @@ func runBind(args []string, stdio IO) int {
 		}
 		return paths.Tilde(paths.Resolve(wd, p))
 	}
-	b.Name, b.Dirs, b.Repos = pos[0], mapList(dirs, path), repos
-	b.Instructions, b.Skills = mapList(files, path), mapList(skills, path)
+	b.Dirs, b.Instructions, b.Skills = mapList(b.Dirs, path), mapList(b.Instructions, path), mapList(b.Skills, path)
 
 	s := newSources(stdio)
 	var added *config.Binding
@@ -88,30 +51,21 @@ func runBind(args []string, stdio IO) int {
 		return out, err
 	}
 	var err error
-	if *dryRun {
+	if dryRun {
 		// Reads only: it works where the config can't be written, for
 		// example in an agent's sandbox.
 		var old []byte
-		old, err = fsutil.ReadBounded(s.file, config.MaxFileBytes)
-		switch {
-		case errors.Is(err, os.ErrNotExist):
-			old, err = nil, nil
-		case err == nil && len(bytes.TrimSpace(old)) > 0:
-			if err = config.Check(old); err != nil {
-				err = fmt.Errorf("%s: %v; fix it first", paths.Tilde(s.file), err)
-			}
-		}
-		if err == nil {
+		if old, err = readConfig(s.file); err == nil {
 			_, err = change(old)
 		}
 	} else {
 		err = s.edit(change)
 	}
 	if err != nil {
-		return s.fail("bind", err)
+		return exitCode(s.fail("binding add", err))
 	}
 	verb := "added"
-	if *dryRun {
+	if dryRun {
 		verb = "would add"
 	}
 	fmt.Fprintf(s.Out, "%s binding %s to %s: for %s\n", verb, b.Name, paths.Tilde(s.file), added.Selector)
@@ -121,11 +75,98 @@ func runBind(args []string, stdio IO) int {
 	if len(b.Skills) > 0 {
 		fmt.Fprintf(s.Out, "  skills: %s\n", strings.Join(b.Skills, ", "))
 	}
-	if *dryRun {
+	if dryRun {
 		fmt.Fprintln(s.Out, "nothing changed (--dry-run)")
-		return 0
+		return nil
 	}
 	fmt.Fprintln(s.Out, "new sessions get it; a running session keeps what it got at its start")
+	return nil
+}
+
+// readConfig reads the config for a dry run: a missing one is empty, a
+// broken one an error.
+func readConfig(file string) ([]byte, error) {
+	old, err := fsutil.ReadBounded(file, config.MaxFileBytes)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return nil, nil
+	case err == nil && len(bytes.TrimSpace(old)) > 0:
+		if err := config.Check(old); err != nil {
+			return nil, fmt.Errorf("%s: %v; fix it first", paths.Tilde(file), err)
+		}
+	}
+	return old, err
+}
+
+// bindingInfo is a binding in the output of binding list.
+type bindingInfo struct {
+	Name         string   `json:"name"`
+	File         string   `json:"file"`
+	Line         int      `json:"line"`
+	Match        string   `json:"match"`
+	Instructions []string `json:"instructions"`
+	Skills       []string `json:"skills"`
+}
+
+// bindingList is binding list: the config's bindings, then those of each
+// binding file, as sessions read them.
+func bindingList(stdio IO, asJSON bool) int {
+	cfg := config.Load(paths.ConfigPath(), newReader())
+	out := []bindingInfo{}
+	for _, b := range cfg.Bindings {
+		out = append(out, bindingInfo{b.Name, b.Source, b.Line, b.Selector.String(),
+			append([]string{}, b.Instructions...), append([]string{}, b.Skills...)})
+	}
+	if asJSON {
+		writeJSON(stdio.Out, out, diagnostics("error", cfg.Problems))
+	} else {
+		if len(out) == 0 {
+			fmt.Fprintln(stdio.Out, "no bindings (add one with ctxtra binding add)")
+		}
+		for _, b := range cfg.Bindings {
+			fmt.Fprintf(stdio.Out, "%s: for %s\n", b.ID(), b.Selector)
+			for _, f := range b.Instructions {
+				fmt.Fprintf(stdio.Out, "  instruction  %s\n", paths.Tilde(f))
+			}
+			for _, d := range b.Skills {
+				fmt.Fprintf(stdio.Out, "  skill        %s\n", paths.Tilde(d))
+			}
+		}
+		for _, p := range cfg.Problems {
+			fmt.Fprintf(stdio.Err, "problem: %s\n", p)
+		}
+	}
+	if len(cfg.Problems) > 0 {
+		return 1
+	}
+	return 0
+}
+
+// bindingRemove is binding remove: it removes one of the config's own
+// bindings, also one that is broken and that sessions skip.
+func bindingRemove(stdio IO, name string, dryRun bool) int {
+	s := newSources(stdio)
+	old, err := readConfig(s.file)
+	if err != nil {
+		return s.fail("binding remove", err)
+	}
+	if _, err := config.RemoveBinding(old, name); err != nil {
+		for _, b := range config.Load(s.file, newReader()).Bindings {
+			if b.Name == name {
+				return s.fail("binding remove", fmt.Errorf("%s is in the binding file %s, not in the config; remove that file with ctxtra binding-file remove, or edit it",
+					name, paths.Tilde(b.Source)))
+			}
+		}
+		return s.fail("binding remove", fmt.Errorf("no binding named %s in %s", name, paths.Tilde(s.file)))
+	}
+	if dryRun {
+		fmt.Fprintf(s.Out, "would remove binding %s from %s\nnothing changed (--dry-run)\n", name, paths.Tilde(s.file))
+		return 0
+	}
+	if err := s.edit(func(old []byte) ([]byte, error) { return config.RemoveBinding(old, name) }); err != nil {
+		return s.fail("binding remove", err)
+	}
+	fmt.Fprintf(s.Out, "removed binding %s from %s\n", name, paths.Tilde(s.file))
 	return 0
 }
 

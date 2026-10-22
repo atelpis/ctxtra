@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -23,49 +24,21 @@ import (
 	"github.com/atelpis/ctxtra/internal/trust"
 )
 
-// sources implements add and sync: the commands that change the config.
+// sources implements the source and binding-file commands: the ones that
+// change sources and the include list.
 type sources struct {
 	IO
-	ctx  context.Context
-	file string // the config
-	in   *bufio.Reader
-	full bool // sync --full: show every changed file in full
+	ctx    context.Context
+	file   string // the config
+	in     *bufio.Reader
+	full   bool // source update --full: show every changed file in full
+	prompt bool // source update may ask whether to accept a commit
 	// registerErr is set when the config couldn't be registered.
 	registerErr error
 }
 
 func newSources(stdio IO) *sources {
 	return &sources{IO: stdio, ctx: context.Background(), file: paths.ConfigPath(), in: bufio.NewReader(stdio.In)}
-}
-
-// parseArgs splits args into flags and other arguments. Flags may come
-// anywhere, as --name value, --name=value, or --name for the bools.
-func parseArgs(args, values, bools []string) (map[string]string, []string, error) {
-	flags := map[string]string{}
-	var rest []string
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--" {
-			return flags, append(rest, args[i+1:]...), nil
-		}
-		if !strings.HasPrefix(a, "-") || a == "-" {
-			rest = append(rest, a)
-			continue
-		}
-		name, val, hasVal := strings.Cut(strings.TrimLeft(a, "-"), "=")
-		switch {
-		case slices.Contains(bools, name) && !hasVal:
-			flags[name] = "true"
-		case slices.Contains(values, name) && hasVal:
-			flags[name] = val
-		case slices.Contains(values, name) && i+1 < len(args):
-			i++
-			flags[name] = args[i]
-		default:
-			return nil, nil, fmt.Errorf("unknown flag or missing value: %s", a)
-		}
-	}
-	return flags, rest, nil
 }
 
 // current is the config as it is now, without its binding files. A missing
@@ -106,7 +79,7 @@ func (s *sources) change(fn func(old []byte) ([]byte, error)) (created bool, err
 }
 
 // register records the config in configs.json, so that cleaning the store
-// keeps its accepted commits. Without it, sync doesn't clean.
+// keeps its accepted commits. Without it, source update doesn't clean.
 func (s *sources) register() {
 	abs, err := filepath.Abs(s.file)
 	if err == nil {
@@ -130,70 +103,101 @@ func (s *sources) fail(cmd string, err error) int {
 	return 1
 }
 
-const addUsage = `usage:
-  ctxtra add <git URL> [<binding file in the repo>] [--as NAME] [--branch BRANCH]
-  ctxtra add ctxtra://<source>/<binding file>
-  ctxtra add <local binding file> [--trust] [--as NAME] [--remote REMOTE] [--branch BRANCH]
-  ctxtra add --trust <folder> [--as NAME]
-  ctxtra add --local-git <clone> [--as NAME]
-`
-
-func runAdd(args []string, stdio IO) int {
-	f, pos, err := parseArgs(args, []string{"as", "branch", "remote", "local-git"}, []string{"trust"})
-	if err == nil && f["local-git"] != "" {
-		if len(pos) > 0 || f["trust"] != "" || f["branch"] != "" || f["remote"] != "" {
-			fmt.Fprint(stdio.Err, addUsage)
-			return 2
-		}
-		s := newSources(stdio)
-		wd, _ := os.Getwd()
-		if err := s.addLocalGit(paths.Resolve(wd, f["local-git"]), f["as"]); err != nil {
-			return s.fail("add", err)
-		}
-		return 0
-	}
-	if err != nil || len(pos) < 1 || len(pos) > 2 {
-		if err != nil {
-			fmt.Fprintf(stdio.Err, "ctxtra add: %v\n", err)
-		}
-		fmt.Fprint(stdio.Err, addUsage)
-		return 2
-	}
-	s := newSources(stdio)
-	target := pos[0]
-	local := strings.HasPrefix(target, "/") || strings.HasPrefix(target, "~") || strings.HasPrefix(target, ".")
-	if _, err := os.Stat(paths.Expand(target)); err == nil {
-		local = true
-	}
-	switch {
-	case strings.HasPrefix(target, config.Scheme):
-		if len(pos) > 1 || len(f) > 0 {
-			fmt.Fprint(stdio.Err, addUsage)
-			return 2
-		}
-		err = s.addRef(target)
-	case local:
-		if len(pos) > 1 {
-			fmt.Fprint(stdio.Err, addUsage)
-			return 2
-		}
-		wd, _ := os.Getwd()
-		err = s.addLocal(paths.Resolve(wd, target), f["trust"] != "", f["as"], f["remote"], f["branch"])
-	default:
-		if f["trust"] != "" || f["remote"] != "" {
-			fmt.Fprintln(stdio.Err, "ctxtra add: --trust and --remote are for files and folders on your disk")
-			return 2
-		}
-		file := ""
-		if len(pos) > 1 {
-			file = pos[1]
-		}
-		err = s.addGit(target, file, f["as"], f["branch"])
-	}
+// result is the RunE result of a command that ended with err.
+func (s *sources) result(cmd string, err error) error {
 	if err != nil {
-		return s.fail("add", err)
+		return exitCode(s.fail(cmd, err))
 	}
-	return 0
+	return nil
+}
+
+// addOptions are the options of source add.
+type addOptions struct {
+	name, branch, remote string
+	includes             []string // binding files of the source to include, slash-separated
+	dryRun               bool
+}
+
+// cleanIncludes checks the --include paths and cleans them, without
+// repeats.
+func cleanIncludes(in []string) ([]string, error) {
+	var out []string
+	for _, f := range in {
+		f = path.Clean(filepath.ToSlash(f))
+		if err := source.CheckPath(f); err != nil {
+			return nil, err
+		}
+		if !slices.Contains(out, f) {
+			out = append(out, f)
+		}
+	}
+	return out, nil
+}
+
+// cloneDir tells a clone's folder from a URL in the argument of source add
+// git. A path that doesn't exist is an error, never tried as a URL.
+func cloneDir(arg string) (dir string, isDir bool, err error) {
+	wd, _ := os.Getwd()
+	p := paths.Resolve(wd, arg)
+	st, err := os.Stat(p)
+	switch {
+	case err == nil && st.IsDir():
+		return p, true, nil
+	case err == nil:
+		return "", false, fmt.Errorf("%s is a file; give a repository URL or the folder of a clone", paths.Tilde(p))
+	case strings.HasPrefix(arg, "/") || strings.HasPrefix(arg, "~") || strings.HasPrefix(arg, "."):
+		return "", false, err
+	}
+	if uerr := source.CheckURL(arg); uerr != nil {
+		return "", false, fmt.Errorf("%s is not a folder, and %v", arg, uerr)
+	}
+	return "", false, nil
+}
+
+// checkFiles fails unless each of files is a regular file under root;
+// where names root in the message.
+func checkFiles(root string, files []string, where string, stat func(string) (fs.FileInfo, error)) error {
+	for _, f := range files {
+		if st, err := stat(filepath.Join(root, filepath.FromSlash(f))); err != nil || !st.Mode().IsRegular() {
+			return fmt.Errorf("%s is not a file in %s; nothing added", f, where)
+		}
+	}
+	return nil
+}
+
+// addSource writes the source name with kv, and an include entry for each
+// of files, in one edit.
+func (s *sources) addSource(name string, kv [][2]string, files []string) error {
+	return s.edit(func(old []byte) ([]byte, error) {
+		data, err := config.AddSource(old, name, kv)
+		for _, f := range files {
+			if err == nil {
+				data, err = config.AddInclude(data, config.Scheme+name+"/"+f)
+			}
+		}
+		return data, err
+	})
+}
+
+// added shows the binding files just included from the source name at
+// root, or, without any, the binding files it has.
+func (s *sources) added(name, root string, files []string) {
+	if len(files) == 0 {
+		s.listSourceBindingFiles(name, root)
+		return
+	}
+	for _, f := range files {
+		fmt.Fprintf(s.Out, "included %s%s/%s\n", config.Scheme, name, f)
+		s.showBindings(filepath.Join(root, filepath.FromSlash(f)), root)
+	}
+}
+
+// wouldAdd is what a dry run of source add says after the source.
+func (s *sources) wouldAdd(name string, files []string) {
+	for _, f := range files {
+		fmt.Fprintf(s.Out, "would include %s%s/%s\n", config.Scheme, name, f)
+	}
+	fmt.Fprintln(s.Out, "nothing changed (--dry-run)")
 }
 
 // A binding file has the ctxtra schema and none of the config's own keys.
@@ -215,10 +219,10 @@ func defaultName(s string) string {
 
 func checkName(c *config.Config, name, what string) error {
 	if !config.ValidName(name) {
-		return fmt.Errorf("%q can't be a source name (letters, digits, '.', '_', '-'); choose one with --as", name)
+		return fmt.Errorf("%q can't be a source name (letters, digits, '.', '_', '-'); choose one with --name", name)
 	}
 	if old, ok := c.Source(name); ok {
-		return fmt.Errorf("a source named %s already exists (%s); choose another name for %s with --as", name, describe(old), what)
+		return fmt.Errorf("a source named %s already exists (%s); choose another name for %s with --name", name, describe(old), what)
 	}
 	return nil
 }
@@ -233,37 +237,50 @@ func describe(s config.Source) string {
 	return "trusted-path " + paths.Tilde(s.TrustedPath)
 }
 
-func (s *sources) addGit(url, file, name, branch string) error {
+// kind is the config key of the source's kind.
+func kind(s config.Source) string {
+	switch {
+	case s.Git != "":
+		return "git"
+	case s.LocalGit != "":
+		return "local-git"
+	}
+	return "trusted-path"
+}
+
+// addGitURL adds the repository at url as a pinned source.
+func (s *sources) addGitURL(url string, o addOptions) error {
 	if err := source.CheckURL(url); err != nil {
 		return err
-	}
-	if file != "" {
-		file = path.Clean(filepath.ToSlash(file))
-		if err := source.CheckPath(file); err != nil {
-			return err
-		}
 	}
 	cur, err := s.current()
 	if err != nil {
 		return err
 	}
-	// The source is already there: add the binding file at its commit,
-	// without fetching.
 	for _, src := range cur.Sources {
 		if src.Git == url {
-			if file == "" {
-				return fmt.Errorf("%s is already the source %s", url, src.Name)
-			}
-			return s.addRef(config.Scheme + src.Name + "/" + file)
+			return fmt.Errorf("%s is the source %s already; to include one of its binding files: ctxtra binding-file add %s%s/PATH",
+				url, src.Name, config.Scheme, src.Name)
 		}
 	}
+	name := o.name
 	if name == "" {
 		name = defaultName(url)
 	}
 	if err := checkName(cur, name, url); err != nil {
 		return err
 	}
+	if o.dryRun {
+		branch := o.branch
+		if branch == "" {
+			branch = "its default branch"
+		}
+		fmt.Fprintf(s.Out, "would add source %s: %s, %s, pinned to the commit fetched then (not fetched now)\n", name, url, branch)
+		s.wouldAdd(name, o.includes)
+		return nil
+	}
 	r := source.Open(url)
+	branch := o.branch
 	if branch == "" {
 		if branch, err = r.DefaultBranch(s.ctx); err != nil {
 			return err
@@ -278,36 +295,350 @@ func (s *sources) addGit(url, file, name, branch string) error {
 		return err
 	}
 	fmt.Fprintf(s.Out, "fetched %s: %s at %s (%s)\n", name, branch, source.Short(commit), url)
-	if file != "" {
-		if st, err := os.Lstat(filepath.Join(gen, filepath.FromSlash(file))); err != nil || !st.Mode().IsRegular() {
-			return fmt.Errorf("%s is not a file in %s; nothing added", file, url)
-		}
+	if err := checkFiles(gen, o.includes, url, os.Lstat); err != nil {
+		return err
 	}
-	ref := config.Scheme + name + "/" + file
-	err = s.edit(func(old []byte) ([]byte, error) {
-		data, err := config.AddSource(old, name, [][2]string{{"git", url}, {"branch", branch}, {"commit", commit}})
-		if err == nil && file != "" {
-			data, err = config.AddInclude(data, ref)
-		}
-		return data, err
-	})
-	if err != nil {
+	if err := s.addSource(name, [][2]string{{"git", url}, {"branch", branch}, {"commit", commit}}, o.includes); err != nil {
 		return err
 	}
 	s.checked(config.Source{Name: name, Git: url, Branch: branch})
-	fmt.Fprintf(s.Out, "added source %s (pinned: changes apply after `ctxtra sync`)\n", name)
-	if file != "" {
-		fmt.Fprintf(s.Out, "added %s\n", ref)
-		s.showBindings(filepath.Join(gen, filepath.FromSlash(file)), gen)
-	} else {
-		s.listBindingFiles(name, gen)
-	}
+	fmt.Fprintf(s.Out, "added source %s (pinned: new commits apply after you accept them in ctxtra source update)\n", name)
+	s.added(name, gen, o.includes)
 	s.showExecutables(r, commit)
 	return nil
 }
 
-// addRef adds a binding file of a source that is in the config already.
-func (s *sources) addRef(ref string) error {
+// addGitClone adds the repository that dir is a clone of as a git source:
+// the clone's remote and upstream branch, starting at the clone's committed
+// HEAD. Plain paths under the clone are then served from the source (a
+// mapping in the local state), also after the clone moves or is deleted.
+// Later updates follow the remote branch, not the clone.
+func (s *sources) addGitClone(dir string, o addOptions) error {
+	c, err := source.InspectClone(s.ctx, dir)
+	if err != nil {
+		return err
+	}
+	names := slices.Sorted(func(yield func(string) bool) {
+		for n := range c.Remotes {
+			if !yield(n) {
+				return
+			}
+		}
+	})
+	remote, branch := o.remote, o.branch
+	switch {
+	case remote != "":
+		if c.Remotes[remote] == "" {
+			return fmt.Errorf("%s has no remote %q (remotes: %s)", paths.Tilde(c.Top), remote, strings.Join(names, ", "))
+		}
+	case len(names) == 1:
+		remote = names[0]
+	case len(names) == 0:
+		return fmt.Errorf("%s has no remote; to read it from disk: ctxtra source add trusted-path %s, or to follow its commits: ctxtra source add local-git %s",
+			paths.Tilde(c.Top), paths.Tilde(c.Top), paths.Tilde(c.Top))
+	default:
+		return fmt.Errorf("%s has several remotes (%s); choose one with --remote", paths.Tilde(c.Top), strings.Join(names, ", "))
+	}
+	if branch == "" {
+		if c.Upstream != remote || c.Branch == "" {
+			return fmt.Errorf("the current branch of %s has no upstream on %s; choose the branch to follow with --branch", paths.Tilde(c.Top), remote)
+		}
+		branch = c.Branch
+	}
+	url := c.Remotes[remote]
+	if err := source.CheckURL(url); err != nil {
+		return fmt.Errorf("the remote %s of %s: %w", remote, paths.Tilde(c.Top), err)
+	}
+	if err := source.CheckBranch(branch); err != nil {
+		return err
+	}
+	cur, err := s.current()
+	if err != nil {
+		return err
+	}
+	// A source with the URL is there already: map the clone to it and use
+	// its commit; it never moves.
+	var same []config.Source
+	for _, src := range cur.Sources {
+		if src.Git == url {
+			same = append(same, src)
+		}
+	}
+	if len(same) > 0 {
+		return s.mapToSource(same, c.Top, url, o)
+	}
+	name := o.name
+	if name == "" {
+		name = defaultName(url)
+	}
+	if err := checkName(cur, name, url); err != nil {
+		return err
+	}
+	if o.dryRun {
+		fmt.Fprintf(s.Out, "would add source %s: %s, %s/%s, starting at the committed HEAD of %s\n", name, url, remote, branch, paths.Tilde(c.Top))
+		s.wouldAdd(name, o.includes)
+		return nil
+	}
+	r := source.Open(url)
+	commit, err := r.FetchHead(s.ctx, c.Top)
+	if err != nil {
+		return err
+	}
+	gen, err := r.Materialize(s.ctx, commit)
+	if err != nil {
+		return err
+	}
+	for _, f := range o.includes {
+		if st, err := os.Lstat(filepath.Join(gen, filepath.FromSlash(f))); err != nil || !st.Mode().IsRegular() {
+			return fmt.Errorf("%s is not committed in %s; ctxtra uses only committed files", f, paths.Tilde(c.Top))
+		}
+	}
+	// After the fetch: the mapping and the config change together.
+	unlock, err := transition()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	mapped, err := state.Map(c.Top, name, url)
+	if err != nil {
+		return err
+	}
+	if err := s.addSource(name, [][2]string{{"git", url}, {"branch", branch}, {"commit", commit}}, o.includes); err != nil {
+		if mapped {
+			state.Unmap(c.Top)
+		}
+		return err
+	}
+	fmt.Fprintf(s.Out, "%s is a clone of %s, added as source %s (pinned)\n", paths.Tilde(c.Top), url, name)
+	fmt.Fprintf(s.Out, "starts at your local commit %s; later updates follow %s/%s (remote not checked yet)\n", source.Short(commit), remote, branch)
+	s.added(name, gen, o.includes)
+	s.showExecutables(r, commit)
+	fmt.Fprintf(s.Out, "if the repository is yours, read it from disk instead: ctxtra source trust %s\n", name)
+	return nil
+}
+
+// mapToSource maps the clone top to the one source in same, which has the
+// clone's URL, and includes the binding files of o from it, at the source's
+// commit.
+func (s *sources) mapToSource(same []config.Source, top, url string, o addOptions) error {
+	if len(same) > 1 {
+		return fmt.Errorf("several sources use %s; reference its files as ctxtra://SOURCE/PATH", url)
+	}
+	src := same[0]
+	if _, err := checkIncludes(src, o.includes); err != nil {
+		return err
+	}
+	if o.dryRun {
+		fmt.Fprintf(s.Out, "would map %s to the source %s, which has its URL\n", paths.Tilde(top), src.Name)
+		if err := s.includeFrom(src, o.includes, true); err != nil {
+			return err
+		}
+		fmt.Fprintln(s.Out, "nothing changed (--dry-run)")
+		return nil
+	}
+	unlock, err := transition()
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	mapped, err := state.Map(top, src.Name, url)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(s.Out, "%s is a clone of %s, the source %s: its paths are read from the source's commit\n", paths.Tilde(top), url, src.Name)
+	if len(o.includes) > 0 {
+		if err := s.includeFrom(src, o.includes, false); err != nil {
+			if mapped {
+				state.Unmap(top)
+			}
+			return err
+		}
+	}
+	return nil
+}
+
+// addLocalGit adds a clone as a local-git source: pinned like a git source,
+// but updates follow the clone's committed HEAD instead of a remote. It
+// adds no mapping: its files are referenced as ctxtra://NAME/PATH.
+func (s *sources) addLocalGit(dir string, o addOptions) error {
+	c, err := source.InspectClone(s.ctx, dir)
+	if err != nil {
+		return err
+	}
+	cur, err := s.current()
+	if err != nil {
+		return err
+	}
+	for _, src := range cur.Sources {
+		if src.LocalGit != "" && sameFile(src.LocalGit, c.Top) {
+			return fmt.Errorf("%s is the source %s already", paths.Tilde(c.Top), src.Name)
+		}
+	}
+	name := o.name
+	if name == "" {
+		name = defaultName(c.Top)
+	}
+	if err := checkName(cur, name, paths.Tilde(c.Top)); err != nil {
+		return err
+	}
+	if o.dryRun {
+		fmt.Fprintf(s.Out, "would add source %s: local-git %s, starting at its committed HEAD\n", name, paths.Tilde(c.Top))
+		s.wouldAdd(name, o.includes)
+		return nil
+	}
+	r := source.Open(c.Top)
+	commit, err := r.FetchHead(s.ctx, c.Top)
+	if err != nil {
+		return err
+	}
+	gen, err := r.Materialize(s.ctx, commit)
+	if err != nil {
+		return err
+	}
+	if err := checkFiles(gen, o.includes, "the committed files of "+paths.Tilde(c.Top), os.Lstat); err != nil {
+		return err
+	}
+	if err := s.addSource(name, [][2]string{{"local-git", paths.Tilde(c.Top)}, {"commit", commit}}, o.includes); err != nil {
+		return err
+	}
+	s.checked(config.Source{Name: name, LocalGit: c.Top})
+	fmt.Fprintf(s.Out, "added source %s (local-git: %s at %s); updates follow the clone's committed HEAD\n",
+		name, paths.Tilde(c.Top), source.Short(commit))
+	s.added(name, gen, o.includes)
+	return nil
+}
+
+// addTrustedPath adds the folder dir as a trusted-path source.
+func (s *sources) addTrustedPath(dir string, o addOptions) error {
+	st, err := os.Stat(dir)
+	if err != nil {
+		return err
+	}
+	if !st.IsDir() {
+		return fmt.Errorf("%s is not a folder", paths.Tilde(dir))
+	}
+	if err := checkFiles(dir, o.includes, paths.Tilde(dir), os.Stat); err != nil {
+		return err
+	}
+	cur, err := s.current()
+	if err != nil {
+		return err
+	}
+	for _, src := range cur.Sources {
+		if src.TrustedPath != "" && sameFile(src.TrustedPath, dir) {
+			fmt.Fprintf(s.Out, "%s is the trusted source %s already\n", paths.Tilde(dir), src.Name)
+			if len(o.includes) == 0 {
+				return nil
+			}
+			return s.includeFrom(src, o.includes, o.dryRun)
+		}
+	}
+	name := o.name
+	if name == "" {
+		name = defaultName(dir)
+	}
+	if err := checkName(cur, name, paths.Tilde(dir)); err != nil {
+		return err
+	}
+	if o.dryRun {
+		fmt.Fprintf(s.Out, "would add source %s: trusted-path %s, read from disk\n", name, paths.Tilde(dir))
+		s.wouldAdd(name, o.includes)
+		return nil
+	}
+	if err := s.addSource(name, [][2]string{{"trusted-path", paths.Tilde(dir)}}, o.includes); err != nil {
+		return err
+	}
+	fmt.Fprintf(s.Out, "added source %s (trusted-path: %s); changes apply right away\n", name, paths.Tilde(dir))
+	ms, _ := state.LoadMappings()
+	if m, _, ok := ms.Lookup(paths.Real(dir)); ok {
+		if _, ok := cur.Source(m.Source); ok {
+			fmt.Fprintf(s.Out, "note: %s/... paths in your bindings were served from the pinned source %s and are now read from disk\n",
+				paths.Tilde(m.Path), m.Source)
+		}
+	}
+	s.added(name, dir, o.includes)
+	// Another repository inside the folder may still be untrusted.
+	after := config.Load(s.file, fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes))
+	for _, f := range o.includes {
+		if err := after.Trust.Check(filepath.Join(dir, filepath.FromSlash(f))); err != nil {
+			fmt.Fprintf(s.Err, "warning: %v\n", err)
+		}
+	}
+	return nil
+}
+
+func sameFile(a, b string) bool {
+	sa, err1 := os.Stat(a)
+	sb, err2 := os.Stat(b)
+	return err1 == nil && err2 == nil && os.SameFile(sa, sb)
+}
+
+// addBindingFile includes a binding file: on disk, in a trusted place or a
+// clone mapped to a source, or ctxtra://SOURCE/PATH. It never adds, pins or
+// trusts a source.
+func (s *sources) addBindingFile(target string, dryRun bool) error {
+	if strings.HasPrefix(target, config.Scheme) {
+		return s.addRef(target, dryRun)
+	}
+	wd, _ := os.Getwd()
+	p := paths.Resolve(wd, target)
+	st, err := os.Stat(p)
+	if err != nil {
+		return err
+	}
+	if st.IsDir() {
+		return fmt.Errorf("%s is a folder; name a binding file", paths.Tilde(p))
+	}
+	cur, err := s.current()
+	if err != nil {
+		return err
+	}
+	ms, err := state.LoadMappings()
+	if err != nil {
+		return err
+	}
+	if m, rel, ok := ms.Lookup(paths.Real(p)); ok {
+		i := slices.IndexFunc(cur.Sources, func(src config.Source) bool { return src.Name == m.Source && src.Git == m.URL })
+		if i < 0 {
+			return fmt.Errorf("%s was added as the source %s, which is not in the config any more; add it again: ctxtra source add git %s",
+				paths.Tilde(m.Path), m.Source, paths.Tilde(m.Path))
+		}
+		return s.addRef(config.Scheme+cur.Sources[i].Name+"/"+rel, dryRun)
+	}
+	cfg := config.Load(s.file, fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes))
+	terr := cfg.Trust.Check(p)
+	var te *trust.Error
+	switch {
+	case terr == nil && sameFile(p, s.file):
+		return fmt.Errorf("%s is the config itself; its bindings apply already", paths.Tilde(p))
+	case terr == nil:
+		entry := paths.Tilde(p)
+		if filepath.Dir(p) == filepath.Dir(paths.Real(s.file)) || filepath.Dir(p) == filepath.Dir(s.file) {
+			entry = filepath.Base(p)
+		}
+		if err := s.addInclude(entry, dryRun); err != nil || dryRun {
+			return err
+		}
+		fmt.Fprintln(s.Out, "  trusted: changes apply right away")
+		s.showBindings(p, "")
+		return nil
+	case errors.As(terr, &te) && te.Err == nil && te.Via == "":
+		repo, rel := paths.Tilde(te.Repo), filepath.ToSlash(must(filepath.Rel(te.Repo, p)))
+		return fmt.Errorf(`%s is in %s, which isn't a source. Add the repository first:
+  ctxtra source add git %s --include %s
+      pinned: changes apply after you review them
+  ctxtra source add trusted-path %s --include %s
+      your own repository: read from disk, changes apply right away`, paths.Tilde(p), repo, repo, rel, repo, rel)
+	default:
+		return terr
+	}
+}
+
+// must is v; the error is impossible.
+func must[T any](v T, _ error) T { return v }
+
+// addRef includes a binding file of a source that is in the config already.
+func (s *sources) addRef(ref string, dryRun bool) error {
 	cur, err := s.current()
 	if err != nil {
 		return err
@@ -319,157 +650,114 @@ func (s *sources) addRef(ref string) error {
 		return fmt.Errorf("no source named %s in %s", name, paths.Tilde(s.file))
 	case file == "":
 		return fmt.Errorf("%s: name a binding file in the source", ref)
-	case src.Pinned() && src.Commit == "":
-		return fmt.Errorf("the source %s has no accepted commit yet; run: ctxtra sync %s", name, name)
-	case src.Pinned() && !source.Has(src.Remote(), src.Commit):
-		return fmt.Errorf("%s %s is not in ctxtra's store; run: ctxtra sync --restore", name, source.Short(src.Commit))
 	}
-	root := src.TrustedPath
-	if src.Pinned() {
-		root = src.Gen()
+	files, err := cleanIncludes([]string{file})
+	if err != nil {
+		return fmt.Errorf("%s: %w", ref, err)
 	}
-	p := filepath.Join(root, filepath.FromSlash(file))
-	if st, err := os.Stat(p); err != nil || !st.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a file in the source %s", file, name)
+	return s.includeFrom(src, files, dryRun)
+}
+
+// sourceRoot is the folder that holds the files of src: its trusted folder,
+// or its accepted commit in the store.
+func sourceRoot(src config.Source) (string, error) {
+	switch {
+	case !src.Pinned():
+		return src.TrustedPath, nil
+	case src.Commit == "":
+		return "", fmt.Errorf("the source %s has no accepted commit yet; run: ctxtra source update %s", src.Name, src.Name)
+	case !source.Has(src.Remote(), src.Commit):
+		return "", fmt.Errorf("%s %s is not in ctxtra's store; run: ctxtra source restore %s", src.Name, source.Short(src.Commit), src.Name)
 	}
-	if err := s.addInclude(ref); err != nil {
+	return src.Gen(), nil
+}
+
+// checkIncludes fails unless each of files is a binding file that src has.
+func checkIncludes(src config.Source, files []string) (string, error) {
+	root, err := sourceRoot(src)
+	if err != nil {
+		return "", err
+	}
+	for _, f := range files {
+		if st, err := os.Stat(filepath.Join(root, filepath.FromSlash(f))); err != nil || !st.Mode().IsRegular() {
+			return "", fmt.Errorf("%s is not a file in the source %s; nothing added", f, src.Name)
+		}
+	}
+	return root, nil
+}
+
+// includeFrom includes the binding files of src, all in one edit, or none
+// when one of them isn't there.
+func (s *sources) includeFrom(src config.Source, files []string, dryRun bool) error {
+	root, err := checkIncludes(src, files)
+	if err != nil {
 		return err
 	}
-	s.showBindings(p, root)
+	var entries []string
+	for _, f := range files {
+		entries = append(entries, config.Scheme+src.Name+"/"+f)
+	}
+	if err := s.addIncludes(entries, dryRun); err != nil || dryRun {
+		return err
+	}
+	for _, f := range files {
+		s.showBindings(filepath.Join(root, filepath.FromSlash(f)), root)
+	}
 	return nil
 }
 
 // addInclude adds entry to include unless it is there already.
-func (s *sources) addInclude(entry string) error {
-	added := false
-	err := s.edit(func(old []byte) ([]byte, error) {
-		c, err := config.Parse(old)
-		if err == nil && slices.Contains(c.Includes, entry) {
-			return old, nil
-		}
-		added = true
-		return config.AddInclude(old, entry)
-	})
-	switch {
-	case err != nil:
-		return err
-	case added:
-		fmt.Fprintf(s.Out, "added %s\n", entry)
-	default:
-		fmt.Fprintf(s.Out, "%s is in include already\n", entry)
-	}
-	return nil
+func (s *sources) addInclude(entry string, dryRun bool) error {
+	return s.addIncludes([]string{entry}, dryRun)
 }
 
-// addLocal adds a binding file on disk, or with --trust a folder or the
-// repository of a file as a trusted-path source. A binding file in a clone
-// with a remote is imported as a git source unless trusted.
-func (s *sources) addLocal(p string, trustIt bool, name, remote, branch string) error {
-	st, err := os.Stat(p)
-	if err != nil {
-		return err
-	}
-	cfg := config.Load(s.file, fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes))
-	cur, err := s.current()
-	if err != nil {
-		return err
-	}
-	// A path in a clone imported before: as a reference to its source, or,
-	// with --trust, the clone becomes trusted.
-	ms, err := state.LoadMappings()
-	if err != nil {
-		return err
-	}
-	if m, rel, ok := ms.Lookup(paths.Real(p)); ok {
-		i := slices.IndexFunc(cur.Sources, func(src config.Source) bool { return src.Name == m.Source && src.Git == m.URL })
-		switch {
-		case trustIt:
-			return s.trustMapped(cur, m, p, name)
-		case i < 0:
-			return fmt.Errorf("%s was imported as a source that is not in the config any more; add it again by URL, or with --trust", paths.Tilde(m.Path))
-		case st.IsDir():
-			return fmt.Errorf("%s is a folder: add a binding file", paths.Tilde(p))
+// addIncludes adds the entries to include that aren't there already, in one
+// edit.
+func (s *sources) addIncludes(entries []string, dryRun bool) error {
+	have := func(c *config.Config) map[string]bool {
+		m := map[string]bool{}
+		for _, e := range entries {
+			m[e] = slices.Contains(c.Includes, e)
 		}
-		return s.addRef(config.Scheme + cur.Sources[i].Name + "/" + rel)
+		return m
 	}
-	if st.IsDir() {
-		if !trustIt {
-			return fmt.Errorf("%s is a folder: add a binding file, or trust the folder with --trust", paths.Tilde(p))
-		}
-		_, err := s.addTrusted(cur, p, name)
-		return err
-	}
-	terr := cfg.Trust.Check(p)
-	var te *trust.Error
-	switch {
-	case terr == nil && sameFile(p, s.file):
-		return fmt.Errorf("%s is the config itself; its bindings apply already", paths.Tilde(p))
-	case terr == nil:
-		entry := paths.Tilde(p)
-		if filepath.Dir(p) == filepath.Dir(paths.Real(s.file)) || filepath.Dir(p) == filepath.Dir(s.file) {
-			entry = filepath.Base(p)
-		}
-		if err := s.addInclude(entry); err != nil {
-			return err
-		}
-		fmt.Fprintln(s.Out, "  trusted: changes apply right away")
-	case trustIt && errors.As(terr, &te) && te.Err == nil && te.Via == "":
-		src, err := s.addTrusted(cur, te.Repo, name)
+	var there map[string]bool
+	if dryRun {
+		cur, err := s.current()
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(te.Repo, p)
-		if err := s.addInclude(config.Scheme + src + "/" + filepath.ToSlash(rel)); err != nil {
+		there = have(cur)
+	} else {
+		err := s.edit(func(old []byte) ([]byte, error) {
+			c, err := config.Parse(old)
+			if err != nil {
+				return nil, err
+			}
+			there = have(c)
+			data := old
+			for _, e := range entries {
+				if err == nil && !there[e] {
+					data, err = config.AddInclude(data, e)
+				}
+			}
+			return data, err
+		})
+		if err != nil {
 			return err
 		}
-		// Another repository around the file may still be untrusted.
-		after := config.Load(s.file, fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes))
-		if err := after.Trust.Check(p); err != nil {
-			fmt.Fprintf(s.Out, "WARNING: %v\n", err)
-		}
-	case trustIt:
-		return terr
-	case errors.As(terr, &te) && te.Err == nil && te.Via == "":
-		if err := s.importClone(p, te.Repo, name, remote, branch); err != nil {
-			return fmt.Errorf("%v\nif the repository is yours, read it from disk instead: ctxtra add --trust %s", err, paths.Tilde(p))
-		}
-		return nil
-	default:
-		return terr
 	}
-	s.showBindings(p, "")
+	for _, e := range entries {
+		switch {
+		case there[e]:
+			fmt.Fprintf(s.Out, "%s is included already\n", e)
+		case dryRun:
+			fmt.Fprintf(s.Out, "would include %s\n", e)
+		default:
+			fmt.Fprintf(s.Out, "included %s\n", e)
+		}
+	}
 	return nil
-}
-
-// addTrusted adds the folder dir as a trusted-path source and returns its
-// name.
-func (s *sources) addTrusted(cur *config.Config, dir, name string) (string, error) {
-	for _, src := range cur.Sources {
-		if src.TrustedPath != "" && sameFile(src.TrustedPath, dir) {
-			fmt.Fprintf(s.Out, "%s is the trusted source %s already\n", paths.Tilde(dir), src.Name)
-			return src.Name, nil
-		}
-	}
-	if name == "" {
-		name = defaultName(dir)
-	}
-	if err := checkName(cur, name, paths.Tilde(dir)); err != nil {
-		return "", err
-	}
-	err := s.edit(func(old []byte) ([]byte, error) {
-		return config.AddSource(old, name, [][2]string{{"trusted-path", paths.Tilde(dir)}})
-	})
-	if err != nil {
-		return "", err
-	}
-	fmt.Fprintf(s.Out, "added source %s (trusted-path: %s); changes apply right away\n", name, paths.Tilde(dir))
-	return name, nil
-}
-
-func sameFile(a, b string) bool {
-	sa, err1 := os.Stat(a)
-	sb, err2 := os.Stat(b)
-	return err1 == nil && err2 == nil && os.SameFile(sa, sb)
 }
 
 // showBindings prints the bindings of a binding file and its problems, as
@@ -499,7 +787,7 @@ func (s *sources) showBindings(file, root string) {
 	prefix := paths.Tilde(file) + ": "
 	for _, p := range cfg.Problems {
 		if strings.HasPrefix(p, prefix) {
-			fmt.Fprintf(s.Out, "  ERROR: %s\n", source.Sanitize(strings.TrimPrefix(p, prefix)))
+			fmt.Fprintf(s.Out, "  error: %s\n", source.Sanitize(strings.TrimPrefix(p, prefix)))
 		}
 	}
 }
@@ -512,24 +800,25 @@ func mapList(l []string, f func(string) string) []string {
 	return out
 }
 
-// listBindingFiles lists the YAML files of a generation that hold bindings.
-func (s *sources) listBindingFiles(name, gen string) {
+// listSourceBindingFiles lists the YAML files of a source at root that hold
+// bindings.
+func (s *sources) listSourceBindingFiles(name, root string) {
 	var found []string
-	filepath.WalkDir(gen, func(p string, d fs.DirEntry, err error) error {
+	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !(strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml")) {
 			return nil
 		}
 		if b, err := fsutil.ReadBounded(p, config.MaxFileBytes); err == nil && reSchema.Match(b) && !reConfigKey.Match(b) {
-			rel, _ := filepath.Rel(gen, p)
+			rel, _ := filepath.Rel(root, p)
 			found = append(found, filepath.ToSlash(rel))
 		}
 		return nil
 	})
 	if len(found) == 0 {
-		fmt.Fprintf(s.Out, "no binding files in the source; use its files as ctxtra://%s/<path> in your bindings\n", name)
+		fmt.Fprintf(s.Out, "no binding files in the source; use its files as ctxtra://%s/PATH in your bindings\n", name)
 		return
 	}
-	fmt.Fprintf(s.Out, "binding files in the source (add one with: ctxtra add ctxtra://%s/<file>):\n", name)
+	fmt.Fprintf(s.Out, "binding files in the source (include one with: ctxtra binding-file add ctxtra://%s/PATH):\n", name)
 	for _, f := range found {
 		fmt.Fprintf(s.Out, "  %s\n", source.Sanitize(f))
 	}
@@ -556,31 +845,43 @@ func (s *sources) showExecutables(r *source.Repo, commit string) {
 	}
 }
 
-const syncUsage = "usage: ctxtra sync [--full] [SOURCE]...\n       ctxtra sync --restore [SOURCE]...\n"
+// syncMode is what update does with a source.
+type syncMode int
 
-func runSync(args []string, stdio IO) int {
-	f, names, err := parseArgs(args, nil, []string{"restore", "full"})
-	if err != nil || f["restore"] != "" && f["full"] != "" {
-		if err != nil {
-			fmt.Fprintf(stdio.Err, "ctxtra sync: %v\n", err)
-		}
-		fmt.Fprint(stdio.Err, syncUsage)
-		return 2
+const (
+	accept    syncMode = iota // review the new commit and ask whether to accept it
+	checkOnly                 // review it; accept and dismiss nothing
+	restore                   // fetch the accepted commit only
+)
+
+// updateResult is one source in the output of source update --check --json.
+type updateResult struct {
+	Name     string `json:"name"`
+	Accepted string `json:"accepted,omitempty"`
+	Latest   string `json:"latest,omitempty"`
+	Pending  bool   `json:"pending"`
+	Error    string `json:"error,omitempty"`
+}
+
+// update is source update and source restore for the pinned sources names,
+// or all of them.
+func (s *sources) update(names []string, mode syncMode, asJSON bool) int {
+	cmd := "source update"
+	if mode == restore {
+		cmd = "source restore"
 	}
-	s := newSources(stdio)
-	s.full = f["full"] != ""
 	cur, err := s.current()
 	if err != nil {
-		return s.fail("sync", err)
+		return s.fail(cmd, err)
 	}
 	var todo []config.Source
 	for _, n := range names {
 		src, ok := cur.Source(n)
 		switch {
 		case !ok:
-			return s.fail("sync", fmt.Errorf("no source named %s", n))
+			return s.fail(cmd, fmt.Errorf("no source named %s", n))
 		case !src.Pinned():
-			return s.fail("sync", fmt.Errorf("%s is a trusted-path source: it is read from disk and needs no sync", n))
+			return s.fail(cmd, fmt.Errorf("%s is a trusted-path source: it is read from disk and has no commits to fetch", n))
 		}
 		todo = append(todo, src)
 	}
@@ -591,83 +892,125 @@ func runSync(args []string, stdio IO) int {
 			}
 		}
 	}
+	if mode == accept && len(todo) > 0 && !s.prompt {
+		return s.fail(cmd, errors.New("accepting a new commit needs a terminal (or leave out --no-input); to only look for new commits: ctxtra source update --check"))
+	}
+	out := s.Out
+	if asJSON {
+		s.Out = io.Discard
+	}
+	var results []updateResult
 	if len(todo) == 0 {
 		fmt.Fprintln(s.Out, "no pinned sources")
-		return 0
+	} else {
+		s.register()
 	}
-	s.register()
-	code := 0
+	n := 0
 	for _, src := range todo {
-		if err := s.sync(src, f["restore"] != ""); err != nil {
+		latest, err := s.sync(src, mode)
+		res := updateResult{Name: src.Name, Accepted: src.Commit, Latest: latest, Pending: latest != "" && latest != src.Commit}
+		if err != nil {
 			fmt.Fprintf(s.Err, "%s: %v\n", src.Name, err)
-			code = 1
+			res.Error = err.Error()
+			n = 1
 		}
+		results = append(results, res)
 	}
-	s.cleanStore()
-	return code
+	if len(todo) > 0 {
+		s.cleanStore()
+	}
+	if asJSON {
+		if results == nil {
+			results = []updateResult{}
+		}
+		writeJSON(out, results, nil)
+	}
+	return n
 }
 
 // sync brings one source's accepted commit into the store and, unless
-// restore, reviews and accepts the branch's new commit.
-func (s *sources) sync(src config.Source, restore bool) error {
+// restore, reviews the branch's new commit and, in accept mode, asks
+// whether to accept it. It returns the newest commit it found.
+func (s *sources) sync(src config.Source, mode syncMode) (string, error) {
 	r := source.Open(src.Remote())
 	if src.Commit == "" {
-		if restore {
-			return fmt.Errorf("no accepted commit yet; run: ctxtra sync %s", src.Name)
+		if mode == restore {
+			return "", fmt.Errorf("no accepted commit yet; to accept one, run in a terminal: ctxtra source update %s", src.Name)
 		}
-		return s.first(src, r)
+		return s.first(src, r, mode)
 	}
 	if !source.Has(src.Remote(), src.Commit) {
 		if err := r.FetchCommit(s.ctx, src.Commit); err != nil {
-			return err
+			return "", err
 		}
 		if _, err := r.Materialize(s.ctx, src.Commit); err != nil {
-			return err
+			return "", err
 		}
-		fmt.Fprintf(s.Out, "%s: fetched %s (the commit in config.yaml)\n", src.Name, source.Short(src.Commit))
-	} else if restore {
+		fmt.Fprintf(s.Out, "%s: fetched %s (the commit in %s)\n", src.Name, source.Short(src.Commit), filepath.Base(s.file))
+	} else if mode == restore {
 		fmt.Fprintf(s.Out, "%s: %s is in the store\n", src.Name, source.Short(src.Commit))
 	}
-	if restore {
-		return nil
+	if mode == restore {
+		return src.Commit, nil
 	}
 	commit, err := s.latest(r, src)
 	if err != nil {
-		return err
+		return "", err
 	}
 	s.checked(src)
 	if commit == src.Commit {
-		// The branch is back at the accepted commit: nothing is dismissed.
-		s.record(src, func(e *state.Source) { e.Dismissed = "" })
+		if mode == accept {
+			// The branch is back at the accepted commit: nothing is dismissed.
+			s.record(src, func(e *state.Source) { e.Dismissed = "" })
+		}
 		fmt.Fprintf(s.Out, "%s: up to date (%s at %s)\n", src.Name, follows(src), source.Short(commit))
-		return nil
+		return commit, nil
 	}
 	// The new commit goes to the store before review: a commit over the
 	// limits fails here, and the review reads its binding files.
 	if _, err := r.Materialize(s.ctx, commit); err != nil {
-		return err
+		return "", err
 	}
 	fmt.Fprintf(s.Out, "%s: %s -> %s (%s)\n", src.Name, source.Short(src.Commit), source.Short(commit), where(src))
 	if !r.IsAncestor(s.ctx, src.Commit, commit) {
-		fmt.Fprintf(s.Out, "WARNING: %s doesn't continue %s: the branch was force-pushed, or %s was never pushed\n",
+		fmt.Fprintf(s.Out, "warning: %s doesn't continue %s: the branch was force-pushed, or %s was never pushed\n",
 			source.Short(commit), source.Short(src.Commit), source.Short(src.Commit))
 	}
 	if err := s.review(r, src, commit, s.full); err != nil {
-		return err
+		return "", err
 	}
-	fmt.Fprint(s.Out, "Accept? [y/N] ")
-	answer, _ := s.in.ReadString('\n')
-	if a := strings.ToLower(strings.TrimSpace(answer)); a != "y" && a != "yes" {
+	if mode == checkOnly {
+		fmt.Fprintf(s.Out, "%s: not accepted (--check); to accept it, run in a terminal: ctxtra source update %s\n", src.Name, src.Name)
+		return commit, nil
+	}
+	ok, err := s.ask("Accept? [y/N] ")
+	if err != nil {
+		return commit, err
+	}
+	if !ok {
 		fmt.Fprintf(s.Out, "not accepted; you keep %s\n", source.Short(src.Commit))
 		s.record(src, func(e *state.Source) { e.Dismissed = commit })
-		return nil
+		return commit, nil
 	}
 	if err := s.setCommit(src, commit); err != nil {
-		return err
+		return commit, err
 	}
 	s.record(src, func(e *state.Source) { e.Dismissed = "" })
 	fmt.Fprintf(s.Out, "accepted %s %s (commit: updated in %s)\n", src.Name, source.Short(commit), filepath.Base(s.file))
-	return nil
+	return commit, nil
+}
+
+// ask asks a yes/no question on stderr; the answer is no unless it is y or
+// yes. Input that ends before the end of a line decides nothing: an error.
+func (s *sources) ask(q string) (bool, error) {
+	fmt.Fprint(s.Err, q)
+	answer, err := s.in.ReadString('\n')
+	if err != nil {
+		fmt.Fprintln(s.Err)
+		return false, errors.New("no answer; nothing accepted or dismissed")
+	}
+	a := strings.ToLower(strings.TrimSpace(answer))
+	return a == "y" || a == "yes", nil
 }
 
 // latest fetches the commit that src follows: the branch of a git source,
@@ -708,28 +1051,43 @@ func (s *sources) checked(src config.Source) {
 	s.record(src, func(e *state.Source) { e.LastCheck = time.Now() })
 }
 
-// first accepts the first commit of a source written by hand without one,
-// as add does: without review.
-func (s *sources) first(src config.Source, r *source.Repo) error {
+// first offers the first commit of a source written by hand without one,
+// reviewed as a change from nothing: the files the config would use from it
+// in full, its bindings' match blocks, and its problems.
+func (s *sources) first(src config.Source, r *source.Repo, mode syncMode) (string, error) {
 	commit, err := s.latest(r, src)
 	if err != nil {
-		return err
+		return "", err
 	}
 	s.checked(src)
 	if _, err := r.Materialize(s.ctx, commit); err != nil {
-		return err
+		return "", err
+	}
+	fmt.Fprintf(s.Out, "%s: no accepted commit yet; %s is at %s (%s)\n", src.Name, follows(src), source.Short(commit), describe(src))
+	if err := s.review(r, src, commit, s.full); err != nil {
+		return "", err
+	}
+	if mode == checkOnly {
+		fmt.Fprintf(s.Out, "%s: not accepted (--check); to accept it, run in a terminal: ctxtra source update %s\n", src.Name, src.Name)
+		return commit, nil
+	}
+	ok, err := s.ask(fmt.Sprintf("Accept %s as the first version of %s? [y/N] ", source.Short(commit), src.Name))
+	if err != nil || !ok {
+		if err == nil {
+			fmt.Fprintf(s.Out, "not accepted; %s has no accepted commit yet\n", src.Name)
+		}
+		return commit, err
 	}
 	if err := s.setCommit(src, commit); err != nil {
-		return err
+		return commit, err
 	}
-	fmt.Fprintf(s.Out, "%s: accepted %s at %s, the first version (%s)\n", src.Name, follows(src), source.Short(commit), describe(src))
-	s.showExecutables(r, commit)
-	return nil
+	fmt.Fprintf(s.Out, "accepted %s %s, the first version (commit: updated in %s)\n", src.Name, source.Short(commit), filepath.Base(s.file))
+	return commit, nil
 }
 
 // cleanStore deletes the generations no session used for a while, except
-// the accepted commits of this config and of every other config that add or
-// sync changed. It holds the config lock, so that no commit is accepted
+// the accepted commits of this config and of every other config that a
+// command changed. It holds the config lock, so that no commit is accepted
 // meanwhile.
 func (s *sources) cleanStore() {
 	if s.registerErr != nil {
@@ -784,11 +1142,11 @@ func (s *sources) setCommit(src config.Source, commit string) error {
 		}
 		now, ok := c.Source(src.Name)
 		if !ok || now.Remote() != src.Remote() || now.Branch != src.Branch || now.Commit != src.Commit {
-			return nil, fmt.Errorf("the source %s changed in %s while ctxtra worked; nothing accepted, run ctxtra sync again",
+			return nil, fmt.Errorf("the source %s changed in %s while ctxtra worked; nothing accepted, run ctxtra source update again",
 				src.Name, paths.Tilde(s.file))
 		}
 		if !source.Has(src.Remote(), commit) {
-			return nil, fmt.Errorf("%s left ctxtra's store meanwhile; nothing accepted, run ctxtra sync again", source.Short(commit))
+			return nil, fmt.Errorf("%s left ctxtra's store meanwhile; nothing accepted, run ctxtra source update again", source.Short(commit))
 		}
 		return config.SetCommit(old, src.Name, commit)
 	})

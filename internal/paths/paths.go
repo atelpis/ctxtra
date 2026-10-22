@@ -64,7 +64,7 @@ func Tilde(p string) string {
 // StateDir is ~/.ctxtra: backups of changed agent configs and the hook log.
 func StateDir() string { return filepath.Join(Home(), ".ctxtra") }
 
-// SkillDir is where ctxtra skill install writes ctxtra's skill name.
+// SkillDir is where ctxtra skill install NAME writes ctxtra's skill name.
 func SkillDir(name string) string { return filepath.Join(StateDir(), "skills", name) }
 
 // BackupDir is where setup keeps a copy of every agent config it changes.
@@ -73,6 +73,10 @@ func BackupDir() string { return filepath.Join(StateDir(), "backups") }
 // ConfigPath is $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml.
 func ConfigPath() string {
 	if p := os.Getenv("CTXTRA_CONFIG"); p != "" {
+		// Absolute, so that paths relative to its folder can be compared.
+		if abs, err := filepath.Abs(Expand(p)); err == nil {
+			return abs
+		}
 		return Expand(p)
 	}
 	return filepath.Join(Home(), ".config", "ctxtra", "config.yaml")

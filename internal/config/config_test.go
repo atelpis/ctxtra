@@ -361,8 +361,8 @@ include: [b.yaml, ctxtra://team/b.yaml]
 	if len(cfg.Bindings) != 1 || !slices.Equal(cfg.Bindings[0].Instructions, []string{filepath.Join(h, "me.md")}) {
 		t.Errorf("bindings %v", cfg.Bindings)
 	}
-	want := []string{"ctxtra://team/x.md: team aaaaaaa is not in ctxtra's store; run: ctxtra sync --restore",
-		"ctxtra://new/y.md: the source new has no accepted commit yet; run: ctxtra sync new", "ctxtra://team/b.yaml: team aaaaaaa"}
+	want := []string{"ctxtra://team/x.md: team aaaaaaa is not in ctxtra's store; run: ctxtra source restore team",
+		"ctxtra://new/y.md: the source new has no accepted commit yet; run: ctxtra source update new", "ctxtra://team/b.yaml: team aaaaaaa"}
 	if len(cfg.Problems) != 3 {
 		t.Fatalf("problems %v", cfg.Problems)
 	}

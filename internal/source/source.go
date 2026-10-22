@@ -187,6 +187,29 @@ func (c *capped) Write(p []byte) (int, error) {
 	return 0, errOutput
 }
 
+// NoPrompt keeps git and ssh from asking for credentials, for a command
+// that may ask nothing. Credential helpers and an ssh agent, which need no
+// answer, still work.
+var NoPrompt bool
+
+// gitEnv is the environment git runs with.
+func gitEnv(protocols string) []string {
+	env := append(gitrepo.CleanEnv(),
+		"GIT_ALLOW_PROTOCOL="+protocols,
+		"GIT_NO_LAZY_FETCH=1",
+		"GIT_CEILING_DIRECTORIES="+filepath.Dir(GitDir()),
+		"GIT_EXTERNAL_DIFF=",
+		"GIT_PAGER=cat",
+		"GIT_LITERAL_PATHSPECS=1",
+	)
+	if NoPrompt {
+		// An askpass program that fails answers every question, also
+		// ssh's when it has a terminal.
+		env = append(env, "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=false", "SSH_ASKPASS=false", "SSH_ASKPASS_REQUIRE=force")
+	}
+	return env
+}
+
 func (r *Repo) gitMax(ctx context.Context, repo bool, stdin io.Reader, max int, args ...string) ([]byte, error) {
 	all := append([]string{}, options...)
 	protocols := "https:ssh"
@@ -203,14 +226,7 @@ func (r *Repo) gitMax(ctx context.Context, repo bool, stdin io.Reader, max int, 
 		return nil, err
 	}
 	cmd.Dir = GitDir()
-	cmd.Env = append(gitrepo.CleanEnv(),
-		"GIT_ALLOW_PROTOCOL="+protocols,
-		"GIT_NO_LAZY_FETCH=1",
-		"GIT_CEILING_DIRECTORIES="+filepath.Dir(GitDir()),
-		"GIT_EXTERNAL_DIFF=",
-		"GIT_PAGER=cat",
-		"GIT_LITERAL_PATHSPECS=1",
-	)
+	cmd.Env = gitEnv(protocols)
 	cmd.Stdin = stdin
 	stdout := &capped{max: max}
 	stderr := &capped{max: maxStderr, drop: true}

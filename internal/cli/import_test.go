@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bytes"
 	"errors"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,34 +14,49 @@ import (
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
-// In a terminal, with the skill installed and no instructions bound, setup
-// offers to start an agent that moves the agents' own instruction files into
-// ctxtra: it backs them up and lists them in the prompt.
-func TestSetupOffersImport(t *testing.T) {
-	h := testenv.Home(t)
-	isTerminal := interactive
+// fakeAgents replaces what import runs: the agents whose CLIs are in
+// installed are found, a terminal is there, and starting an agent records
+// it.
+type fakeAgents struct {
+	installed map[string]bool
+	started   []startedAgent
+}
+
+type startedAgent struct {
+	bin  string
+	args []string
+	dir  string
+}
+
+func newFakeAgents(t *testing.T, installed ...string) *fakeAgents {
+	f := &fakeAgents{installed: map[string]bool{}}
+	for _, a := range installed {
+		f.installed[a] = true
+	}
+	isTerminal := Interactive
 	binary = func() (string, []string, error) { return "/opt/homebrew/bin/ctxtra", nil, nil }
-	interactive = func(io.Reader) bool { return true }
-	installed := map[string]bool{"claude": true, "codex": true}
+	Interactive = func(IO) bool { return true }
 	lookPath = func(name string) (string, error) {
-		if installed[name] {
+		if f.installed[name] {
 			return "/bin/" + name, nil
 		}
 		return "", exec.ErrNotFound
 	}
-	type start struct {
-		bin  string
-		args []string
-		dir  string
-	}
-	var started []start
 	startAgent = func(bin string, args []string, dir string) error {
-		started = append(started, start{bin, args, dir})
+		f.started = append(f.started, startedAgent{bin, args, dir})
 		return nil
 	}
 	t.Cleanup(func() {
-		binary, interactive, lookPath, startAgent = setup.Binary, isTerminal, exec.LookPath, runAgent
+		binary, Interactive, lookPath, startAgent = setup.Binary, isTerminal, exec.LookPath, runAgent
 	})
+	return f
+}
+
+// import --start backs up the agents' own instruction files and starts the
+// agent with a prompt that names them and the backup.
+func TestImportStart(t *testing.T) {
+	h := testenv.Home(t)
+	f := newFakeAgents(t, "claude", "codex")
 	testenv.Write(t, filepath.Join(h, ".claude", "CLAUDE.md"), "claude rules\n")
 	testenv.Write(t, filepath.Join(h, ".claude", "rules", "go", "style.md"), "go style\n")
 	testenv.Write(t, filepath.Join(h, ".claude", "rules", "empty.md"), " \n")
@@ -55,32 +68,21 @@ func TestSetupOffersImport(t *testing.T) {
 	}
 	testenv.Write(t, filepath.Join(h, ".codex", "AGENTS.override.md"), "override\n")
 	testenv.Write(t, filepath.Join(h, ".codex", "AGENTS.md"), "codex rules\n")
-	setupWith := func(answer string, agents ...string) string {
-		t.Helper()
-		started = nil
-		if len(agents) == 0 {
-			agents = []string{"claude", "codex"}
+	for _, args := range [][]string{{"setup", "--agent", "claude", "--agent", "codex"}, {"skill", "install", "ctxtra"}} {
+		if code, _, e := run(args...); code != 0 {
+			t.Fatalf("%v: %s", args, e)
 		}
-		args := []string{"setup"}
-		for _, a := range agents {
-			args = append(args, "--agent", a)
-		}
-		var o, e bytes.Buffer
-		code := Run(args, IO{In: strings.NewReader(answer), Out: &o, Err: &e}, "test")
-		if code != 0 {
-			t.Fatalf("setup: %d %s", code, e.String())
-		}
-		return o.String()
 	}
 
-	// Enter installs each skill, Enter accepts, 2 chooses Codex.
-	out := setupWith("\n\n\n2\n")
+	code, out, e := run("import", "--start", "codex")
+	if code != 0 {
+		t.Fatalf("import --start codex: %d %s", code, e)
+	}
 	for _, want := range []string{
 		"  ~/.claude/CLAUDE.md (Claude Code)\n  ~/.claude/rules/go/style.md (Claude Code)\n" +
 			"  ~/.claude/rules/shared/team.md (Claude Code)\n" +
 			"  ~/.codex/AGENTS.override.md (Codex)\n" +
 			"  ~/.codex/AGENTS.md (Codex; Codex doesn't read it while AGENTS.override.md has text)\n",
-		"Do this now? [Y/n] Which agent?\n  1) Claude Code\n  2) Codex\nChoose 1-2 [1]: ",
 		"starting Codex in ~/.ctxtra/import with this prompt:",
 	} {
 		if !strings.Contains(out, want) {
@@ -90,10 +92,10 @@ func TestSetupOffersImport(t *testing.T) {
 	if strings.Contains(out, "empty.md") {
 		t.Errorf("a file without text is listed:\n%s", out)
 	}
-	if len(started) != 1 || started[0].bin != "/bin/codex" || len(started[0].args) != 1 || started[0].dir != filepath.Join(h, ".ctxtra", "import") {
-		t.Fatalf("started %+v", started)
+	if len(f.started) != 1 || f.started[0].bin != "/bin/codex" || len(f.started[0].args) != 1 || f.started[0].dir != filepath.Join(h, ".ctxtra", "import") {
+		t.Fatalf("started %+v", f.started)
 	}
-	prompt := started[0].args[0]
+	prompt := f.started[0].args[0]
 	if !strings.HasPrefix(prompt, "Use the ctxtra skill (~/.ctxtra/skills/ctxtra/SKILL.md), task \"Import existing instructions\".\n") ||
 		!strings.Contains(prompt, "\n- ~/.claude/rules/go/style.md (Claude Code)\n") {
 		t.Errorf("prompt:\n%s", prompt)
@@ -115,58 +117,24 @@ func TestSetupOffersImport(t *testing.T) {
 		t.Errorf("backup of a file without text: %v", err)
 	}
 
-	// The skill is installed now: the first answer is for the import.
-	for _, answer := range []string{"n\n", "", "\n3\n", "\nx\n"} {
-		if out := setupWith(answer); !strings.Contains(out, "not started; to do it later") || len(started) != 0 {
-			t.Errorf("declined with %q, started %v:\n%s", answer, started, out)
-		}
+	// Without --start: back up, and the commands that start each agent.
+	f.started = nil
+	if code, out, _ := run("import"); code != 0 || len(f.started) != 0 ||
+		!strings.Contains(out, "Not imported yet.") || !strings.Contains(out, "To start one: ctxtra import --start claude, or ctxtra import --start codex\n") {
+		t.Errorf("without --start: %d, started %v:\n%s", code, f.started, out)
 	}
-	if setupWith("\n\n"); len(started) != 1 || started[0].bin != "/bin/claude" {
-		t.Errorf("Enter chose %+v", started)
-	}
-
-	// Setup of one agent: the agents of earlier runs are offered too.
-	if out := setupWith("\n2\n", "claude"); !strings.Contains(out, "~/.codex/AGENTS.md (Codex") || len(started) != 1 || started[0].bin != "/bin/codex" {
-		t.Errorf("one agent set up, started %v:\n%s", started, out)
-	}
-
-	// One agent's CLI: it is named in the question.
-	installed["codex"] = false
-	if out := setupWith("y\n"); !strings.Contains(out, "Start Claude Code for this now? [Y/n] ") || len(started) != 1 {
-		t.Errorf("one agent, started %v:\n%s", started, out)
-	}
-
 	// No agent's CLI: the user gets the prompt.
-	installed["claude"] = false
-	if out := setupWith("\n"); !strings.Contains(out, "start an agent and give it this prompt:\n\nUse the ctxtra skill") || len(started) != 0 {
-		t.Errorf("no agent, started %v:\n%s", started, out)
-	}
-
-	// A binding with instructions: the config isn't new.
-	testenv.Write(t, filepath.Join(h, "notes.md"), "mine\n")
-	if code, _, e := run("bind", "notes", "--global", "--file", filepath.Join(h, "notes.md")); code != 0 {
-		t.Fatalf("bind: %s", e)
-	}
-	if out := setupWith("\n"); strings.Contains(out, "instruction files of their own") {
-		t.Errorf("asked with instructions bound:\n%s", out)
+	f.installed = map[string]bool{}
+	if code, out, _ := run("import"); code != 0 || !strings.Contains(out, "Start an agent and give it this prompt:\n\nUse the ctxtra skill") {
+		t.Errorf("no agent's CLI: %d\n%s", code, out)
 	}
 }
 
-// ctxtra import is the same offer for any config. Without a terminal, or
-// with --no-start, it only backs the files up and lists them.
+// import without --start only backs the files up and lists them; --start
+// is checked before the backup.
 func TestImportCommand(t *testing.T) {
 	h := testenv.Home(t)
-	isTerminal := interactive
-	binary = func() (string, []string, error) { return "/opt/homebrew/bin/ctxtra", nil, nil }
-	lookPath = func(name string) (string, error) { return "/bin/" + name, nil }
-	var started []string
-	startAgent = func(bin string, args []string, dir string) error {
-		started = append(started, bin)
-		return nil
-	}
-	t.Cleanup(func() {
-		binary, interactive, lookPath, startAgent = setup.Binary, isTerminal, exec.LookPath, runAgent
-	})
+	f := newFakeAgents(t, "claude")
 	if code, _, e := run("import"); code != 1 || !strings.Contains(e, "no agent is set up: run ctxtra setup first") {
 		t.Errorf("before setup: %d %q", code, e)
 	}
@@ -177,59 +145,59 @@ func TestImportCommand(t *testing.T) {
 		t.Errorf("no files: %d %q", code, out)
 	}
 	testenv.Write(t, filepath.Join(h, ".claude", "CLAUDE.md"), "claude rules\n")
-	for _, args := range [][]string{{"import"}, {"import", "--no-start"}} {
-		code, out, e := run(args...)
-		_, backup, ok := strings.Cut(out, "backed up the files to ~/")
-		if code != 0 || !ok || !strings.HasPrefix(out, "instruction files of the agents that are set up:\n  ~/.claude/CLAUDE.md (Claude Code)\n") {
-			t.Fatalf("%v: %d %q %q", args, code, out, e)
+	code, out, e := run("import")
+	_, backup, ok := strings.Cut(out, "backed up the files to ~/")
+	if code != 0 || !ok || !strings.HasPrefix(out, "Your agents have instruction files of their own:\n  ~/.claude/CLAUDE.md (Claude Code)\n") {
+		t.Fatalf("import: %d %q %q", code, out, e)
+	}
+	backup, _, _ = strings.Cut(backup, "\n")
+	if b, err := os.ReadFile(filepath.Join(h, backup, "claude", ".claude", "CLAUDE.md")); string(b) != "claude rules\n" {
+		t.Errorf("backup %q %v", b, err)
+	}
+	if code, out, _ := run("import", "--dry-run", "--start", "claude"); code != 1 || strings.Contains(out, "backed up") {
+		t.Errorf("dry run without the skill: %d %q", code, out)
+	}
+	backups, _ := os.ReadDir(filepath.Join(h, ".ctxtra", "backups"))
+	for _, c := range []struct {
+		args []string
+		code int
+		err  string
+	}{
+		{[]string{"import", "x"}, 2, ""},
+		{[]string{"import", "--start", "nope"}, 2, `no agent "nope"`},
+		{[]string{"import", "--start", "codex"}, 1, "codex isn't set up, or its command isn't in PATH"},
+		{[]string{"import", "--start", "claude"}, 1, "install it first with ctxtra skill install ctxtra"},
+		{[]string{"--no-input", "import", "--start", "claude"}, 1, "--start needs a terminal"},
+	} {
+		if code, _, e := run(c.args...); code != c.code || !strings.Contains(e, c.err) {
+			t.Errorf("%v: %d %q", c.args, code, e)
 		}
-		if b, err := os.ReadFile(filepath.Join(h, strings.TrimSpace(backup), "claude", ".claude", "CLAUDE.md")); string(b) != "claude rules\n" {
-			t.Errorf("%v: backup %q %v", args, b, err)
-		}
 	}
-	if code, _, _ := run("import", "x"); code != 2 {
-		t.Errorf("import x: %d", code)
+	if now, _ := os.ReadDir(filepath.Join(h, ".ctxtra", "backups")); len(now) != len(backups) || len(f.started) != 0 {
+		t.Errorf("a failed --start backed up %d, started %v", len(now)-len(backups), f.started)
 	}
-	if len(started) != 0 {
-		t.Errorf("started %v without a terminal", started)
-	}
-
-	// In a terminal it asks, also with instructions bound; it needs the skill.
-	interactive = func(io.Reader) bool { return true }
-	importWith := func(answer string) (int, string, string) {
-		var o, e bytes.Buffer
-		code := Run([]string{"import"}, IO{In: strings.NewReader(answer), Out: &o, Err: &e}, "test")
-		return code, o.String(), e.String()
-	}
-	if code, _, e := importWith("\n"); code != 1 || !strings.Contains(e, "install it first with ctxtra skill install") {
-		t.Errorf("without the skill: %d %q", code, e)
-	}
-	if code, _, e := run("skill", "install"); code != 0 {
+	if code, _, e := run("skill", "install", "ctxtra"); code != 0 {
 		t.Fatalf("skill install: %s", e)
 	}
-	testenv.Write(t, filepath.Join(h, "notes.md"), "mine\n")
-	if code, _, e := run("bind", "notes", "--global", "--file", filepath.Join(h, "notes.md")); code != 0 {
-		t.Fatalf("bind: %s", e)
+	if code, out, _ := run("import", "--start", "claude", "--dry-run"); code != 0 || !strings.Contains(out, "would back them up and start Claude Code") || len(f.started) != 0 {
+		t.Errorf("dry run: %d %q", code, out)
 	}
-	if code, out, _ := importWith("n\n"); code != 0 || !strings.Contains(out, "Start Claude Code for this now? [Y/n] not started; to do it later: ctxtra import\n") {
-		t.Errorf("declined: %d %q", code, out)
-	}
-	if code, _, _ := importWith("\n"); code != 0 || len(started) != 1 || started[0] != "/bin/claude" {
-		t.Errorf("accepted: %d %v", code, started)
+	if code, _, _ := run("import", "--start", "claude"); code != 0 || len(f.started) != 1 || f.started[0].bin != "/bin/claude" {
+		t.Errorf("--start: %d %v", code, f.started)
 	}
 	// The prompt names the skill's SKILL.md: import writes the skill again
 	// when it is gone and the binding is left.
 	if err := os.RemoveAll(filepath.Join(h, ".ctxtra", "skills")); err != nil {
 		t.Fatal(err)
 	}
-	if code, _, e := importWith("\n"); code != 0 {
+	if code, _, e := run("import", "--start", "claude"); code != 0 {
 		t.Errorf("without the skill's files: %d %q", code, e)
 	}
 	if _, err := os.Stat(filepath.Join(h, ".ctxtra", "skills", "ctxtra", "SKILL.md")); err != nil {
 		t.Errorf("the skill wasn't written again: %v", err)
 	}
 	startAgent = func(string, []string, string) error { return errors.New("exited: exit status 1") }
-	if code, _, e := importWith("\n"); code != 1 || !strings.Contains(e, "ctxtra import: Claude Code: exited: exit status 1; you can give the prompt above to an agent") {
+	if code, _, e := run("import", "--start", "claude"); code != 1 || !strings.Contains(e, "ctxtra import: Claude Code: exited: exit status 1; you can give the prompt above to an agent") {
 		t.Errorf("agent failed: %d %q", code, e)
 	}
 }
@@ -251,8 +219,9 @@ func TestImportRelativeDirs(t *testing.T) {
 	if code, _, e := run("setup", "--agent", "claude"); code != 0 {
 		t.Fatalf("setup: %s", e)
 	}
-	code, out, e := run("import", "--no-start")
+	code, out, e := run("import")
 	_, backup, _ := strings.Cut(out, "backed up the files to ~/")
+	backup, _, _ = strings.Cut(backup, "\n")
 	if code != 0 || !strings.Contains(out, "  ~/claude/CLAUDE.md (Claude Code)\n") {
 		t.Fatalf("import: %d %q %q", code, out, e)
 	}

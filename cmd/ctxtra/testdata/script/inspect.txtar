@@ -4,22 +4,22 @@
 gitrepo dev/svc https://github.com/acme/svc
 gitrepo dev/other https://github.com/acme/other
 
-exec ctxtra files dev/svc
+exec ctxtra context files dev/svc
 stdout '/ctx/svc.md'
 stdout 'deploy'
 ! stdout 'other.md'
 
-exec ctxtra show dev/svc
+exec ctxtra context show dev/svc
 stdout '^Contents of .*/ctx/svc.md \(instructions added by ctxtra for this repository, ~/dev/svc, and all its worktrees; binding: svc '
 stdout '^CTXMARK-SVC$'
 stdout '<location>.*/skills/deploy/SKILL.md</location>'
 
-exec ctxtra explain dev/other
+exec ctxtra context explain dev/other
 stdout '^- svc \(~/.config/ctxtra/b.yaml\): repos do not match github.com/acme/other'
 stdout '^\+ other \(~/.config/ctxtra/b.yaml\): repos remote github.com/acme/other$'
 stdout '^total: 1 files, 0 skills'
 
-exec ctxtra files dev/other
+exec ctxtra context files dev/other
 stdout '/ctx/other.md'
 ! stdout 'svc.md'
 

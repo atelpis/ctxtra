@@ -93,7 +93,7 @@ func checkNativeFiles(t *testing.T, a Agent, c nativeCase) {
 	}
 	s.Setup()
 	listed := map[string]string{} // rel path: its line
-	for _, line := range strings.Split(s.Ctxtra("import", "--no-start"), "\n") {
+	for _, line := range strings.Split(s.Ctxtra("import"), "\n") {
 		path, _, ok := strings.Cut(strings.TrimSpace(line), " (")
 		if ok && strings.HasPrefix(path, "~/") {
 			listed[strings.TrimPrefix(path, "~/")] = line

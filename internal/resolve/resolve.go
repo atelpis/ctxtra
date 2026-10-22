@@ -113,9 +113,9 @@ func (r *Result) addNotices(cfg *config.Config) {
 		e := st.Get(source.ID(src.Remote()), src.Remote(), src.Branch)
 		switch age := now().Sub(e.LastCheck); {
 		case e.LastCheck.IsZero():
-			r.Notices = append(r.Notices, src.Name+" not checked for new commits on this machine yet; run ctxtra sync")
+			r.Notices = append(r.Notices, src.Name+" not checked for new commits on this machine yet; run ctxtra source update")
 		case age > checkAge:
-			r.Notices = append(r.Notices, fmt.Sprintf("%s last checked %d days ago; run ctxtra sync to check for changes", src.Name, int(age.Hours()/24)))
+			r.Notices = append(r.Notices, fmt.Sprintf("%s last checked %d days ago; run ctxtra source update to check for changes", src.Name, int(age.Hours()/24)))
 		}
 		if e.Dismissed != "" && e.Dismissed != src.Commit {
 			r.Notices = append(r.Notices, fmt.Sprintf("%s %s not accepted (dismissed); you have %s", src.Name, source.Short(e.Dismissed), source.Short(src.Commit)))

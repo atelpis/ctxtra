@@ -1,5 +1,5 @@
 // Package ctxtra holds the files the binary serves as they are: the docs
-// (ctxtra help TOPIC) and ctxtra's skills (ctxtra skill). They live at the
+// (ctxtra help TOPIC) and ctxtra's skills (ctxtra skill show). They live at the
 // top of the repository, where people and skill installers find them, and
 // the binary embeds them, so it always serves the version it was built from.
 package ctxtra

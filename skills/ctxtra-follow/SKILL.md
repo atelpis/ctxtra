@@ -26,18 +26,18 @@ Not needed for files under the session folder, or for the source of dependencies
 Run, with absolute paths:
 
 ```bash
-ctxtra show <folder> --session <session folder> --part 1
+ctxtra context show DIR --exclude-session SESSION_DIR --part 1
 ```
 
-- `<folder>`: the folder you are about to work in: the top of the other repository, or, in a repository
-  with several projects, the folder of the project (such as `services/billing`).
-- When you already ran the command for other folders in this session, add `--session <folder>` for each of
-  them too, so that you don't get the same files again.
-- The output is only what a session in `<folder>` would get beyond what you already have: instruction
-  files, each with a header, then a list of files you already have that apply there too, then a list of
-  skills.
-- `(nothing is added here beyond what sessions in the --session folders get)` means there is nothing more.
-  Go on with the task.
+- `DIR`: the folder you are about to work in: the top of the other repository, or, in a repository with
+  several projects, the folder of the project (such as `services/billing`).
+- `SESSION_DIR`: the session folder.
+- When you already ran the command for other folders in this session, add `--exclude-session FOLDER` for
+  each of them too, so that you don't get the same files again.
+- The output is only what a session in `DIR` would get beyond what you already have: instruction files,
+  each with a header, then a list of files you already have that apply there too, then a list of skills.
+- `(nothing is added here beyond what sessions in the --exclude-session folders get)` means there is
+  nothing more. Go on with the task.
 - When the output ends with `[ctxtra: part 1 of N; for the next part, run the same command with --part 2]`,
   do that, and so on until the last part. Read all parts as one text.
 
@@ -56,10 +56,10 @@ a task in that folder matches its description.
 
 ## When it doesn't work
 
-- `problem:` lines on stderr: tell the user in one line, and go on with what was added. Don't fix the
-  config yourself. If the user wants it fixed, the `ctxtra` skill has the steps.
+- `problem:` or `missing:` lines on stderr (the command then exits with 1): tell the user in one line, and
+  go on with what was added. Don't fix the config yourself. If the user wants it fixed, the `ctxtra` skill has the steps.
 - The command isn't found, the sandbox blocks it, or the user declines the permission prompt: don't go on
-  silently. Tell the user that you couldn't get their instructions for `<folder>`, with the error, and ask
+  silently. Tell the user that you couldn't get their instructions for `DIR`, with the error, and ask
   whether to go on without them.
 - Lines about `ctxtra setup` on stderr are about the user's agent setup, not about this task. Mention them
   once at the end of your reply at most.

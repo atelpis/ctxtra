@@ -112,8 +112,8 @@ func (e *Error) Error() string {
 			what, paths.Tilde(e.Repo), e.Err)
 	}
 	return fmt.Sprintf("%s in %s, which has the remote %s and is not a trusted source; skipped. "+
-		"If only you push to the repository: ctxtra add --trust %s; else pin it: add the file with ctxtra add",
-		what, paths.Tilde(e.Repo), e.Remote, paths.Tilde(e.Repo))
+		"If only you push to the repository: ctxtra source add trusted-path %s; else pin it: ctxtra source add git %s",
+		what, paths.Tilde(e.Repo), e.Remote, paths.Tilde(e.Repo), paths.Tilde(e.Repo))
 }
 
 // Check returns nil if path may be read, and an *Error or a symlink error if
