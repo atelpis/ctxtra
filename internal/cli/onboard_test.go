@@ -33,7 +33,7 @@ func TestOnboardImport(t *testing.T) {
 			f := newFakeAgents(t, "claude", "codex")
 			file := filepath.Join(h, ".claude", "CLAUDE.md")
 			testenv.Write(t, file, "my instructions\n")
-			code, out, errOut := runOnboard(tc.input, "--agent", "claude", "--agent", "codex")
+			code, out, errOut := runOnboard("y\n"+tc.input, "--agent", "claude", "--agent", "codex")
 			if code != 0 {
 				t.Fatalf("onboard: %d %s", code, errOut)
 			}
@@ -77,7 +77,7 @@ func TestOnboardDeclineSkills(t *testing.T) {
 		t.Run(input, func(t *testing.T) {
 			testenv.Home(t)
 			f := newFakeAgents(t, "claude")
-			if code, _, errOut := runOnboard(input, "--agent", "claude"); code != 0 {
+			if code, _, errOut := runOnboard("y\n"+input, "--agent", "claude"); code != 0 {
 				t.Fatalf("onboard: %d %s", code, errOut)
 			}
 			if skillBound("ctxtra") != nil || skillBound(follow) != nil || len(f.started) != 0 {
@@ -90,7 +90,7 @@ func TestOnboardDeclineSkills(t *testing.T) {
 func TestOnboardRerun(t *testing.T) {
 	h := testenv.Home(t)
 	newFakeAgents(t, "claude")
-	if code, _, errOut := runOnboard("\n\n", "--agent", "claude"); code != 0 {
+	if code, _, errOut := runOnboard("\n\n\n", "--agent", "claude"); code != 0 {
 		t.Fatal(errOut)
 	}
 	testenv.Write(t, filepath.Join(h, "notes.md"), "notes")
@@ -98,7 +98,7 @@ func TestOnboardRerun(t *testing.T) {
 		t.Fatal(errOut)
 	}
 	testenv.Write(t, filepath.Join(h, ".claude", "CLAUDE.md"), "old rules")
-	if code, out, errOut := runOnboard("", "--agent", "claude"); code != 0 || strings.Contains(out+errOut, "[Y/n]") {
+	if code, out, errOut := runOnboard("y\n", "--agent", "claude"); code != 0 || strings.Contains(out+errOut, "skill?") {
 		t.Fatalf("rerun: %d %s\n%s", code, errOut, out)
 	}
 }
@@ -143,7 +143,7 @@ func TestOnboardImportAvailability(t *testing.T) {
 			h := testenv.Home(t)
 			f := newFakeAgents(t, tc.installed...)
 			testenv.Write(t, filepath.Join(h, ".claude", "CLAUDE.md"), "rules")
-			code, out, errOut := runOnboard(tc.input, "--agent", "claude")
+			code, out, errOut := runOnboard("y\n"+tc.input, "--agent", "claude")
 			if code != 0 || len(f.started) != tc.started || strings.Contains(out+errOut, "Which agent?") {
 				t.Fatalf("onboard: %d %s, started %+v\n%s", code, errOut, f.started, out)
 			}
@@ -173,7 +173,7 @@ func TestOnboardFailure(t *testing.T) {
 			case "start":
 				startAgent = func(string, []string, string) error { return errors.New("cannot start agent") }
 			}
-			code, _, errOut := runOnboard(input, args...)
+			code, _, errOut := runOnboard("y\n"+input, args...)
 			if code == 0 || errOut == "" || len(f.started) != 0 {
 				t.Fatalf("onboard: %d %s, started %+v", code, errOut, f.started)
 			}
@@ -187,5 +187,42 @@ func TestOnboardFailure(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestOnboardDeclineHooks(t *testing.T) {
+	for _, input := range []string{"n\ny\ny\n", "", "y"} {
+		t.Run(input, func(t *testing.T) {
+			h := testenv.Home(t)
+			f := newFakeAgents(t, "claude")
+			config := filepath.Join(h, ".claude", "settings.json")
+			testenv.Write(t, config, "{}\n")
+			code, out, errOut := runOnboard(input, "--agent", "claude")
+			if code != 0 || !strings.Contains(out, "~/.claude/settings.json") || !strings.Contains(errOut, "Install hooks and continue? [Y/n]") || !strings.Contains(out, "Onboarding stopped") {
+				t.Fatalf("decline: %d %s\n%s", code, errOut, out)
+			}
+			if b, err := os.ReadFile(config); err != nil || string(b) != "{}\n" {
+				t.Fatalf("config changed: %q %v", b, err)
+			}
+			if _, err := os.Stat(filepath.Join(h, ".ctxtra")); !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("onboarding wrote state: %v", err)
+			}
+			if skillBound("ctxtra") != nil || skillBound(follow) != nil || len(f.started) != 0 || strings.Contains(out, "Your agents can set up") {
+				t.Fatal("continued after declining hooks")
+			}
+		})
+	}
+}
+
+func TestOnboardStepSeparators(t *testing.T) {
+	testenv.Home(t)
+	newFakeAgents(t, "claude")
+	code, out, errOut := runOnboard("y\nn\nn\n", "--agent", "claude")
+	if code != 0 {
+		t.Fatal(errOut)
+	}
+	steps := strings.Split(out, "\n------------------------------------------------------------\n\n")
+	if len(steps) != 4 || !strings.Contains(steps[0], "ctxtra is set up") || !strings.HasPrefix(steps[1], "Your agents can set up") || !strings.HasPrefix(steps[2], "Work across multiple projects") || !strings.HasPrefix(steps[3], "Your agents have no existing") {
+		t.Fatalf("step boundaries:\n%s", out)
 	}
 }

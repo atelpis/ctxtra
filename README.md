@@ -23,9 +23,9 @@ go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
 ctxtra onboard            # guided setup, skills and optional instruction import
 ```
 
-`onboard` sets up hooks, explains and offers the bundled skills, then offers to start an installed agent
-to help bring your existing instructions into ctxtra. It needs an interactive terminal. For scripts or
-hook maintenance, use `ctxtra setup` (`--dry-run` lists the changes without writing them).
+`onboard` previews and asks before installing hooks, explains and offers the bundled skills, then offers
+to start an installed agent to help bring your existing instructions into ctxtra. It needs an interactive
+terminal. For scripts or hook maintenance, use `ctxtra setup` (`--dry-run` lists the changes without writing them).
 
 `setup` adds its hooks to the agents' user-level configs and backs up each file first. `ctxtra setup --remove`
 takes out only its hooks. Your repos, their `AGENTS.md` and your skill folders stay as they are. If ctxtra

@@ -468,13 +468,16 @@ arguments it doesn't know, so an older binary still runs a newer setup.
 
 ### Guided onboarding
 
-`ctxtra onboard` is the interactive getting-started flow. It sets up hooks (with the same
-backups and agent detection as `ctxtra setup`), explains and offers each bundled skill that
-isn't already bound, then offers instruction import if no binding adds instructions yet.
+`ctxtra onboard` is the interactive getting-started flow. It previews the hook file changes
+and asks before installing hooks (with the same backups and agent detection as `ctxtra setup`),
+explains and offers each bundled skill that isn't already bound, then offers instruction
+import if no binding adds instructions yet.
 When the ctxtra skill is bound and an installed agent can be started, it asks whether to
 start one and lets the user choose among available agents. Import uses the same backups,
-prompt and launcher as `ctxtra import --start AGENT`. Declining a step leaves it unchanged;
-EOF never accepts a question. Rerunning onboarding skips skills that are already bound.
+prompt and launcher as `ctxtra import --start AGENT`. Declining a step leaves it unchanged.
+Declining hook installation stops onboarding before any changes. Horizontal rules separate
+the remaining steps from the preceding output. EOF never accepts a question. Rerunning
+onboarding skips skills that are already bound.
 
 Onboarding requires terminal input and output and rejects `--no-input` before making changes.
 Scripts and agents use `setup`, `skill install` and `import` separately. `setup` remains
