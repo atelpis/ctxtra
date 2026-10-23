@@ -466,9 +466,23 @@ reads is sent while that setup is supported. The hooks and plugins ignore fields
 arguments and event names that a released setup sends are accepted forever, and `ctxtra hook` ignores
 arguments it doesn't know, so an older binary still runs a newer setup.
 
+### Guided onboarding
+
+`ctxtra onboard` is the interactive getting-started flow. It sets up hooks (with the same
+backups and agent detection as `ctxtra setup`), explains and offers each bundled skill that
+isn't already bound, then offers instruction import if no binding adds instructions yet.
+When the ctxtra skill is bound and an installed agent can be started, it asks whether to
+start one and lets the user choose among available agents. Import uses the same backups,
+prompt and launcher as `ctxtra import --start AGENT`. Declining a step leaves it unchanged;
+EOF never accepts a question. Rerunning onboarding skips skills that are already bound.
+
+Onboarding requires terminal input and output and rejects `--no-input` before making changes.
+Scripts and agents use `setup`, `skill install` and `import` separately. `setup` remains
+non-interactive and prints pending commands plus a pointer to guided onboarding.
+
 ### Setup notices
 
-After every command that runs, but `hook`, `setup`, `doctor`, `help`, `version` and `completion`, ctxtra
+After every command that runs, but `hook`, `setup`, `onboard`, `doctor`, `help`, `version` and `completion`, ctxtra
 prints a line on stderr for each setup that needs you, with the command that repairs it. `--help` and usage
 errors print none. The lines never change the exit code; `doctor`
 shows the same lines under each agent instead:
@@ -535,8 +549,8 @@ with its flags and examples. The commands that change the config are grouped by 
   a step that needs an answer then fails. No option answers a question for you.
 - `--dry-run` on the commands that change the config, the agents' setup or the installed skills checks the
   change and shows it, and writes nothing.
-- `--config FILE` uses another config for one command, like `$CTXTRA_CONFIG`. `setup` doesn't take it: the
-  hooks carry no config path, so sessions read `$CTXTRA_CONFIG` or the default file.
+- `--config FILE` uses another config for one command, like `$CTXTRA_CONFIG`. `setup` and `onboard` don't take
+  it: the hooks carry no config path, so sessions read `$CTXTRA_CONFIG` or the default file.
 - Paths in arguments are relative to the current folder; in the config they are relative to the config's
   folder.
 
