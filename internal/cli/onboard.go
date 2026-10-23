@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/setup"
 	"github.com/atelpis/ctxtra/internal/skill"
 	"github.com/atelpis/ctxtra/internal/term"
@@ -20,6 +21,22 @@ func onboard(stdio IO, agents []string, prompts bool) int {
 	}
 	term.Fprintf(stdio.Out, term.Bold, "Let's get started with ctxtra\n")
 	fmt.Fprintln(stdio.Out, "First, we'll add hooks to your agents' user-level configs so new sessions get your instructions and skills. Each changed file is backed up first.")
+	if code := setupHooks(stdio, setup.Options{Agents: agents, Options: agent.Options{DryRun: true}}); code != 0 {
+		return code
+	}
+	// Share the reader so buffered answers aren't lost between steps.
+	in := bufio.NewReader(stdio.In)
+	term.Fprintf(stdio.Err, term.Bold, "Install hooks and continue? [Y/n] ")
+	ok, err := onboardConfirm(in)
+	if err != nil {
+		fmt.Fprintf(stdio.Err, "ctxtra onboard: %v\n", err)
+		return 1
+	}
+	if !ok {
+		fmt.Fprintln(stdio.Out, "Onboarding stopped. Hooks are required to continue. To try again: ctxtra onboard")
+		return 0
+	}
+	fmt.Fprintln(stdio.Out)
 	if code := setupHooks(stdio, setup.Options{Agents: agents}); code != 0 {
 		return code
 	}
@@ -27,8 +44,6 @@ func onboard(stdio IO, agents []string, prompts bool) int {
 		fmt.Fprintf(stdio.Err, "ctxtra onboard: %v\n", err)
 		return 1
 	}
-	// Share the reader so buffered answers aren't lost between steps.
-	in := bufio.NewReader(stdio.In)
 	for _, offer := range []struct{ name, title, about string }{
 		{skill.Base, "Your agents can set up ctxtra for you",
 			"ctxtra comes with a skill that makes getting started easy. Your agents can create your bindings, change your config, and bring the instructions you already have into ctxtra."},
@@ -38,7 +53,8 @@ func onboard(stdio IO, agents []string, prompts bool) int {
 		if skillBound(offer.name) != nil {
 			continue
 		}
-		term.Fprintf(stdio.Out, term.Bold, "\n%s\n", offer.title)
+		onboardSeparator(stdio.Out)
+		term.Fprintf(stdio.Out, term.Bold, "%s\n", offer.title)
 		fmt.Fprintf(stdio.Out, "%s\n\n", offer.about)
 		term.Fprintf(stdio.Err, term.Bold, "Install the %s skill? [Y/n] ", offer.name)
 		ok, err := onboardConfirm(in)
@@ -67,11 +83,12 @@ func onboardImport(stdio IO, in *bufio.Reader) int {
 		fmt.Fprintf(stdio.Err, "ctxtra onboard: %v\n", err)
 		return 1
 	}
+	onboardSeparator(stdio.Out)
 	if len(files) == 0 {
-		fmt.Fprintln(stdio.Out, "\nYour agents have no existing instruction files to import. New agent sessions will use ctxtra.")
+		fmt.Fprintln(stdio.Out, "Your agents have no existing instruction files to import. New agent sessions will use ctxtra.")
 		return 0
 	}
-	term.Fprintf(stdio.Out, term.Bold, "\nYour agents have instruction files of their own:\n")
+	term.Fprintf(stdio.Out, term.Bold, "Your agents have instruction files of their own:\n")
 	for _, f := range files {
 		fmt.Fprintf(stdio.Out, "  %s\n", f)
 	}
@@ -138,4 +155,9 @@ func onboardConfirm(in *bufio.Reader) (bool, error) {
 	}
 	answer = strings.ToLower(strings.TrimSpace(answer))
 	return answer == "" || answer == "y" || answer == "yes", nil
+}
+
+func onboardSeparator(out io.Writer) {
+	fmt.Fprintln(out, "\n------------------------------------------------------------")
+	fmt.Fprintln(out)
 }
