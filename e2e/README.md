@@ -78,6 +78,9 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped
 with the reason for the others. A declared capability that stops working fails the test.
 
+`TestImportTUI/claude` is temporarily disabled until its interactive startup handling is fixed.
+`TestCodexTrustTUI` is temporarily disabled pending investigation of the suite timeout.
+
 Not covered here, and checked by hand before a release:
 
 - What the interactive TUI shows (the session-start message on screen), `/clear`, `/compact`, and resume in
