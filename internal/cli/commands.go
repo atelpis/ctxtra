@@ -444,7 +444,7 @@ include list names the binding files whose bindings apply.`,
 source you have. It never adds, pins or trusts a source: for a file in a
 repository that isn't a source yet, add the repository first with ctxtra
 source add, and its --include.`,
-		Example: `  ctxtra binding-file add ~/notes/bindings.yaml
+		Example: `  ctxtra binding-file add ~/agent-context/bindings.yaml
   ctxtra binding-file add ctxtra://team/bindings/work.yaml`,
 		Args: exactly("FILE or ctxtra://SOURCE/PATH"),
 		RunE: a.run(func(_ *cobra.Command, args []string) error {
@@ -490,7 +490,7 @@ func (a *app) bindingCmd() *cobra.Command {
 session, sessions in matching folders, or sessions in matching repositories.
 binding add and remove change the bindings in your config; binding list also
 shows the bindings of the included binding files.`,
-		Example: `  ctxtra binding add me --global --instruction ~/notes/profile.md
+		Example: `  ctxtra binding add me --global --instruction ~/agent-context/profile.md
   ctxtra binding list`,
 		GroupID: "config",
 	}
@@ -505,8 +505,8 @@ combined; a session matches when either does.
 
 Quote patterns, or the shell expands them: --dir '~/dev/work/**'. x/** also
 matches x itself.`,
-		Example: `  ctxtra binding add me --global --instruction ~/notes/profile.md
-  ctxtra binding add work --dir '~/dev/work/**' --instruction ~/notes/work.md --skill ~/skills/deploy
+		Example: `  ctxtra binding add me --global --instruction ~/agent-context/profile.md
+  ctxtra binding add work --dir '~/dev/work/**' --instruction ~/agent-context/work.md --skill ~/skills/deploy
   ctxtra binding add acme --repo 'github.com/acme/**' --instruction ctxtra://team/acme.md`,
 		Args: exactly("NAME"),
 		RunE: a.run(func(_ *cobra.Command, args []string) error {

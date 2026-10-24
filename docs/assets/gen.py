@@ -2,8 +2,8 @@
 The social preview is rendered from social-preview.svg with:
 rsvg-convert -w 1280 -h 640 docs/assets/social-preview.svg -o docs/assets/social-preview.png
 
-Each picture except the terminal demo comes in a dark and a light variant; the
-README picks one with <picture> and prefers-color-scheme, which GitHub follows.
+Each picture comes in a dark and a light variant; the README picks one with <picture> and
+prefers-color-scheme, which GitHub follows.
 """
 import sys
 from html import escape
@@ -179,75 +179,6 @@ def social():
     write("social-preview.svg", body, w, h, "ctxtra")
 
 
-# ---------------------------------------------------------------- demo (dark in both themes: it is a terminal)
-
-def demo():
-    """Four panes, one session each, with the summary that ctxtra shows at session start."""
-    c = THEMES["dark"]
-    w, ph = 1100, 236  # ph: pane height
-    h = 46 + 2 * ph
-    T = 18.0  # loop length, seconds
-    cw = 9.0  # monospace advance at 15px
-    lh = 22
-    scenes = [
-        ("~/dev/acme/billing", "claude", [0, 1, 2], True, "# remote is github.com/acme/billing"),
-        ("~/wt/billing-fix", "codex", [0, 1, 2], True, "# a worktree of it, outside ~/dev"),
-        ("~/dev/side-project", "pi", [0, 1], False, "# under ~/dev, not acme/billing"),
-        ("~/Downloads", "claude", [0], False, "# global only"),
-    ]
-    b = [frame(c, w, h, 14)]
-    b.append(f'<rect x="1" y="1" width="{w-2}" height="44" rx="13" fill="{c["PANEL"]}"/>')
-    b.append(f'<rect x="1" y="30" width="{w-2}" height="15" fill="{c["PANEL"]}"/>')
-    b.append(f'<line x1="1" y1="45" x2="{w-1}" y2="45" stroke="{c["EDGE"]}"/>')
-    b.append(f'<line x1="{w/2}" y1="45" x2="{w/2}" y2="{h-1}" stroke="{c["EDGE"]}"/>')
-    b.append(f'<line x1="1" y1="{45+ph}" x2="{w-1}" y2="{45+ph}" stroke="{c["EDGE"]}"/>')
-    for i, dot in enumerate(["#FF5F57", "#FEBC2E", "#28C840"]):
-        b.append(f'<circle cx="{26+i*22}" cy="23" r="6.5" fill="{dot}"/>')
-    b.append(f'<text x="{w/2}" y="28" font-size="14" fill="{c["MUTED"]}" text-anchor="middle">one config, four sessions</text>')
-
-    def anim(attr, times, values):
-        kt = ";".join(f"{t/T:.4f}" for t in times)
-        return (f'<animate attributeName="{attr}" values="{";".join(values)}" keyTimes="{kt}" '
-                f'dur="{T}s" repeatCount="indefinite"/>')
-
-    fade_out = (T - 0.9, T - 0.3)
-
-    def appear(t, to="1"):
-        return anim("opacity", [0, t, t + 0.01, fade_out[0], fade_out[1], T], ["0", "0", to, to, "0", "0"])
-
-    def text(x, y, body, t):
-        return f'<text x="{x}" y="{y}" font-family="{MONO}" font-size="15" xml:space="preserve">{body}{appear(t)}</text>'
-
-    m = c["MUTED"]
-    start = 0.6
-    for s, (cwd, agent, files, skill, note) in enumerate(scenes):
-        x0, y = 28 + (s % 2) * w / 2, 45 + (s // 2) * ph + 34
-        cmd = f"cd {cwd} && {agent}"
-        t0, t1 = start, start + 0.045 * len(cmd)
-        t_out = t1 + 0.45
-        b.append(text(x0, y, f'<tspan fill="{c["DIM"]}">{escape(note)}</tspan>', t0 - 0.3))
-        # the command, revealed by a growing clip
-        full = cw * (len(cmd) + 2) + 6
-        b.append(f'<clipPath id="c{s}"><rect x="{x0}" y="{y+lh-17}" height="{lh+4}" width="{full}">'
-                 + anim("width", [0, t0, t1, T], ["0", "0", f"{full}", f"{full}"]) + "</rect></clipPath>")
-        b.append(f'<g clip-path="url(#c{s})">'
-                 f'<text x="{x0}" y="{y+lh}" font-family="{MONO}" font-size="15" xml:space="preserve">'
-                 f'<tspan fill="{c["GREEN"]}">❯</tspan> <tspan fill="{c["TEXT"]}">cd </tspan><tspan fill="{c["CYAN"]}">{cwd}</tspan>'
-                 f'<tspan fill="{c["TEXT"]}"> &amp;&amp; </tspan><tspan fill="{c["TEXT"]}" font-weight="700">{agent}</tspan></text></g>')
-        # ctxtra's summary, as the agent shows it, each name in its color
-        n = len(files)
-        head = f'ctxtra added {n} instruction{"s" if n != 1 else ""}' + (" and 1 skill" if skill else "")
-        rows = [f'<tspan fill="{c["GREEN"]}">✓</tspan> <tspan fill="{c["TEXT"]}">{head}</tspan>',
-                f'<tspan fill="{m}">Instructions:</tspan>']
-        rows += [f'<tspan fill="{m}">- </tspan><tspan fill="{c[FILE_COLORS[i]]}">{FILE_NAMES[i]}</tspan>' for i in files]
-        if skill:
-            rows += [f'<tspan fill="{m}">Skills:</tspan>', f'<tspan fill="{m}">- </tspan><tspan fill="{c["LIME"]}">deploy</tspan>']
-        for k, row in enumerate(rows):
-            b.append(text(x0 + cw * 2, y + lh * (k + 2) + 6, row, t_out + 0.06 * k))
-        start = t_out + 2.6
-    write("demo.svg", "\n".join(b), w, h, "ctxtra demo: four sessions in four folders get four different sets of files from one config")
-
-
 # ---------------------------------------------------------------- skill chat
 
 def skill_chat(theme):
@@ -276,9 +207,9 @@ def skill_chat(theme):
 
     # (who, rows, time); a row is (kind, text): p plain, c a command to run, r a command the agent ran
     msgs = [
-        ("you", [("p", "Add my Go notes to every acme repo")], 0.6),
+        ("you", [("p", "Add my Go instructions to every acme repo")], 0.6),
         ("agent", [("p", "I'll add this binding. OK to run it?"),
-                   ("c", "ctxtra binding add go --repo 'github.com/acme/**' --instruction ~/notes/go-style.md")], 2.4),
+                   ("c", "ctxtra binding add go --repo 'github.com/acme/**' --instruction ~/agent-context/go-style.md")], 2.4),
         ("you", [("p", "Yes")], 4.6),
         ("agent", [("p", "✓ Done. New sessions in acme repos get go-style.md, in every agent.")], 5.8),
         ("you", [("p", "Why didn't my billing session get the deploy skill?")], 8.2),
@@ -362,7 +293,7 @@ def team_sync(theme):
           "A team repository is pinned to a commit; new commits reach your sessions only after you accept them in ctxtra source update")
 
 
-# ---------------------------------------------------------------- the story: out of the box, generators, ctxtra
+# ---------------------------------------------------------------- the story: bindings, an edit, a team update
 
 # Agent and GitHub marks, 24x24, from @lobehub/icons-static-svg 1.95.1 (Claude and Cursor from 1.70.0)
 ICONS = {
@@ -410,241 +341,161 @@ class Path:
 
 
 def story(theme):
-    """One loop, three slides: an agent out of the box, generator tools, ctxtra."""
+    """ctxtra's hooks in every agent; then, one at a time: your files, a binding by remote, a team package,
+    an edit that reaches every matching session, and a team update that waits for review."""
     c = THEMES[theme]
-    W, H, T = 960, 600, 46.0
-    S2, S3 = 7.0, 20.0  # slide starts
-    M = W / 2
+    W, H, T = 960, 600, 23.0
+    t_personal, t_acme, t_team, t_edit, t_update, t_clean = 2.4, 5.0, 7.6, 10.6, 14.8, 19.4
     b = [frame(c, W, H, grid=True), gradient(c)]
 
-    def keys(pts):
+    def anim(attr, pts):
         if pts[0][0] > 0:
             pts = [(0, pts[0][1])] + pts
         if pts[-1][0] < T:
             pts = pts + [(T, pts[-1][1])]
-        return ";".join(str(v) for _, v in pts), ";".join(f"{t/T:.4f}" for t, _ in pts), len(pts) - 1
-
-    def anim(attr, pts):
-        v, k, _ = keys(pts)
-        return f'<animate attributeName="{attr}" values="{v}" keyTimes="{k}" dur="{T}s" repeatCount="indefinite"/>'
-
-    def move(pts):
-        v, k, n = keys(pts)
-        return (f'<animateTransform attributeName="transform" type="translate" values="{v}" keyTimes="{k}" '
-                f'calcMode="spline" keySplines="{";".join(["0.3 0 0.2 1"] * n)}" dur="{T}s" repeatCount="indefinite"/>')
-
-    def win(a, z, f=0.4):
-        return anim("opacity", [(a, 0), (a + f, 1), (z - f, 1), (z, 0)])
+        return (f'<animate attributeName="{attr}" values="{";".join(str(v) for _, v in pts)}" '
+                f'keyTimes="{";".join(f"{t/T:.4f}" for t, _ in pts)}" dur="{T}s" repeatCount="indefinite"/>')
 
     def show(a, z, body, f=0.4):
-        return f'<g opacity="0">{win(a, z, f)}{body}</g>'
+        """Fades body in at a and out at z; a of 0 means it is there from the start of the loop."""
+        pts = [(a, 0), (a + f, 1)] if a > 0 else [(0, 1)]
+        pts += [(z - f, 1), (z, 0)] if z < T else []
+        return f'<g opacity="{0 if a > 0 else 1}">{anim("opacity", pts)}{body}</g>'
 
-    def mono(x, y, text, size=17, col="TEXT", anchor="start", weight="400"):
+    def mono(x, y, text, size=14, col="TEXT", weight="400", anchor="start"):
         return (f'<text x="{x:g}" y="{y:g}" font-family="{MONO}" font-size="{size}" fill="{c[col]}" '
-                f'text-anchor="{anchor}" font-weight="{weight}" xml:space="preserve">{escape(text)}</text>')
+                f'font-weight="{weight}" text-anchor="{anchor}" xml:space="preserve">{escape(text)}</text>')
 
-    def sans(x, y, text, size=17, col="TEXT", anchor="middle"):
-        return f'<text x="{x:g}" y="{y:g}" font-size="{size}" fill="{c[col]}" text-anchor="{anchor}">{escape(text)}</text>'
+    def sans(x, y, text, size=13, col="MUTED"):
+        return f'<text x="{x:g}" y="{y:g}" font-size="{size}" fill="{c[col]}" text-anchor="middle">{escape(text)}</text>'
 
-    def box(cx, cy, w, text, col=None, h=44):
-        """A Markdown file (with a dot in its color) or a folder."""
-        x, y = cx - w / 2, cy - h / 2
-        s = f'<rect x="{x:g}" y="{y:g}" width="{w}" height="{h}" rx="10" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>'
-        if col:
-            return s + f'<circle cx="{x+20:g}" cy="{cy}" r="6" fill="{c[col]}"/>' + mono(x + 36, cy + 6, text)
-        return s + mono(x + 18, cy + 6, text, weight="700")
-
-    def icon(name, cx, cy, size=30, col="TEXT"):
-        k = size / 24
-        fill = "#D97757" if name == "claude" else c[col]
+    def icon(name, cx, cy, size=22):
+        fill = "#D97757" if name == "claude" else c["TEXT"]
         paths = "".join(f'<path d="{d}"/>' for d in ICONS[name])
-        return f'<g transform="translate({cx - size/2:g} {cy - size/2:g}) scale({k:g})" fill="{fill}" fill-rule="evenodd">{paths}</g>'
+        return f'<g transform="translate({cx - size/2:g} {cy - size/2:g}) scale({size/24:g})" fill="{fill}" fill-rule="evenodd">{paths}</g>'
 
-    # Long labels sit next to short ones, so that they don't run into each other.
-    agents = [("claude", "Claude"), ("codex", "Codex"), ("opencode", "OpenCode"), ("pi", "Pi"), ("cursor", "Cursor")]
+    def chip(x, y, text, col):
+        return (f'<rect x="{x}" y="{y}" width="262" height="34" rx="9" fill="{c["BG"]}" stroke="{c["EDGE"]}"/>'
+                f'<circle cx="{x+18}" cy="{y+17}" r="6" fill="{c[col]}"/>' + mono(x + 32, y + 22, text))
 
-    def agent(cx, cy, name, label):
-        return icon(name, cx, cy - 8, 30) + sans(cx, cy + 24, label, 10.5 if len(label) > 7 else 12, "MUTED")
-
-    def any_agent(cx, cy):
-        """A generic agent: a terminal prompt."""
-        return (f'<rect x="{cx-17:g}" y="{cy-25:g}" width="34" height="34" rx="8" fill="none" stroke="{c["TEXT"]}" stroke-width="2"/>'
-                + mono(cx, cy - 2, ">_", 15, "TEXT", "middle", "700") + sans(cx, cy + 24, "your agent", 12, "MUTED"))
-
-    def line(p, a, z, draw=None, col="LINE", op=None):
-        s = f'<path d="{p.d()}" fill="none" stroke="{c[col]}" stroke-width="2"'
-        if col != "LINE":
-            s += f' stroke-opacity="{c["EDGE_OP"]}"'
-        if draw:
-            s += ' pathLength="1" stroke-dasharray="1" stroke-dashoffset="1"'
-        s += ">" + (anim("opacity", op) if op else win(a, z))
-        if draw:
-            s += anim("stroke-dashoffset", [(draw[0], 1), (draw[1], 0)])
-        return s + "</path>"
-
-    def flow(p, col, a, z, speed=150, gap=64, phase=0.0):
+    def flow(p, col, a, phase=0.0, speed=110, gap=70):
         n_len = p.length()
         dur, n = n_len / speed, max(1, round(n_len / gap))
-        s = f'<g opacity="0">{win(a, z, 0.3)}'
+        s = ""
         for i in range(n):
             beg = f'begin="{-(i + phase) * dur / n:.2f}s" dur="{dur:.2f}s" repeatCount="indefinite"'
-            s += (f'<circle r="5" fill="{c[col]}" opacity="0"><animateMotion path="{p.d()}" {beg}/>'
-                  f'<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.06;0.9;1" {beg}/></circle>')
-        return s + "</g>"
+            s += (f'<circle r="4" fill="{c[col]}" opacity="0"><animateMotion path="{p.d()}" {beg}/>'
+                  f'<animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.08;0.9;1" {beg}/></circle>')
+        return show(a, T, s, 0.3)
 
-    def caption(text, a, z):
-        return show(a, z, sans(M, 110, text, 19), 0.3)
+    def pulse(p, col, a, dur=1.3):
+        """One big dot that runs along p once, at a."""
+        kt = f"0;{a/T:.4f};{(a+dur)/T:.4f};1"
+        return (f'<circle r="8" fill="{c[col]}" opacity="0">'
+                f'<animateMotion path="{p.d()}" keyPoints="0;0;1;1" keyTimes="{kt}" calcMode="linear" dur="{T}s" repeatCount="indefinite"/>'
+                + anim("opacity", [(a, 0), (a + 0.05, 1), (a + dur, 1), (a + dur + 0.05, 0)]) + "</circle>")
 
-    # header: three tabs, the bar moves to the current one
-    tx = [M - 300, M, M + 300]
-    for x, name, a, z in zip(tx, ["Out of the box", "Generators", "ctxtra"], [0, S2, S3], [S2, S3, T]):
-        b.append(f'<text x="{x}" y="54" font-size="19" font-weight="700" fill="{c["DIM"]}" text-anchor="middle">{name}</text>')
-        b.append(show(a, z, f'<text x="{x}" y="54" font-size="19" font-weight="700" fill="{c["TEXT"]}" text-anchor="middle">{name}</text>', 0.3))
-    b.append(f'<g><rect x="-90" y="66" width="180" height="3" rx="1.5" fill="url(#g)"/>'
-             + move([(0, f"{tx[0]} 0"), (S2 - 0.3, f"{tx[0]} 0"), (S2 + 0.3, f"{tx[1]} 0"), (S3 - 0.3, f"{tx[1]} 0"),
-                     (S3 + 0.3, f"{tx[2]} 0"), (T - 0.3, f"{tx[2]} 0"), (T, f"{tx[0]} 0")])
-             + "</g>")
+    # ---- projects: the agents in each, with ctxtra's hook on top
+    PX, PW, ST, SH = [40, 345, 650], 270, 420, 70
+    projects = [("~/dev/acme/billing", None), ("~/wt/billing-fix", "worktree"), ("~/dev/side-project", None)]
+    agents = [("claude", "Claude"), ("codex", "Codex"), ("opencode", "OpenCode"), ("pi", "Pi"), ("cursor", "Cursor")]
+    hooks = [x + PW - 50 for x in PX]
+    pills_y = ST - 11
+    for x, (path, tag) in zip(PX, projects):
+        s = mono(x + 2, ST - 20, path, 14, "TEXT", "700")
+        if tag:
+            s += mono(x + 12 + 8.4 * len(path), ST - 20, tag, 12, "CYAN")
+        s += f'<rect x="{x}" y="{ST}" width="{PW}" height="{SH}" rx="14" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>'
+        for k, (name, lb) in enumerate(agents + [(None, "more")]):
+            ax = x + 26 + k * 44
+            if name:
+                s += icon(name, ax, ST + 30) + sans(ax, ST + 58, lb, 9.5 if len(lb) > 6 else 11)
+            else:
+                s += (f'<circle cx="{ax}" cy="{ST+30}" r="11" fill="none" stroke="{c["DIM"]}" stroke-dasharray="3 3"/>'
+                      + sans(ax, ST + 35, "+", 15) + sans(ax, ST + 58, lb, 11))
+        b.append(s)
 
-    # ---- slide 1: one agent reads its own files
-    A, B, D = 176, 336, 512  # rows: user level, project, agents
-    z = S2 - 0.1
-    b.append(line(Path(M, A + 22).L(M, B - 22), 0, z))
-    b.append(line(Path(M, B + 22).L(M, D - 30), 0, z))
-    b.append(flow(Path(M, A + 22).L(M, D - 30), "VIOLET", 0.6, z - 0.4))
-    b.append(flow(Path(M, B + 22).L(M, D - 30), "AMBER", 1.0, z - 0.4))
-    b.append(show(0, z, box(M, A, 300, "~/.claude/CLAUDE.md", "VIOLET") + box(M, B, 300, "my-proj/CLAUDE.md", "AMBER")
-                  + agent(M, D, "claude", "Claude Code")))
-    b.append(caption("Out of the box: one agent reads its own files, in your home and in the repo.", 0, z))
+    # ---- sources: your folder and a team repo
+    b.append(show(t_personal, T,
+                  f'<rect x="40" y="72" width="290" height="126" rx="12" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>'
+                  + mono(56, 98, "~/agent-context/", 15, "TEXT", "700") + mono(314, 98, "yours · live", 12, "GREEN", anchor="end")
+                  + chip(54, 110, "me.md", "VIOLET")))
+    b.append(show(t_acme, T, chip(54, 150, "go-style.md", "CYAN")))
+    b.append(show(t_team, T,
+                  f'<rect x="630" y="72" width="290" height="126" rx="12" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>'
+                  + icon("github", 656, 92) + mono(674, 98, "acme/team-ctx", 15, "TEXT", "700")
+                  + chip(644, 110, "billing.md", "AMBER") + chip(644, 150, "deploy/ skill", "LIME")))
 
-    # ---- slide 2: a generator writes each agent's files into the project
-    s, z = S2, S3 - 0.1
-    gx = M - 110
-    fx = [gx - 198, gx, gx + 198]
-    files = ["CLAUDE.md", "AGENTS.md", ".cursor/rules/"]
-    gen_agents = [("claude", "Claude Code"), ("codex", "Codex"), ("cursor", "Cursor")]
-    b.append(line(Path(gx, A + 22).L(gx, 238), s, z))
-    for i, x in enumerate(fx):
-        b.append(line(Path(gx, 274).C((gx, 300), (x, 298), (x, 324)), s, z, draw=(s + 1.0, s + 1.4)))
-        b.append(line(Path(x, 364).L(x, D - 30), s, z, draw=(s + 1.2 + 0.2 * i, s + 1.6 + 0.2 * i)))
-        p = Path(gx, A + 22).L(gx, 274).C((gx, 300), (x, 298), (x, 324)).L(x, D - 30)
-        b.append(flow(p, "VIOLET", s + 1.8, s + 5.4))
-        b.append(flow(p, "VIOLET", s + 8.8, z - 0.4))
-    fl = fx[0] - 104
-    b.append(show(s, z,
-                  f'<rect x="{fl}" y="302" width="604" height="84" rx="12" fill="none" stroke="{c["EDGE"]}"/>'
-                  + mono(fl, 294, "my-proj/", 15, "MUTED") + mono(fl + 604, 294, "written by the generator", 14, "AMBER", "end")
-                  + box(gx, A, 220, "rules.md", "VIOLET") + mono(gx + 96, A + 5, "source", 13, "DIM", "end")
-                  + f'<rect x="{gx-80}" y="238" width="160" height="36" rx="18" fill="{c["BG"]}" stroke="{c["LINE"]}"/>'
-                  + mono(gx, 262, "$ generate", 16, "MUTED", "middle")
-                  + "".join(agent(x, D, n, lb) for x, (n, lb) in zip(fx, gen_agents))))
-    # the generate button lights up on each run
-    b.append(f'<rect x="{gx-80}" y="238" width="160" height="36" rx="18" fill="none" stroke="{c["CYAN"]}" stroke-width="2.5" opacity="0">'
-             + anim("opacity", [(s + 0.6, 0), (s + 0.8, 1), (s + 1.4, 0), (s + 8.0, 0), (s + 8.2, 1), (s + 8.8, 0)]) + "</rect>")
-    for i, (x, name) in enumerate(zip(fx, files)):
-        b.append(show(s + 1.0 + 0.2 * i, z, box(x, 344, 188, name, "AMBER", 40), 0.3))
-        b.append(show(s + 5.8, s + 8.6, f'<rect x="{x-94}" y="324" width="188" height="40" rx="10" fill="{c["BG"]}" fill-opacity="0.55" '
-                      f'stroke="{c["RED"]}" stroke-width="2" stroke-dasharray="6 4"/>' + mono(x - 10, 380, "stale", 13, "RED", "end"), 0.3))
-    b.append(show(s + 5.2, s + 8.6, f'<rect x="{gx-110}" y="{A-22}" width="220" height="44" rx="10" fill="none" stroke="{c["AMBER"]}" stroke-width="2"/>'
-                  + mono(gx + 122, A + 6, "✎ edited", 15, "AMBER"), 0.3))
-    # the regenerated files land in the repo's diff
-    wx = fl + 624
-    b.append(show(s + 9.2, z, f'<rect x="{wx}" y="302" width="200" height="84" rx="12" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>'
-                  + mono(wx, 294, "git diff", 15, "MUTED")
-                  + "".join(mono(wx + 16, 325 + 22 * i, f"M {name}", 14, "AMBER") for i, name in enumerate(files))))
-    b.append(caption("Generators: one source, written out as each agent's files in your project.", s, s + 5.2))
-    b.append(caption("Change the source, and those files are stale until you run it again.", s + 5.2, s + 9.0))
-    b.append(caption("Commit the output, and every change to the rules is a diff in your repo.", s + 9.0, z))
+    # ---- bindings: a line per binding, from its files to the hooks of the projects it matches
+    bindings = [  # x where it leaves the source, rail y, color, projects, selector, label x and anchor, start
+        (120, 250, "VIOLET", [0, 1, 2], "global: true", 132, "start", t_personal),
+        (300, 296, "CYAN", [0, 1], "repos: github.com/acme/*", 312, "start", t_acme),
+        (775, 342, "AMBER", [0, 1], "repos: github.com/acme/billing  (the package's binding)", 763, "end", t_team),
+    ]
+    paths = {}
+    for k, (sx, ry, col, matched, sel, lx, anchor, a) in enumerate(bindings):
+        for j in matched:
+            hx = hooks[j] + (k - 1) * 18
+            p = paths[k, j] = Path(sx, 198).L(sx, ry).L(hx, ry).L(hx, pills_y)
+            b.append(show(a, T, f'<path d="{p.d()}" fill="none" stroke="{c[col]}" stroke-opacity="{c["EDGE_OP"]}" stroke-width="2" '
+                                f'pathLength="1" stroke-dasharray="1" stroke-dashoffset="1">'
+                                + anim("stroke-dashoffset", [(a, 1), (a + 0.7, 0)]) + "</path>", 0.1))
+            b.append(flow(p, col, a + 0.7, phase=0.3 * j))
+            if k == 2:  # the package's binding carries the skill too
+                b.append(flow(p, "LIME", a + 0.7, phase=0.3 * j + 0.5))
+        tw = 7.8 * len(sel) + 16
+        bx = lx - 8 if anchor == "start" else lx - tw + 8
+        b.append(show(a + 0.5, T, f'<rect x="{bx:g}" y="{ry-24}" width="{tw:g}" height="20" rx="5" fill="{c["BG"]}"/>'
+                      + mono(lx, ry - 9, sel, 13, "MUTED", anchor=anchor)))
 
-    # ---- slide 3: ctxtra
-    s, z = S3, T - 0.1
-    l = lambda t: s + t
-    A, K, B, D = 176, 262, 348, 498  # rows: sources, bindings, projects, agents
-    L, P1, P2, R = 112, 330, 640, 848  # columns: your folder, my-proj, work-proj, team repo
-    SW, HK = 300, 100  # agent strip width; ctxtra's hook sits this far from the strip's center
+    # ---- what each session gets, counted as ctxtra's summary counts it, and the repos' state
+    for x, (files, skills) in zip(PX, [([0, 1, 2], 1), ([0, 1, 2], 1), ([0], 0)]):
+        dots = "".join(f'<circle cx="{x + 8 + 16*n}" cy="{ST + SH + 22}" r="5.5" fill="{c[FILE_COLORS[i]]}"/>'
+                       for n, i in enumerate(files + [3] * skills))
+        n = len(files)
+        text = f"{n} instruction{'s' if n != 1 else ''}" + (f", {skills} skill" if skills else "")
+        b.append(show(t_team + 0.8, T, dots + mono(x + 12 + 16 * (n + skills), ST + SH + 27, text, 13, "MUTED")))
+        b.append(show(t_clean, T, mono(x + 8, ST + SH + 50, "✓ git status: clean", 13, "GREEN")))
 
-    def strip(cx, hook, a):
-        """The agents in one project. Their own files come in from the top, bound files through ctxtra's hook."""
-        hx = cx + hook
-        return show(a, z, f'<rect x="{cx - SW/2:g}" y="{D-34}" width="{SW}" height="68" rx="14" fill="{c["PANEL"]}" stroke="{c["EDGE"]}"/>'
-                    f'<rect x="{hx-34:g}" y="{D-45}" width="68" height="22" rx="11" fill="{c["BG"]}" stroke="url(#g)" stroke-width="2"/>'
-                    + mono(hx, D - 29, "ctxtra", 12, "TEXT", "middle", "700"))
+    # ---- edit a file once: every matching session gets it
+    a = t_edit
+    b.append(show(a, a + 3.4, f'<rect x="54" y="150" width="262" height="34" rx="9" fill="none" stroke="{c["AMBER"]}" stroke-width="2"/>'
+                  + mono(312, 172, "✎ edited", 12, "AMBER", anchor="end"), 0.2))
+    for j in (0, 1):
+        b.append(pulse(paths[1, j], "CYAN", a + 0.5))
+        b.append(show(a + 1.8, a + 3.6, f'<rect x="{PX[j]}" y="{ST}" width="{PW}" height="{SH}" rx="14" fill="none" stroke="{c["CYAN"]}" stroke-width="2"/>'
+                      + mono(PX[j] + PW / 2, ST + SH + 50, "next session: new go-style.md", 12, "CYAN", anchor="middle"), 0.2))
 
-    def strip_agents(cx, a, spread_from=None):
-        out = []
-        for k, (n, lb) in enumerate(agents + [(None, "more")]):
-            x = cx - 125 + k * 50
-            body = agent(x, D, n, lb) if n else (f'<circle cx="{x:g}" cy="{D-8}" r="14" fill="none" stroke="{c["DIM"]}" stroke-dasharray="3 3"/>'
-                                                  + sans(x, D - 2, "+", 17, "MUTED") + sans(x, D + 24, lb, 11, "MUTED"))
-            if spread_from is not None:
-                body = f'<g>{move([(a, f"{spread_from - x:g} 0"), (a + 1.0, "0 0")])}{body}</g>'
-            out.append(show(a + (0.3 if spread_from is not None else 0), z, body, 0.6))
-        return "".join(out)
+    # ---- a team commit waits for review, then goes out
+    a = t_update
+    pin = lambda text: f'<rect x="800" y="85" width="106" height="18" fill="{c["PANEL"]}"/>' + mono(906, 98, text, 12, "CYAN", anchor="end")
+    b.append(show(t_team, a + 2.2, pin("pinned a1b2c3d"), 0.2))
+    b.append(show(a, a + 1.4, f'<rect x="586" y="206" width="334" height="24" rx="6" fill="{c["BG"]}"/>'
+                  + mono(906, 223, "new commit e4f5a6b · waits for your review", 12, "AMBER", anchor="end"), 0.2))
+    b.append(show(a + 1.4, a + 3.0, f'<rect x="660" y="205" width="246" height="26" rx="6" fill="{c["BG"]}" stroke="{c["EDGE"]}"/>'
+                  + mono(672, 223, "$ ctxtra source update", 13) + mono(896, 223, "✓", 13, "GREEN", anchor="end"), 0.2))
+    b.append(show(a + 2.2, T, pin("pinned e4f5a6b"), 0.2))
+    for j in (0, 1):
+        b.append(pulse(paths[2, j], "AMBER", a + 2.4))
 
-    def binding(cx, sel, col, a, dx):
-        """A binding file: a page with a folded corner."""
-        x, y, w, h = cx - 98, K - 29, 196, 58
-        page = (f'<path d="M{x} {y} h{w-14} l14 14 v{h-14} h-{w} z" fill="{c["BG"]}" stroke="{c[col]}" stroke-width="2" stroke-linejoin="round"/>'
-                f'<path d="M{x+w-14} {y} v14 h14" fill="none" stroke="{c[col]}" stroke-width="2" stroke-linejoin="round"/>')
-        return show(a, z, f'<g>{move([(a, f"{dx} 0"), (a + 1.0, "0 0")])}{page}'
-                    + mono(x + 12, y + 22, "binding.yaml", 12, "DIM")
-                    + mono(x + 12, y + 44, sel, 13) + "</g>", 0.5)
+    # the hooks go last, so that no line or highlight covers them
+    for hx in hooks:
+        b.append(f'<rect x="{hx-38}" y="{pills_y}" width="76" height="22" rx="11" fill="{c["BG"]}" stroke="url(#g)" stroke-width="2"/>'
+                 + mono(hx, pills_y + 16, "ctxtra", 12, "TEXT", "700", "middle"))
 
-    # the native files: drawn at my-proj's column, start centered like slide 1
-    shift = [(l(4.2), f"{M - P1:g} 0"), (l(5.2), "0 0")]
-    native = [line(Path(P1, A + 22).L(P1, B - 22), s, z), line(Path(P1, B + 22).L(P1, D - 34), s, z),
-              flow(Path(P1, A + 22).L(P1, D - 34), "VIOLET", l(0.6), z - 0.4),
-              flow(Path(P1, B + 22).L(P1, D - 34), "AMBER", l(1.0), z - 0.4, phase=0.5),
-              show(s, z, mono(P1 - 100, A - 32, "user level", 15, "MUTED") + box(P1, A, 200, "AGENTS.md", "VIOLET")
-                   + box(P1, B, 240, "my-proj/AGENTS.md", "AMBER")),
-              show(s, l(4.4), any_agent(P1, D))]
-    b.append(f'<g>{move(shift)}{"".join(native)}</g>')
-
-    # ctxtra comes in, and the one agent becomes every agent
-    b.append(show(l(3.0), l(5.0), f'<g>{move([(l(3.0), f"{M+300:g} {D-8}"), (l(3.8), f"{M+110:g} {D-8}"), (l(4.2), f"{M+110:g} {D-8}"), (l(5.0), f"{P1-HK:g} {D-34}")])}'
-                  f'<rect x="-74" y="-21" width="148" height="42" rx="12" fill="{c["BG"]}" stroke="url(#g)" stroke-width="2.5"/>'
-                  f'<text x="0" y="8" font-family="{MONO}" font-size="21" font-weight="700" text-anchor="middle">'
-                  f'<tspan fill="url(#g)">ctx</tspan><tspan fill="{c["TEXT"]}">tra</tspan></text></g>', 0.4))
-    b.append(strip(P1, -HK, l(4.6)))
-    b.append(strip_agents(P1, l(4.2), spread_from=P1))
-
-    # your folder, bound to my-proj by folder
-    cyan = Path(L, A + 22).L(L, D - 70).L(P1 - HK, D - 70).L(P1 - HK, D - 45)
-    b.append(line(cyan, s, z, draw=(l(8.4), l(9.0)), col="CYAN"))
-    b.append(flow(cyan, "CYAN", l(9.0), z - 0.4))
-    b.append(show(l(6.6), z, mono(L - 92, A - 32, "~/notes/", 15, "MUTED") + box(L, A, 184, "go-style.md", "CYAN")))
-    b.append(binding(L, "dirs: ~/dev/my-proj", "CYAN", l(7.4), -260))
-
-    # a shared git repo, bound to work-proj by its remote
-    b.append(line(Path(P1 + 100, A).L(P2, A).L(P2, B - 22), l(13.0), z, draw=(l(13.4), l(13.9))))
-    b.append(line(Path(P2, B + 22).L(P2, D - 34), l(13.0), z, draw=(l(13.6), l(14.0))))
-    b.append(flow(Path(P1 + 100, A).L(P2, A).L(P2, D - 34), "VIOLET", l(14.0), z - 0.4))
-    b.append(show(l(13.0), z, box(P2, B, 200, "work-proj/")))
-    b.append(strip(P2, HK, l(13.4)))
-    b.append(strip_agents(P2, l(13.4)))
-    lime = Path(R, A + 46).L(R, D - 70).L(P2 + HK, D - 70).L(P2 + HK, D - 45)
-    b.append(line(lime, s, z, draw=(l(15.6), l(16.2)), col="LIME"))
-    b.append(flow(lime, "LIME", l(16.2), z - 0.4))
-    b.append(show(l(14.0), z, icon("github", R - 52, A - 10, 40)
-                  + mono(R - 22, A - 14, "team-ctx", 16, weight="700") + mono(R - 22, A + 6, "pinned a1b2c3d", 12, "CYAN")
-                  + f'<circle cx="{R-62}" cy="{A+30}" r="6" fill="{c["LIME"]}"/>' + mono(R - 48, A + 36, "team.md", 15)))
-    b.append(binding(R, "repos: org/work-proj", "LIME", l(14.6), 260))
-
-    for x, a, name in [(P1, l(10.2), "my-proj/"), (P2, l(17.4), "work-proj/")]:
-        b.append(show(a, z, mono(x + 12, B + 42, "+0 files", 13, "GREEN")))
-        b.append(show(a - 0.6, z, sans(x, D + 56, "agents in " + name, 13, "MUTED")))
-
-    b.append(caption("ctxtra: start from the same setup. Your agent reads its own files.", s, l(3.2)))
-    b.append(caption("Add ctxtra once. It hooks into every supported agent.", l(3.2), l(6.6)))
-    b.append(caption("Keep your own Markdown files in your own folder.", l(6.6), l(9.6)))
-    b.append(caption("A binding adds them to every agent session in my-proj.", l(9.6), l(13.0)))
-    b.append(caption("Another project? Bind files from a shared git repo.", l(13.0), l(16.4)))
-    b.append(caption("It stays at the commit you accepted. Updates wait for your review.", l(16.4), l(20.6)))
-    b.append(caption("The agents' own files keep working. ctxtra adds only what you bind.", l(20.6), z))
+    for text, a, z in [("ctxtra hooks into every agent you use.", 0, t_personal),
+                       ("Your own instructions reach every session.", t_personal, t_acme),
+                       ("Bind more by folder or Git remote. Worktrees match too.", t_acme, t_team),
+                       ("Add your team's package. It brings its own bindings.", t_team, t_edit - 0.2),
+                       ("Edit a file once. Every matching session gets it, in every agent.", t_edit - 0.2, t_update - 0.2),
+                       ("Team files stay at the commit you accepted, until you take the update.", t_update - 0.2, t_clean - 0.2),
+                       ("Nothing is written into your repos.", t_clean - 0.2, T)]:
+        b.append(show(a, z, f'<text x="{W/2}" y="44" font-size="19" fill="{c["TEXT"]}" text-anchor="middle">{escape(text)}</text>', 0.3))
 
     write(f"story-{theme}.svg", "\n".join(b), W, H,
-          "Out of the box, one agent reads its own files. Generators write each agent's files into your project and "
-          "need a rerun and a new diff after every change. ctxtra hooks into every agent and adds files "
-          "from your own folder or a pinned team repo through bindings, with nothing written into the projects")
+          "ctxtra hooks into every agent. Bindings add your own instruction files and a pinned team package to "
+          "sessions by folder or Git remote, worktrees included. An edited file reaches every matching session, "
+          "a team update waits for your review, and nothing is written into the repos")
 
 
 for theme in THEMES:
@@ -652,5 +503,4 @@ for theme in THEMES:
     team_sync(theme)
     story(theme)
     skill_chat(theme)
-demo()
 social()

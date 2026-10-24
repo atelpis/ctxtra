@@ -1,6 +1,6 @@
 ---
 name: ctxtra
-description: Set up and change ctxtra, which adds the user's instruction files and skills to agent sessions by folder and repository. Use when the user mentions ctxtra, wants their notes or skills in sessions, adds a team repository of agent context, or asks why a session did or didn't get a file.
+description: Set up and change ctxtra, which adds the user's instruction files and skills to agent sessions by folder and repository. Use when the user mentions ctxtra, wants their instructions or skills in sessions, adds a team repository of agent context, or asks why a session did or didn't get a file.
 ---
 
 # ctxtra
@@ -59,7 +59,7 @@ decision (see below). Read all of a command's output, also stderr: notices and w
    fetches and shows the same review, and accepts and dismisses nothing. Ask the user to run
    `ctxtra source update` in their own terminal, and offer to explain the diff it shows.
 5. **"Not a trusted source; skipped" is the protection working.** It isn't an error to clear. Ask who
-   pushes to the repository. If only the user does (their dotfiles, their notes),
+   pushes to the repository. If only the user does (their dotfiles, their own instruction files),
    `ctxtra source add trusted-path` fits. If other people do, pin it with `ctxtra source add git` instead,
    and give the warning below.
 6. **Bind only files the user wrote or reviewed.** Before you bind a file the user didn't write, read it

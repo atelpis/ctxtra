@@ -31,7 +31,7 @@ ctxtra onboard
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/story-dark.svg">
-    <img src="docs/assets/story-light.svg" alt="Out of the box, one agent reads its own files. Generators write each agent's files into your project and need a rerun and a new diff after every change. ctxtra hooks into every agent and adds files from your own folder or a pinned team repo, bound to each project, with nothing written into the projects" width="100%">
+    <img src="docs/assets/story-light.svg" alt="ctxtra hooks into every agent. Bindings add your own instruction files and a pinned team package to sessions by folder or Git remote, worktrees included. An edited file reaches every matching session, a team update waits for your review, and nothing is written into the repos" width="100%">
   </picture>
 </p>
 
@@ -72,17 +72,13 @@ bindings:
           subpath: services/billing/**  # Remote AND session subfolder.
     instructions:
       - /opt/agent-context/billing.md  # Absolute path.
-      - ctxtra://team-ctx/billing.md  # From an added source.
+      - ctxtra://team-ctx/billing-runbook.md  # From an added source.
     skills:
       - ctxtra://team-ctx/skills/billing  # Skills from that source too.
 
 include:
   - ~/dev/team-context/bindings.yaml  # Load bindings from another file.
 ```
-
-<p align="center">
-  <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get four different sets of files from one config" width="100%">
-</p>
 
 ## Ask your agent to set it up
 
@@ -103,6 +99,20 @@ A skill works only when the model decides it fits the task, and sometimes it doe
 always apply belong in the context from the start. ctxtra adds your bound instructions when the session
 starts, chosen by folder and repo, not by the model. Bound skills are listed next to them, for the tasks
 that need them.
+
+Where the agent can show a message, the session starts with a summary. With the config above:
+
+```text
+$ cd ~/dev/acme/billing && claude
+✓ ctxtra added 3 instructions and 2 skills
+Instructions:
+- preferences.md
+- instructions.md
+- go-style.md
+Skills:
+- review
+- deploy
+```
 
 Only what you bind gets in. `ctxtra context show DIR` prints the exact text a session in `DIR` gets, and
 `ctxtra context explain DIR` shows why each binding matched or didn't.
