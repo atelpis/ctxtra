@@ -31,7 +31,7 @@ ctxtra onboard
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/story-dark.svg">
-    <img src="docs/assets/story-light.svg" alt="Out of the box, one agent reads its own files. Generators write each agent's files into your project and need a rerun and a new diff after every change. ctxtra hooks into every agent and adds files from your own folder or a pinned team repo, bound to each project, with nothing written into the projects" width="100%">
+    <img src="docs/assets/story-light.svg" alt="ctxtra hooks into every agent. Bindings add your own instruction files and a pinned team package to sessions by folder or Git remote, worktrees included. An edited file reaches every matching session, a team update waits for your review, and nothing is written into the repos" width="100%">
   </picture>
 </p>
 
