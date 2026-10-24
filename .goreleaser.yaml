@@ -26,11 +26,9 @@ archives:
 checksum:
   name_template: checksums.txt
 
-# The release notes are the version's CHANGELOG.md section (release.yml).
-changelog:
-  disable: true
-
-# release.yml attests the draft's files and then publishes it.
+# release.yml attests the draft's files and then publishes it. Its notes are
+# the version's CHANGELOG.md section, from --release-notes: with
+# changelog.disable, GoReleaser would not read that file.
 release:
   draft: true
   replace_existing_draft: true
