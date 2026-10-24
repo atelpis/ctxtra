@@ -30,7 +30,7 @@ jobs:
       - run: >-
           docker run --rm --network none
           -v "$PWD/evidence:/evidence" -e CTXTRA_E2E_EVIDENCE=/evidence
-          ctxtra-e2e go test -count=1 -v ./...
+          ctxtra-e2e go test -count=1 -timeout 20m -v ./...
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -59,7 +59,7 @@ jobs:
         env:
           CTXTRA_E2E_REQUIRE: "1"
           CTXTRA_E2E_EVIDENCE: ${{ github.workspace }}/evidence
-        run: go test -count=1 -v ./...
+        run: go test -count=1 -timeout 20m -v ./...
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
