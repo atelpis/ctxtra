@@ -1,0 +1,37 @@
+version: 2
+
+project_name: ctxtra
+
+builds:
+  - main: ./cmd/ctxtra
+    binary: ctxtra
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    # The tag, as go install reports it, so every channel prints the same.
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+# The release notes are the version's CHANGELOG.md section (release.yml).
+changelog:
+  disable: true
+
+# release.yml attests the draft's files and then publishes it.
+release:
+  draft: true
+  replace_existing_draft: true
+  prerelease: auto

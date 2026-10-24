@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in ctxtra doesn't work as the docs say.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: The commands you ran and what they printed.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ctxtra version
+      description: The output of `ctxtra version`.
+    validations:
+      required: true
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and its version
+      placeholder: Claude Code 2.4.1
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS
+      placeholder: macOS 27.0, Ubuntu 26.04
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Relevant lines of `ctxtra doctor`
+      description: >-
+        Doctor prints repo remotes, file paths and source URLs, which can name private repos, clients or
+        your employer. Paste only the lines that matter, and replace those names.
+      render: text

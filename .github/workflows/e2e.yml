@@ -4,22 +4,26 @@ name: e2e
 # e2e/agents/package-lock.json, e2e/agents/muse.json and e2e/agents/hermes.ref.
 # No secrets: the agents talk only to the mock.
 
-# Disabled while the repo is private: macOS minutes count 10x against the
-# free Actions quota. Re-enable the triggers below once the repo is public.
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
-  # push:
-  #   branches: [main]
-  # pull_request:
 
 permissions:
   contents: read
+
+concurrency:
+  group: e2e-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   linux:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: docker build -f e2e/Dockerfile -t ctxtra-e2e .
       # The container's user must be able to write the evidence folder.
       - run: mkdir -m 777 evidence
@@ -28,7 +32,7 @@ jobs:
           -v "$PWD/evidence:/evidence" -e CTXTRA_E2E_EVIDENCE=/evidence
           ctxtra-e2e go test -count=1 -v ./...
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-evidence-linux
           path: evidence
@@ -36,15 +40,17 @@ jobs:
   macos:
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
       # Hermes needs Python 3.11 to 3.13.
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
       - run: e2e/agents/install.sh
@@ -54,7 +60,7 @@ jobs:
           CTXTRA_E2E_EVIDENCE: ${{ github.workspace }}/evidence
         run: go test -count=1 -v ./...
       - if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-evidence-macos
           path: evidence
