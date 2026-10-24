@@ -28,6 +28,13 @@ brew install atelpis/tap/ctxtra
 ctxtra onboard
 ```
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/story-dark.svg">
+    <img src="docs/assets/story-light.svg" alt="Out of the box, one agent reads its own files. Generators write each agent's files into your project and need a rerun and a new diff after every change. ctxtra hooks into every agent and adds files from your own folder or a pinned team repo, bound to each project, with nothing written into the projects" width="100%">
+  </picture>
+</p>
+
 ctxtra preloads instructions and makes skills available at session start, using bindings that match
 folders or Git remotes. Bindings in `~/.config/ctxtra/config.yaml` can reference files in different
 locations and sources, and the config can include separate binding files.
@@ -72,6 +79,10 @@ bindings:
 include:
   - ~/dev/team-context/bindings.yaml  # Load bindings from another file.
 ```
+
+<p align="center">
+  <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get four different sets of files from one config" width="100%">
+</p>
 
 ## Ask your agent to set it up
 
