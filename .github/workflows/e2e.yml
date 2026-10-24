@@ -18,7 +18,49 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Docs and images can't change what reaches an agent; the skills can
+  # (TestCtxtraSkill). A change of only those skips the jobs below rather
+  # than the workflow: a skipped job passes a required check, a workflow
+  # that never ran leaves it pending.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      e2e: ${{ steps.check.outputs.e2e }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          # One line per file, true when it needs e2e. jq classifies, so a
+          # file name never reaches the shell. Old names count too: a skill
+          # moved out of skills/ changes the binary.
+          needs='.filename, (.previous_filename // empty)
+            | startswith("skills/") or ((endswith(".md") or startswith("docs/assets/") or . == "LICENSE") | not)'
+          out=
+          if [ "$EVENT" = pull_request ]; then
+            out=$(gh api --paginate "repos/$GH_REPO/pulls/$PR/files" --jq ".[] | $needs") || out=
+          elif [ "$EVENT" = push ]; then
+            out=$(gh api "repos/$GH_REPO/compare/$BEFORE...$AFTER" --jq ".files[] | $needs") || out=
+          fi
+          e2e=true
+          # The APIs return at most 300 (compare) or 3000 files: a longer list may be cut.
+          if [ -n "$out" ] && [ "$(printf '%s\n' "$out" | wc -l)" -lt 300 ] && ! grep -qv '^false$' <<<"$out"; then
+            e2e=false
+          fi
+          echo "e2e=$e2e" | tee -a "$GITHUB_OUTPUT"
+
   linux:
+    needs: changes
+    # Runs when changes failed too: only a clear "false" skips e2e.
+    if: ${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,6 +80,8 @@ jobs:
           path: evidence
 
   macos:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.e2e != 'false' }}
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
