@@ -1,12 +1,8 @@
 {
- "source": "agentsmdcompose lab capture 20261010-235136-63210-T18-claude-run1/00068.json",
  "api": "anthropic",
  "path": "/v1/messages",
- "script": [
-  "read:/fixture/proj/svc/internal/code.txt",
-  "subagent"
- ],
- "role": "main",
+ "script": [],
+ "role": "subagent",
  "reply": "text",
  "body": {
   "model": "claude-opus-5-5",
@@ -81,15 +77,6 @@
     "name": "Bash"
    },
    {
-    "name": "CronCreate"
-   },
-   {
-    "name": "CronDelete"
-   },
-   {
-    "name": "CronList"
-   },
-   {
     "name": "Edit"
    },
    {
@@ -97,9 +84,6 @@
    },
    {
     "name": "ExitWorktree"
-   },
-   {
-    "name": "ListAgents"
    },
    {
     "name": "NotebookEdit"
@@ -142,12 +126,6 @@
     }
    },
    {
-    "name": "ReportFindings"
-   },
-   {
-    "name": "ScheduleWakeup"
-   },
-   {
     "name": "SendMessage"
    },
    {
@@ -163,10 +141,10 @@
     "name": "WebSearch"
    },
    {
-    "name": "Workflow"
+    "name": "Write"
    },
    {
-    "name": "Write"
+    "name": "SubagentHandback"
    }
   ],
   "messages": [
@@ -187,7 +165,11 @@
      },
      {
       "type": "text",
-      "text": "E2E-MAIN-TASK: reply with OK and nothing else."
+      "text": "SUBAGENT-PROBE: reply with OK and nothing else."
+     },
+     {
+      "type": "text",
+      "text": "[removed]"
      }
     ]
    },
@@ -202,42 +184,13 @@
     "role": "assistant",
     "content": [
      {
-      "type": "tool_use",
-      "id": "toolu_mock7",
-      "name": "Read",
-      "input": {
-       "file_path": "/fixture/proj/svc/internal/code.txt"
-      }
-     },
-     {
-      "type": "tool_use",
-      "id": "toolu_mock8",
-      "name": "Agent",
-      "input": {
-       "description": "lab probe",
-       "prompt": "SUBAGENT-PROBE: reply with OK and nothing else.",
-       "subagent_type": "general-purpose"
-      }
+      "type": "text",
+      "text": "[removed]"
      }
     ]
    },
    {
     "role": "user",
-    "content": [
-     {
-      "tool_use_id": "toolu_mock7",
-      "type": "tool_result",
-      "content": "[result]"
-     },
-     {
-      "tool_use_id": "toolu_mock8",
-      "type": "tool_result",
-      "content": "47132456-e697-44ef-bc76-3f2cf82f30cf 8dac97d9-f51c-4a4b-bf70-9b6056398aeb"
-     }
-    ]
-   },
-   {
-    "role": "system",
     "content": [
      {
       "type": "text",

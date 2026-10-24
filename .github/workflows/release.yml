@@ -57,11 +57,14 @@ jobs:
             exit 1
           fi
 
+      # A release candidate takes the notes of its version: v0.2.0-rc.1 those
+      # of "## v0.2.0".
       - name: Take the release notes from CHANGELOG.md
         run: |
-          awk -v h="## $TAG" '$0 == h || index($0, h " ") == 1 { on = 1; next } on && /^## / { exit } on' CHANGELOG.md >"$RUNNER_TEMP/notes.md"
+          version=${TAG%%-*}
+          awk -v h="## $version" '$0 == h || index($0, h " ") == 1 { on = 1; next } on && /^## / { exit } on' CHANGELOG.md >"$RUNNER_TEMP/notes.md"
           if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
-            echo "::error::CHANGELOG.md has no section \"## $TAG\""
+            echo "::error::CHANGELOG.md has no section \"## $version\""
             exit 1
           fi
 
@@ -86,8 +89,8 @@ jobs:
       - name: Publish the release
         run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
 
-  # Opens a PR in the tap; the tap's CI builds the bottles, and the PR is
-  # merged by hand.
+  # Opens a PR in the tap; the tap's CI builds the bottles, and its publish
+  # workflow, run by hand, adds them and closes the PR.
   homebrew:
     needs: release
     if: ${{ !contains(github.ref_name, '-') }}

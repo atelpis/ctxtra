@@ -1,5 +1,4 @@
 {
- "source": "agentsmdcompose lab capture 20261010-235136-63210-T18-codex-exec-run1/00059.json",
  "api": "responses",
  "path": "/v1/responses",
  "script": [
@@ -8,9 +7,9 @@
  ],
  "role": "main",
  "reply": {
-  "tool": "spawn_agent",
+  "tool": "exec_command",
   "args": {
-   "message": "SUBAGENT-PROBE: reply with OK and nothing else."
+   "cmd": "cat '/fixture/proj/svc/internal/code.txt'"
   }
  },
  "body": {
@@ -259,19 +258,6 @@
       "text": "E2E-MAIN-TASK: reply with OK and nothing else."
      }
     ]
-   },
-   {
-    "type": "function_call",
-    "id": "fc_mock3",
-    "name": "exec_command",
-    "arguments": "{\"cmd\": \"cat '/fixture/proj/svc/internal/code.txt'\"}",
-    "call_id": "call_mock3"
-   },
-   {
-    "type": "function_call_output",
-    "id": "fco_01a1294d-7658-71c3-839d-1ccad4029ef7",
-    "call_id": "call_mock3",
-    "output": "[result]"
    }
   ]
  }

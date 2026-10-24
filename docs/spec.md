@@ -453,8 +453,7 @@ plugin files (the events they send, their input fields, the answer fields they r
 arguments of `ctxtra hook`. A new version changes only the binary, and the binary keeps serving every setup
 that a released version wrote with what that setup was promised.
 
-The contract holds from 0.1, the first public release, on. Setups written before 0.1 aren't supported:
-`ctxtra doctor` says what to delete or set up again.
+The contract holds from 0.1, the first release, on.
 
 An upgrade keeps existing setups working with the same capacity. New features may need another
 `ctxtra setup`; a capacity increase may need it too. In either case, the release notes explain when to

@@ -1,5 +1,4 @@
 {
- "source": "agentsmdcompose lab capture 20261010-235136-63210-T17-pi-run1/00063.json",
  "api": "chat",
  "path": "/v1/chat/completions",
  "script": [

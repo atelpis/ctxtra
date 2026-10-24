@@ -2,8 +2,6 @@
 // Messages, OpenAI Chat Completions, OpenAI Responses and Gemini
 // generateContent APIs, streaming or not, records every request, and answers without a model: a text reply, or
 // the next tool call of the test's script.
-//
-// It is a port of the lab's mockllm.py (github.com/atelpis/agentsmdcompose).
 package mock
 
 import (
