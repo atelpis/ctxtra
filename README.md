@@ -18,7 +18,8 @@
 >
 > They don't want to duplicate instructions across agents or rely on generators to keep them in sync.
 
-Context isn't always global. It isn't always local. And it doesn't always belong in the codebase.
+Repositories have boundaries. Agents have their own conventions. Developer context doesn't always fit
+neatly into either.
 
 Let's add another layer.
 
