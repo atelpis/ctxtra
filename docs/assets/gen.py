@@ -2,8 +2,8 @@
 The social preview is rendered from social-preview.svg with:
 rsvg-convert -w 1280 -h 640 docs/assets/social-preview.svg -o docs/assets/social-preview.png
 
-Each picture except the terminal demo comes in a dark and a light variant; the
-README picks one with <picture> and prefers-color-scheme, which GitHub follows.
+Each picture comes in a dark and a light variant; the README picks one with <picture> and
+prefers-color-scheme, which GitHub follows.
 """
 import sys
 from html import escape
@@ -177,88 +177,6 @@ def social():
             + hero_body(c, w, h, top=96, animate=False, paths=False)
             + f'<text x="64" y="{h-48}" font-family="{MONO}" font-size="20" fill="{c["MUTED"]}">github.com/atelpis/ctxtra</text>')
     write("social-preview.svg", body, w, h, "ctxtra")
-
-
-# ---------------------------------------------------------------- demo (dark in both themes: it is a terminal)
-
-def demo():
-    """Four panes, one session each, with the summary that ctxtra shows at session start."""
-    c = THEMES["dark"]
-    w, ph = 1100, 260  # ph: pane height
-    h = 46 + 2 * ph
-    T = 18.0  # loop length, seconds
-    cw = 9.0  # monospace advance at 15px
-    lh = 22
-    # The bindings of the README's example config, one color per binding.
-    personal = [("preferences.md", "VIOLET")], [("review", "VIOLET")]
-    work = [("instructions.md", "CYAN"), ("go-style.md", "CYAN")], [("deploy", "CYAN")]
-    billing = [("billing.md", "AMBER"), ("billing-runbook.md", "AMBER")], [("billing", "AMBER")]
-
-    def bound(*bindings):
-        return [f for fs, _ in bindings for f in fs], [k for _, ks in bindings for k in ks]
-
-    scenes = [
-        ("~/dev/acme/billing", "claude", "# remote is github.com/acme/billing", bound(personal, work)),
-        ("~/wt/billing-fix", "codex", "# a worktree of it, outside ~/dev", bound(personal, work)),
-        ("~/dev/acme/mono/services/billing", "pi", "# github.com/acme/mono, in services/billing", bound(personal, billing)),
-        ("~/Downloads", "claude", "# global only", bound(personal)),
-    ]
-    b = [frame(c, w, h, 14)]
-    b.append(f'<rect x="1" y="1" width="{w-2}" height="44" rx="13" fill="{c["PANEL"]}"/>')
-    b.append(f'<rect x="1" y="30" width="{w-2}" height="15" fill="{c["PANEL"]}"/>')
-    b.append(f'<line x1="1" y1="45" x2="{w-1}" y2="45" stroke="{c["EDGE"]}"/>')
-    b.append(f'<line x1="{w/2}" y1="45" x2="{w/2}" y2="{h-1}" stroke="{c["EDGE"]}"/>')
-    b.append(f'<line x1="1" y1="{45+ph}" x2="{w-1}" y2="{45+ph}" stroke="{c["EDGE"]}"/>')
-    for i, dot in enumerate(["#FF5F57", "#FEBC2E", "#28C840"]):
-        b.append(f'<circle cx="{26+i*22}" cy="23" r="6.5" fill="{dot}"/>')
-    b.append(f'<text x="{w/2}" y="28" font-size="14" fill="{c["MUTED"]}" text-anchor="middle">one config, four sessions</text>')
-
-    def anim(attr, times, values):
-        kt = ";".join(f"{t/T:.4f}" for t in times)
-        return (f'<animate attributeName="{attr}" values="{";".join(values)}" keyTimes="{kt}" '
-                f'dur="{T}s" repeatCount="indefinite"/>')
-
-    fade_out = (T - 0.9, T - 0.3)
-
-    def appear(t, to="1"):
-        return anim("opacity", [0, t, t + 0.01, fade_out[0], fade_out[1], T], ["0", "0", to, to, "0", "0"])
-
-    def text(x, y, body, t):
-        return f'<text x="{x}" y="{y}" font-family="{MONO}" font-size="15" xml:space="preserve">{body}{appear(t)}</text>'
-
-    m = c["MUTED"]
-    start = 0.6
-    for s, (cwd, agent, note, (files, skills)) in enumerate(scenes):
-        x0, y = 28 + (s % 2) * w / 2, 45 + (s // 2) * ph + 34
-        cmd = f"cd {cwd} && {agent}"
-        t0, t1 = start, start + 0.045 * len(cmd)
-        t_out = t1 + 0.45
-        b.append(text(x0, y, f'<tspan fill="{c["DIM"]}">{escape(note)}</tspan>', t0 - 0.3))
-        # the command, revealed by a growing clip
-        full = cw * (len(cmd) + 2) + 6
-        b.append(f'<clipPath id="c{s}"><rect x="{x0}" y="{y+lh-17}" height="{lh+4}" width="{full}">'
-                 + anim("width", [0, t0, t1, T], ["0", "0", f"{full}", f"{full}"]) + "</rect></clipPath>")
-        b.append(f'<g clip-path="url(#c{s})">'
-                 f'<text x="{x0}" y="{y+lh}" font-family="{MONO}" font-size="15" xml:space="preserve">'
-                 f'<tspan fill="{c["GREEN"]}">❯</tspan> <tspan fill="{c["TEXT"]}">cd </tspan><tspan fill="{c["CYAN"]}">{cwd}</tspan>'
-                 f'<tspan fill="{c["TEXT"]}"> &amp;&amp; </tspan><tspan fill="{c["TEXT"]}" font-weight="700">{agent}</tspan></text></g>')
-        # ctxtra's summary, as the agent shows it, each name in its color
-        def count(n, what):
-            return f'{n} {what}{"s" if n != 1 else ""}'
-
-        def items(names):
-            return [f'<tspan fill="{m}">- </tspan><tspan fill="{c[col]}">{name}</tspan>' for name, col in names]
-
-        head = "ctxtra added " + " and ".join(
-            [count(len(files), "instruction")] + ([count(len(skills), "skill")] if skills else []))
-        rows = [f'<tspan fill="{c["GREEN"]}">✓</tspan> <tspan fill="{c["TEXT"]}">{head}</tspan>',
-                f'<tspan fill="{m}">Instructions:</tspan>', *items(files)]
-        if skills:
-            rows += [f'<tspan fill="{m}">Skills:</tspan>', *items(skills)]
-        for k, row in enumerate(rows):
-            b.append(text(x0 + cw * 2, y + lh * (k + 2) + 6, row, t_out + 0.06 * k))
-        start = t_out + 2.6
-    write("demo.svg", "\n".join(b), w, h, "ctxtra demo: four sessions in four folders get the files that the example config binds to them")
 
 
 # ---------------------------------------------------------------- skill chat
@@ -585,5 +503,4 @@ for theme in THEMES:
     team_sync(theme)
     story(theme)
     skill_chat(theme)
-demo()
 social()

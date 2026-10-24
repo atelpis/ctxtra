@@ -80,10 +80,6 @@ include:
   - ~/dev/team-context/bindings.yaml  # Load bindings from another file.
 ```
 
-<p align="center">
-  <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get the files that the config above binds to them" width="100%">
-</p>
-
 ## Ask your agent to set it up
 
 You don't have to learn ctxtra's config to get started — it comes with a skill that teaches your agents
@@ -103,6 +99,20 @@ A skill works only when the model decides it fits the task, and sometimes it doe
 always apply belong in the context from the start. ctxtra adds your bound instructions when the session
 starts, chosen by folder and repo, not by the model. Bound skills are listed next to them, for the tasks
 that need them.
+
+Where the agent can show a message, the session starts with a summary. With the config above:
+
+```text
+$ cd ~/dev/acme/billing && claude
+✓ ctxtra added 3 instructions and 2 skills
+Instructions:
+- preferences.md
+- instructions.md
+- go-style.md
+Skills:
+- review
+- deploy
+```
 
 Only what you bind gets in. `ctxtra context show DIR` prints the exact text a session in `DIR` gets, and
 `ctxtra context explain DIR` shows why each binding matched or didn't.
