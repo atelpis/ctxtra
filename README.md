@@ -36,35 +36,37 @@ schema: ctxtra/v1
 bindings:
   - name: personal
     match:
-      global: true                        # Every session, in every project.
+      global: true  # Every session.
     instructions:
       - ~/dotfiles/agents/preferences.md
     skills:
-      - ~/dev/review-tools/skills/review  # A skill folder containing SKILL.md.
+      - ~/dev/review-tools/skills/review  # Contains SKILL.md.
 
   - name: work
-    match:                                # ANY entry below can match; dirs and repos are alternatives.
+    match:  # Any entry matches; dirs and repos are alternatives.
       dirs:
-        - '~/dev/work/**'                 # This folder and descendants; worktrees match via the main checkout too.
+        # Matches session folders or the main checkout, including worktrees.
+        - '~/dev/work/**'
       repos:
-        - github.com/acme/billing         # This repo, in any clone or worktree; SSH and HTTPS both match.
-        - 'github.com/acme/payments-*'    # All repos whose names start with payments- in this org.
+        # Any clone or worktree; SSH and HTTPS remotes both match.
+        - github.com/acme/billing
+        - 'github.com/acme/payments-*'  # Repo name prefix.
     instructions:
-      - work/instructions.md              # Relative to the YAML file, not the project.
-      - '~/docs/team/**/*.md'             # All Markdown files under this folder, recursively.
+      - work/instructions.md  # Relative to this YAML file.
+      - '~/docs/team/**/*.md'  # Markdown files, recursively.
     skills:
-      - '~/dev/team-tools/skills/**'      # All skill folders under here, recursively.
+      - '~/dev/team-tools/skills/**'  # Skill folders, recursively.
 
   - name: billing-service
     match:
       repos:
         - remote: github.com/acme/mono
-          subpath: services/billing/**    # This remote AND a session started in this part of the monorepo.
+          subpath: services/billing/**  # Remote AND session subfolder.
     instructions:
-      - /opt/agent-context/billing.md       # Absolute paths work too.
-      - ctxtra://team-ctx/billing.md      # A file from a source you've added to ctxtra.
+      - /opt/agent-context/billing.md  # Absolute path.
+      - ctxtra://team-ctx/billing.md  # From an added source.
     skills:
-      - ctxtra://team-ctx/skills/billing  # Skills can come from that source too.
+      - ctxtra://team-ctx/skills/billing  # Skills from that source too.
 ```
 
 ## Ask your agent to set it up
