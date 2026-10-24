@@ -34,6 +34,9 @@ locations and sources, and the config can include separate binding files.
 
 ```yaml
 schema: ctxtra/v1
+include:
+  - ~/dev/team-context/bindings.yaml  # Load bindings from another file.
+
 bindings:
   - name: personal
     match:
