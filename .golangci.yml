@@ -1,0 +1,23 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Writes to the command's output, like the fmt.Fprint* calls that the
+      # std-error-handling preset already excludes.
+      exclude-functions:
+        - io.WriteString
+        - (io.Writer).Write
+        - (*encoding/json.Encoder).Encode
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # Test setup that fails shows up as a failing assertion.
+      - path: _test\.go
+        linters:
+          - errcheck
+
+formatters:
+  enable:
+    - gofmt

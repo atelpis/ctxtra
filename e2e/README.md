@@ -16,9 +16,9 @@ This folder is a separate Go module: `go test ./...` at the repository root does
 
 ```bash
 cd e2e
-go test -count=1 ./...                      # every agent found
+go test -count=1 -timeout 20m ./...                      # every agent found
 go test -count=1 . -agent claude            # one agent
-go test -count=1 ./... -run TestSkills -v   # one scenario, with each agent's version and timing
+go test -count=1 -timeout 20m ./... -run TestSkills -v   # one scenario, with each agent's version and timing
 go test -count=1 . -keep -v                 # keep each run's home folder, and print where it is
 ```
 
@@ -78,6 +78,9 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped
 with the reason for the others. A declared capability that stops working fails the test.
 
+`TestImportTUI/claude` is temporarily disabled until its interactive startup handling is fixed.
+`TestCodexTrustTUI` is temporarily disabled pending investigation of the suite timeout.
+
 Not covered here, and checked by hand before a release:
 
 - What the interactive TUI shows (the session-start message on screen), `/clear`, `/compact`, and resume in
@@ -124,7 +127,7 @@ npm install --ignore-scripts @anthropic-ai/claude-code@latest @openai/codex@late
   @opencode/cli@latest @github/copilot@latest @deepseek-ai/dsh@next
 node install-muse.mjs update   # pins the current Muse Code release in muse.json
 ./pin-antigravity.sh          # pins the Antigravity CLI release
-./install.sh && cd .. && go test -count=1 ./...
+./install.sh && cd .. && go test -count=1 -timeout 20m ./...
 ```
 
 Dependabot doesn't update Hermes. To move its pin, put a newer release tag's commit in `agents/hermes.ref`

@@ -109,11 +109,12 @@ func TestOnboardNeedsTerminal(t *testing.T) {
 			testenv.Home(t)
 			newFakeAgents(t, "claude")
 			args := []string{"--agent", "claude"}
-			if mode == "no terminal" {
+			switch mode {
+			case "no terminal":
 				Interactive = func(IO) bool { return false }
-			} else if mode == "no input" {
+			case "no input":
 				args = append(args, "--no-input")
-			} else {
+			default:
 				args = append(args, "--config", "other.yaml")
 			}
 			if code, _, errOut := runOnboard("\n\n\n", args...); code == 0 || errOut == "" {

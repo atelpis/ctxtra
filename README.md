@@ -19,8 +19,8 @@ It's for you if:
   merges them into one file, and backs up the originals).
 
 ```bash
-go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
-ctxtra onboard            # guided setup, skills and optional instruction import
+brew install atelpis/tap/ctxtra   # or see Quick start below
+ctxtra onboard
 ```
 
 `onboard` previews and asks before installing hooks, explains and offers the bundled skills, then offers
@@ -127,13 +127,25 @@ Only use Claude Code? You still get notes per repo that you don't commit, in eve
 only in the repos that need them. Unlike a hook of your own that prints a file, ctxtra matches by git
 remote, and `ctxtra context explain` says why a file is missing.
 
-The tests run nine of these agents' real binaries against a mock model and check what reaches
-it, and a nightly job runs them against the latest releases. You keep running plain `claude` or `codex`.
+You keep running plain `claude` or `codex`.
 
 ## Quick start
 
+Install with Homebrew on macOS or Linux:
+
+```bash
+brew install atelpis/tap/ctxtra
+```
+
+Or with Go 1.27+ (installs into `~/go/bin`):
+
 ```bash
 go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
+```
+
+Then run:
+
+```bash
 ctxtra onboard
 ```
 
@@ -155,5 +167,5 @@ remote instead, use `--repo github.com/you/my-repo`.
 - [Scenarios](docs/scenarios.md): step by step, from your own notes to a team repo.
 - [Config spec](docs/spec.md).
 
-ctxtra is in preview, and the config format may still change. It runs on macOS and Linux. Made by
-[Alex Telpis](https://github.com/atelpis).
+ctxtra is in preview, and the config format may still change. It runs on macOS and Linux. Changes are in
+the [changelog](CHANGELOG.md); to contribute, see [CONTRIBUTING.md](CONTRIBUTING.md). MIT license.

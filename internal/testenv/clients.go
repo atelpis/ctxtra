@@ -163,7 +163,7 @@ var safePath = regexp.MustCompile(`^[A-Za-z0-9_./-]+$`)
 // no escaping in JSON, YAML, TypeScript, Python and shell.
 func CheckPath(p string) error {
 	if !safePath.MatchString(p) || slices.Contains(strings.Split(p, "/"), "..") {
-		return fmt.Errorf("path %q has characters other than A-Z, a-z, 0-9, _, ., / and -, or ..", p)
+		return fmt.Errorf("path %q has characters other than A-Z, a-z, 0-9, _, ., / and -, or a .. element", p)
 	}
 	return nil
 }

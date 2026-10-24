@@ -23,7 +23,7 @@ func (f *Fixture) LoadClient(dir string) {
 	f.t.Helper()
 	check := func(p string) error {
 		if !safePath.MatchString(p) || slices.Contains(strings.Split(p, "/"), "..") {
-			return fmt.Errorf("path %q has characters other than A-Z, a-z, 0-9, _, ., / and -, or ..", p)
+			return fmt.Errorf("path %q has characters other than A-Z, a-z, 0-9, _, ., / and -, or a .. element", p)
 		}
 		return nil
 	}

@@ -88,7 +88,7 @@ func RunArgs(harness, event string, args Args, in io.Reader, out, errOut io.Writ
 		return 0
 	}
 	if args.Err != nil {
-		io.Copy(io.Discard, io.LimitReader(in, maxInput))
+		_, _ = io.Copy(io.Discard, io.LimitReader(in, maxInput))
 		logEntry(Entry{Ts: ts, Harness: harness, Event: event, Error: "bad hook arguments: " + args.Err.Error()})
 		fmt.Fprintln(out, empty)
 		return 0

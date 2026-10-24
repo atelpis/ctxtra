@@ -365,7 +365,7 @@ func (r *Repo) fetchRef(ctx context.Context, from, ref string) (string, error) {
 		return "", err
 	}
 	commit, err := r.commit(ctx, tmp)
-	r.git(ctx, true, nil, "update-ref", "-d", tmp)
+	_, _ = r.git(ctx, true, nil, "update-ref", "-d", tmp)
 	return commit, err
 }
 
@@ -415,7 +415,7 @@ func (r *Repo) fetch(ctx context.Context, from, refspec string) error {
 // dirSize is the size of the files under dir.
 func dirSize(dir string) int64 {
 	var n int64
-	filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
 		if err == nil && !d.IsDir() {
 			if fi, err := d.Info(); err == nil {
 				n += fi.Size()
@@ -831,7 +831,7 @@ func Touch(dir string, wait time.Duration) error {
 	}
 	defer unlock()
 	now := time.Now()
-	os.Chtimes(dir, now, now)
+	_ = os.Chtimes(dir, now, now)
 	return nil
 }
 

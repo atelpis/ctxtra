@@ -187,7 +187,7 @@ func TestClaudeHookUnderCursor(t *testing.T) {
 type old struct{ agent.Agent }
 
 func (o old) Legacy(_ string, in agent.Input) (agent.Delivery, bool) {
-	d := o.Agent.Delivery()
+	d := o.Delivery()
 	return agent.Delivery{Title: d.Title, Capacity: d.Chunk, Unit: d.Unit, Chunk: d.Chunk, Slots: 1}, in.Slots == 1
 }
 

@@ -41,9 +41,9 @@ show a message.
 ## Install
 
 ```bash
-go install ./cmd/ctxtra      # from a clone; puts the binary in $(go env GOPATH)/bin
-ctxtra setup --dry-run       # show what would change
-ctxtra setup                 # every agent found on this machine, or --agent claude --agent codex
+brew install atelpis/tap/ctxtra   # or: go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
+ctxtra setup --dry-run            # show what would change
+ctxtra setup                      # every agent found on this machine, or --agent claude --agent codex
 ```
 
 `setup` adds hooks that run the binary you started it from, by its full path: agents started from the Dock
