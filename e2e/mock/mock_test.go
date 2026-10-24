@@ -11,12 +11,11 @@ import (
 	"testing"
 )
 
-// The mock decides like the lab's mockllm.py did on requests recorded from
-// real agents: testdata/poc holds such requests, reduced to the parts the
-// decision reads (paths and long texts replaced), with the role and reply the
-// Python mock gave.
-func TestParityWithLabMock(t *testing.T) {
-	files, _ := filepath.Glob("testdata/poc/*.json")
+// testdata/recorded holds requests recorded from real agents, reduced to the
+// parts the decision reads (paths and long texts replaced), with the role and
+// reply each one must get.
+func TestRecordedRequests(t *testing.T) {
+	files, _ := filepath.Glob("testdata/recorded/*.json")
 	if len(files) == 0 {
 		t.Fatal("no fixtures")
 	}
@@ -70,7 +69,7 @@ func TestParityWithLabMock(t *testing.T) {
 				var norm map[string]any
 				_ = json.Unmarshal(got, &norm)
 				if _, ok := want.Args["description"]; ok {
-					want.Args["description"] = norm["description"] // the lab named the probe differently
+					want.Args["description"] = norm["description"] // the recordings used another probe text
 				}
 				if !reflect.DeepEqual(norm, want.Args) {
 					t.Fatalf("args %v, want %v", norm, want.Args)

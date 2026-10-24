@@ -1,5 +1,4 @@
 {
- "source": "agentsmdcompose lab capture 20261010-235136-63210-T18-claude-run1/00070.json",
  "api": "anthropic",
  "path": "/v1/messages",
  "script": [],
@@ -180,6 +179,32 @@
     "output_config": {
      "effort": "medium"
     }
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "[removed]"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": "[removed]"
+   },
+   {
+    "role": "assistant",
+    "content": [
+     {
+      "type": "text",
+      "text": "[removed]"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "content": "[removed]"
    },
    {
     "role": "assistant",

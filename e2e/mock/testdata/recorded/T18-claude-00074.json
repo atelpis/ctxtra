@@ -1,5 +1,4 @@
 {
- "source": "agentsmdcompose lab capture 20261010-235136-63210-T18-claude-run1/00074.json",
  "api": "anthropic",
  "path": "/v1/messages",
  "script": [
@@ -218,7 +217,7 @@
       "id": "toolu_mock8",
       "name": "Agent",
       "input": {
-       "description": "lab probe",
+       "description": "subagent probe",
        "prompt": "SUBAGENT-PROBE: reply with OK and nothing else.",
        "subagent_type": "general-purpose"
       }

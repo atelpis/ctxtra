@@ -1,5 +1,4 @@
 {
- "source": "agentsmdcompose lab capture 20261010-235136-63210-T18-codex-exec-run1/00058.json",
  "api": "responses",
  "path": "/v1/responses",
  "script": [
@@ -7,12 +6,7 @@
   "subagent"
  ],
  "role": "main",
- "reply": {
-  "tool": "exec_command",
-  "args": {
-   "cmd": "cat '/fixture/proj/svc/internal/code.txt'"
-  }
- },
+ "reply": "text",
  "body": {
   "model": "mock-model",
   "stream": true,
@@ -257,6 +251,58 @@
      {
       "type": "input_text",
       "text": "E2E-MAIN-TASK: reply with OK and nothing else."
+     }
+    ]
+   },
+   {
+    "type": "function_call",
+    "id": "fc_mock3",
+    "name": "exec_command",
+    "arguments": "{\"cmd\": \"cat '/fixture/proj/svc/internal/code.txt'\"}",
+    "call_id": "call_mock3"
+   },
+   {
+    "type": "function_call_output",
+    "id": "fco_01a1294d-7658-71c3-839d-1ccad4029ef7",
+    "call_id": "call_mock3",
+    "output": "[result]"
+   },
+   {
+    "type": "function_call",
+    "id": "fc_mock4",
+    "name": "spawn_agent",
+    "namespace": "multi_agent_v1",
+    "arguments": "{\"message\": \"SUBAGENT-PROBE: reply with OK and nothing else.\"}",
+    "call_id": "call_mock4"
+   },
+   {
+    "type": "function_call_output",
+    "id": "fco_01a1294d-766e-71f1-8a05-3a8a8ac5d19e",
+    "call_id": "call_mock4",
+    "output": "01a1294d-7669-75f3-9c46-b5dc96b4d722"
+   },
+   {
+    "type": "function_call",
+    "id": "fc_mock5",
+    "name": "wait_agent",
+    "namespace": "multi_agent_v1",
+    "arguments": "{\"targets\": [\"01a1294d-7669-75f3-9c46-b5dc96b4d722\"], \"timeout_ms\": 60000}",
+    "call_id": "call_mock5"
+   },
+   {
+    "type": "function_call_output",
+    "id": "fco_01a1294d-7687-7220-ba42-1abf8e6ebb3d",
+    "call_id": "call_mock5",
+    "output": "01a1294d-7669-75f3-9c46-b5dc96b4d722"
+   },
+   {
+    "type": "message",
+    "id": "msg_01a1294d-7687-7220-ba42-1acf0a1f3d31",
+    "role": "user",
+    "content": [
+     {
+      "type": "input_text",
+      "text": "[removed]"
      }
     ]
    }
