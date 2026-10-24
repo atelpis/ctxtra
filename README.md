@@ -5,6 +5,14 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="https://github.com/atelpis/ctxtra/actions/workflows/ci.yml"><img src="https://github.com/atelpis/ctxtra/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/atelpis/ctxtra/actions/workflows/e2e.yml"><img src="https://github.com/atelpis/ctxtra/actions/workflows/e2e.yml/badge.svg" alt="e2e"></a>
+  <a href="https://github.com/atelpis/ctxtra/releases/latest"><img src="https://img.shields.io/github/v/release/atelpis/ctxtra" alt="Latest release"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/atelpis/ctxtra"><img src="https://api.scorecard.dev/projects/github.com/atelpis/ctxtra/badge" alt="OpenSSF Scorecard"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/atelpis/ctxtra" alt="MIT license"></a>
+</p>
+
 ctxtra gives each coding agent session the instructions and skills you chose for that repo. Keep them in
 your own folder or in a team repo, and choose which repos get them. ctxtra adds them when a session starts, in every clone and worktree, in Claude Code, Codex, Copilot CLI
 and eight more agents. Nothing is written into your repos.
@@ -19,8 +27,8 @@ It's for you if:
   merges them into one file, and backs up the originals).
 
 ```bash
-go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
-ctxtra onboard            # guided setup, skills and optional instruction import
+brew install atelpis/tap/ctxtra   # or see Install below
+ctxtra onboard                    # guided setup, skills and optional instruction import
 ```
 
 `onboard` previews and asks before installing hooks, explains and offers the bundled skills, then offers
@@ -127,13 +135,43 @@ Only use Claude Code? You still get notes per repo that you don't commit, in eve
 only in the repos that need them. Unlike a hook of your own that prints a file, ctxtra matches by git
 remote, and `ctxtra context explain` says why a file is missing.
 
-The tests run nine of these agents' real binaries against a mock model and check what reaches
-it, and a nightly job runs them against the latest releases. You keep running plain `claude` or `codex`.
+You keep running plain `claude` or `codex`.
+
+## How it's tested
+
+Agents change their hook formats and limits often, and a hook that breaks fails quietly. So the tests run
+nine of these agents' real binaries, at pinned versions, against a mock model on `127.0.0.1`, and check
+what reaches the model: every line once and in order, at session start and in subagents, up to each
+agent's measured size limit, and whole files dropped from the end above it. A nightly job runs the same tests against the agents' latest releases
+and opens an issue when one breaks. Upgrade tests start each agent with the setup that every earlier
+release wrote, so an upgrade of ctxtra never needs a new `ctxtra setup` unless the changelog says so.
+[e2e/README.md](e2e/README.md) lists every scenario, and what is still checked by hand.
+
+## Install
+
+```bash
+brew install atelpis/tap/ctxtra                          # macOS and Linux
+go install github.com/atelpis/ctxtra/cmd/ctxtra@latest   # or with Go 1.27+, into ~/go/bin
+```
+
+On Linux, you can also take a binary from the [latest release](https://github.com/atelpis/ctxtra/releases/latest).
+Check it, and put it in a folder in your `PATH` that stays the same, because the hooks run it by its full path:
+
+```bash
+gh release download --repo atelpis/ctxtra --pattern 'ctxtra_*_linux_amd64.tar.gz'
+gh attestation verify ctxtra_*_linux_amd64.tar.gz --repo atelpis/ctxtra
+mkdir -p ~/.local/bin && tar -xzf ctxtra_*_linux_amd64.tar.gz -C ~/.local/bin ctxtra
+```
+
+To upgrade, replace the binary in the same place. On macOS, use Homebrew or `go install`: macOS blocks
+a binary downloaded with a browser, because the release binaries aren't notarized.
+
+To uninstall, run `ctxtra setup --remove` first, and then remove the binary (`brew uninstall ctxtra`).
+Otherwise the hooks stay in your agents' configs and point to a missing binary.
 
 ## Quick start
 
 ```bash
-go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
 ctxtra onboard
 ```
 
@@ -155,5 +193,6 @@ remote instead, use `--repo github.com/you/my-repo`.
 - [Scenarios](docs/scenarios.md): step by step, from your own notes to a team repo.
 - [Config spec](docs/spec.md).
 
-ctxtra is in preview, and the config format may still change. It runs on macOS and Linux. Made by
+ctxtra is in preview, and the config format may still change. It runs on macOS and Linux. Changes are in
+the [changelog](CHANGELOG.md); to contribute, see [CONTRIBUTING.md](CONTRIBUTING.md). MIT license. Made by
 [Alex Telpis](https://github.com/atelpis).
