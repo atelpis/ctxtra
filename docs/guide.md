@@ -74,7 +74,7 @@ ctxtra skill install ctxtra   # writes it to ~/.ctxtra/skills/ctxtra, and adds a
 ```
 
 The binding is an ordinary one, named `ctxtra`, with `match: {global: true}`: `ctxtra binding remove ctxtra`
-stops adding the skill. Then ask any agent, for example "add my notes to every session in my work
+stops adding the skill. Then ask any agent, for example "add my instructions to every session in my work
 repositories". The skill tells the agent to ask you before every change, and never to trust a repository or
 accept a new commit for you. Before setup, you can paste the output of `ctxtra skill show ctxtra` into an
 agent to start.
@@ -122,22 +122,22 @@ bindings:
     match:
       global: true
     instructions:
-      - ~/notes/agents/me.md
+      - ~/agent-context/me.md
   - name: work
     match:
       repos:
         - github.com/acme/**
     instructions:
-      - ~/notes/agents/work.md
+      - ~/agent-context/work.md
     skills:
-      - ~/notes/skills/deploy
+      - ~/agent-context/skills/deploy
 ```
 
 Or add a binding with a command. It keeps the rest of the config as you wrote it, and writes the binding
 only when its files exist and are trusted:
 
 ```bash
-ctxtra binding add work --repo 'github.com/acme/**' --instruction ~/notes/agents/work.md --skill ~/notes/skills/deploy
+ctxtra binding add work --repo 'github.com/acme/**' --instruction ~/agent-context/work.md --skill ~/agent-context/skills/deploy
 ```
 
 Bindings can also live in their own files, which the config includes: your dotfiles, or a team repository.
@@ -172,7 +172,7 @@ ctxtra source restore          # a new laptop: fetch exactly the accepted commit
 `ctxtra source list`, `ctxtra binding-file list` and `ctxtra binding list` show what the config has; each
 group has `remove` too.
 
-Full spec: [spec.md](spec.md). Use cases, from your own notes to a team repository you
+Full spec: [spec.md](spec.md). Use cases, from your own instruction files to a team repository you
 contribute to: [scenarios.md](scenarios.md). `ctxtra help config` and `ctxtra help scenarios` show
 them for the version you have.
 
@@ -259,7 +259,7 @@ session folder: a binding for `~/dev/mono/billing/**` doesn't reach a session st
   subagent is a session of its own there, so it gets the files from the same hook. Antigravity asks before
   it reads a file outside the workspace, such as a bound skill's `SKILL.md`, and headless runs (`agy -p`)
   refuse it. To skip the question, allow your skill folders, not everything, in
-  `~/.gemini/antigravity-cli/settings.json`: `"permissions": {"allow": ["read_file(/Users/me/notes/skills)"]}`.
+  `~/.gemini/antigravity-cli/settings.json`: `"permissions": {"allow": ["read_file(/Users/me/agent-context/skills)"]}`.
 - Hermes: the plugin reads the session folder with `agent.runtime_cwd.resolve_agent_cwd()`, the way Hermes
   tells plugin authors to. With `plugins.isolation: host`, plugins run in another process, which may not
   know the session folder: then the plugin uses that process's folder, and folder and repository bindings

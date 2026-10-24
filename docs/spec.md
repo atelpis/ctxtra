@@ -39,7 +39,7 @@ bindings:                             # your own bindings, see Binding file belo
     match:
       global: true
     instructions:
-      - ~/notes/agents/me.md          # relative paths are relative to this file's folder
+      - ~/agent-context/me.md          # relative paths are relative to this file's folder
 
 include:                              # binding files, applied after the bindings above, in this order
   - bindings/personal.yaml            # relative to this file's folder
@@ -298,7 +298,7 @@ bindings:
     match:
       global: true                    # every session
     instructions:
-      - ~/notes/agents/me.md
+      - ~/agent-context/me.md
   - name: work
     match:                            # matches if ANY entry matches
       dirs:
@@ -308,7 +308,7 @@ bindings:
         - remote: github.com/acme/mono
           subpath: services/billing/** # remote AND subpath
     instructions:
-      - ../notes/work.md              # relative to this binding file's folder
+      - ../agents/work.md              # relative to this binding file's folder
     skills:
       - ~/skills/deploy               # a folder with a SKILL.md
 ```
@@ -349,11 +349,11 @@ any of them matches.
 - Each path is absolute, starts with `~`, is relative to the folder of the file the binding is in (the
   config or a binding file), or is a `ctxtra://<source>/<path>` reference.
 - `instructions` and `skills` support the same doublestar globs as `match`. Quote patterns in YAML
-  and on the command line, for example `instructions: ['notes/**/*.md']` or
-  `ctxtra binding add notes --global --instruction '~/notes/**/*.md'`. Skill patterns select folders containing a regular `SKILL.md`, so `skills/**` can select skills
+  and on the command line, for example `instructions: ['agents/**/*.md']` or
+  `ctxtra binding add mine --global --instruction '~/agent-context/**/*.md'`. Skill patterns select folders containing a regular `SKILL.md`, so `skills/**` can select skills
   recursively without selecting their parent folders.
 - Glob metacharacters in a path are interpreted as patterns; for literal braces use character classes,
-  for example `notes/[{]draft[}].md` to select `notes/{draft}.md`. Metacharacters in a resolved parent
+  for example `agents/[{]draft[}].md` to select `agents/{draft}.md`. Metacharacters in a resolved parent
   folder (such as the home or config folder) remain literal.
 - Entries apply in list order; each pattern expands in lexical path order. Overlapping entries are
   deduplicated at their first position. A pattern with no matches is reported and skipped.

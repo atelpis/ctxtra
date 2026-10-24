@@ -1,6 +1,6 @@
 # Use cases
 
-How ctxtra is meant to be used, from your own notes to a team repository you contribute to. Each case
+How ctxtra is meant to be used, from your own instruction files to a team repository you contribute to. Each case
 shows the commands and what they print. The rules behind them are in [spec.md](spec.md).
 
 Two words you will see:
@@ -19,21 +19,21 @@ The cases:
 2. [My own files in my own repository](#2-my-own-files-in-my-own-repository)
 3. [A team repository: first use and the first change](#3-a-team-repository-first-use-and-the-first-change)
 4. [The maintainer widens a match block and adds a skill](#4-the-maintainer-widens-a-match-block-and-adds-a-skill)
-5. [Things change](#5-things-change): my notes get a remote, my clone moves, I leave the team, a new laptop
+5. [Things change](#5-things-change): my instructions folder gets a remote, my clone moves, I leave the team, a new laptop
 6. [Tricky layouts](#6-tricky-layouts): two repositories with the same name, editing the team repository, a
    submodule
 7. [A team repository tries to read files outside itself or run commands](#7-a-team-repository-tries-to-read-files-outside-itself-or-run-commands)
 
 ## 1. My own files, no git
 
-You keep notes in `~/notes/agents/`, which is not a git repository.
+You keep your instruction files in `~/agent-context/`, which is not a git repository.
 
 ```text
 $ ctxtra setup
-$ ctxtra binding add me --global --instruction ~/notes/agents/me.md
+$ ctxtra binding add me --global --instruction ~/agent-context/me.md
 created ~/.config/ctxtra/config.yaml
 added binding me to ~/.config/ctxtra/config.yaml: for every session
-  instructions: ~/notes/agents/me.md
+  instructions: ~/agent-context/me.md
 new sessions get it; a running session keeps what it got at its start
 ```
 
@@ -46,7 +46,7 @@ bindings:
     match:
       global: true
     instructions:
-      - ~/notes/agents/me.md
+      - ~/agent-context/me.md
 ```
 
 ```text
@@ -60,7 +60,7 @@ Edit your file, and the next session gets the new text. There is no ctxtra comma
 
 ## 2. My own files in my own repository
 
-Your bindings and notes live in your dotfiles repository, cloned to `~/dev/dotfiles` on two laptops.
+Your bindings and instruction files live in your dotfiles repository, cloned to `~/dev/dotfiles` on two laptops.
 Files in a repository with a remote are read only when you trust the repository, so add the repository as
 a trusted source, with its binding file:
 
@@ -69,7 +69,7 @@ $ ctxtra source add trusted-path ~/dev/dotfiles --include ctxtra/work.yaml
 added source dotfiles (trusted-path: ~/dev/dotfiles); changes apply right away
 included ctxtra://dotfiles/ctxtra/work.yaml
   binding work: for github.com/acme/**
-    instructions: notes/work.md
+    instructions: agents/work.md
 ```
 
 The config now has, after your own bindings from case 1:
@@ -145,7 +145,7 @@ ctxtra's store.
 
 ```diff
      instructions:
-       - ~/notes/agents/work.md
+       - ~/agent-context/work.md
 +      - ctxtra://team-ctx/jira-ticket.md
 ```
 
@@ -215,7 +215,7 @@ clone:
 
 ```diff
      instructions:
-       - ~/notes/agents/work.md
+       - ~/agent-context/work.md
 +      - ~/dev/team-ctx/jira-ticket.md        # served as ctxtra://team-ctx/jira-ticket.md
 ```
 
@@ -295,26 +295,26 @@ Where it can surprise you:
 
 ## 5. Things change
 
-### 5a. Your notes folder gets a remote
+### 5a. Your instructions folder gets a remote
 
-`~/notes` was a `git init` folder without a remote, so its files were trusted. You push it to GitHub:
+`~/agent-context` was a `git init` folder without a remote, so its files were trusted. You push it to GitHub:
 
 ```text
-$ git -C ~/notes remote add origin git@github.com:acme/my-notes
-$ git -C ~/notes push -u origin main
+$ git -C ~/agent-context remote add origin git@github.com:acme/my-agent-context
+$ git -C ~/agent-context push -u origin main
 $ claude
 ctxtra added nothing; 1 problem (run ctxtra doctor)
 $ ctxtra doctor
-  PROBLEM: me (~/.config/ctxtra/config.yaml): ~/notes/agents/me.md is in ~/notes, which has the remote
-    github.com/acme/my-notes and is not a trusted source; skipped. If only you push to the repository:
-    ctxtra source add trusted-path ~/notes; else pin it: ctxtra source add git ~/notes
+  PROBLEM: me (~/.config/ctxtra/config.yaml): ~/agent-context/me.md is in ~/agent-context, which has the remote
+    github.com/acme/my-agent-context and is not a trusted source; skipped. If only you push to the repository:
+    ctxtra source add trusted-path ~/agent-context; else pin it: ctxtra source add git ~/agent-context
 ```
 
 The file is skipped, not served from an old copy. If only you push to the repository:
 
 ```text
-$ ctxtra source add trusted-path ~/notes
-added source notes (trusted-path: ~/notes); changes apply right away
+$ ctxtra source add trusted-path ~/agent-context
+added source agent-context (trusted-path: ~/agent-context); changes apply right away
 ```
 
 In Cursor, Copilot, OpenCode, Antigravity, Hermes and DSH the file is gone without a message: only `ctxtra context files` and `doctor` say why.
@@ -420,7 +420,7 @@ $ ctxtra context files ~/dev/acme/billing
 problem: work (~/dev/dotfiles/ctxtra/work.yaml): ~/dev/dotfiles/vendor/team-ctx/jira-ticket.md is in
   ~/dev/dotfiles/vendor/team-ctx, which has the remote github.com/acme/team-ctx and is not a trusted
   source; skipped. ...
-/Users/you/dev/dotfiles/notes/work.md
+/Users/you/dev/dotfiles/agents/work.md
 ```
 
 A trusted source covers only its own repository. Add the team repository by its URL (case 3) and use

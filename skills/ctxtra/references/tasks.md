@@ -12,7 +12,7 @@ import existing instructions. When you perform setup for the user, use the steps
 1. `ctxtra version`. If it fails, ctxtra isn't installed: show the user the install steps from the
    project's README and stop.
 2. `ctxtra doctor`: shows the config path, whether a config exists, and which agents have hooks.
-3. Ask what the user wants in their sessions, and where: their own notes in every session, rules for some
+3. Ask what the user wants in their sessions, and where: their own instructions in every session, rules for some
    repositories, a team repository. Ask for the files. Don't invent instruction files for them.
 4. Add the first binding with `ctxtra binding add` (see "Add or change a binding" below). It creates the
    config.
@@ -34,8 +34,8 @@ so that every agent gets them. Do every step; don't skip the files of an agent.
    agent that is set up and lists them. Don't look for other files: the list is complete.
 2. Read every file in full, and the files they import (a line `@path` in Claude Code's files). Rules 6 and
    7 in `SKILL.md` apply.
-3. Ask the user where to keep the new file. Suggest `~/.config/ctxtra/instructions.md`, or their notes or
-   dotfiles folder if they have one. A folder in a git repository needs a trusted source (rule 5).
+3. Ask the user where to keep the new file. Suggest `~/.config/ctxtra/instructions.md`, or their own
+   instructions or dotfiles folder if they have one. A folder in a git repository needs a trusted source (rule 5).
 4. Draft one file with every rule of every file. Don't write it yet:
    - Rules that say the same thing become one rule. Keep the user's words; don't add rules of your own.
    - Drop no rule. If two rules disagree, ask the user which one to keep.

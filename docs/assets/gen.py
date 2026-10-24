@@ -289,9 +289,9 @@ def skill_chat(theme):
 
     # (who, rows, time); a row is (kind, text): p plain, c a command to run, r a command the agent ran
     msgs = [
-        ("you", [("p", "Add my Go notes to every acme repo")], 0.6),
+        ("you", [("p", "Add my Go instructions to every acme repo")], 0.6),
         ("agent", [("p", "I'll add this binding. OK to run it?"),
-                   ("c", "ctxtra binding add go --repo 'github.com/acme/**' --instruction ~/notes/go-style.md")], 2.4),
+                   ("c", "ctxtra binding add go --repo 'github.com/acme/**' --instruction ~/agent-context/go-style.md")], 2.4),
         ("you", [("p", "Yes")], 4.6),
         ("agent", [("p", "✓ Done. New sessions in acme repos get go-style.md, in every agent.")], 5.8),
         ("you", [("p", "Why didn't my billing session get the deploy skill?")], 8.2),
@@ -624,7 +624,7 @@ def story(theme):
     cyan = Path(L, A + 22).L(L, D - 70).L(P1 - HK, D - 70).L(P1 - HK, D - 45)
     b.append(line(cyan, s, z, draw=(l(8.4), l(9.0)), col="CYAN"))
     b.append(flow(cyan, "CYAN", l(9.0), z - 0.4))
-    b.append(show(l(6.6), z, mono(L - 92, A - 32, "~/notes/", 15, "MUTED") + box(L, A, 184, "go-style.md", "CYAN")))
+    b.append(show(l(6.6), z, mono(L - 92, A - 32, "~/agent-context/", 15, "MUTED") + box(L, A, 184, "go-style.md", "CYAN")))
     b.append(binding(L, "dirs: ~/dev/my-proj", "CYAN", l(7.4), -260))
 
     # a shared git repo, bound to work-proj by its remote
