@@ -5,78 +5,79 @@
   </picture>
 </p>
 
-ctxtra gives each coding agent session the instructions and skills you chose for that repo. Keep them in
-your own folder or in a team repo, and choose which repos get them. ctxtra adds them when a session starts, in every clone and worktree, in Claude Code, Codex, Copilot CLI
-and eight more agents. Nothing is written into your repos.
+> Alice works across dozens of repositories, spanning multiple projects and teams.
+>
+> Alice has built up a collection of instructions and skills for her AI agents. Some she needs in certain
+> repositories, others in different ones, and a few everywhere.
+>
+> Bob likes some of Alice's workflows and wants to use them too. Maybe not all of them — he has his own
+> preferences.
+>
+> Neither wants to impose their setup on the rest of the team, change the repositories they work on, or
+> rearrange their directories just to make context inheritance work.
+>
+> They don't want to duplicate instructions across agents or rely on generators to keep them in sync.
 
-It's for you if:
+Repositories have boundaries. Agents have their own conventions. Developer context doesn't always fit
+neatly into either.
 
-- your team has common rules for a specific set of repos, like all your Go services, and copies them into
-  each one with a PR,
-- you have notes for a repo that you can't or don't want to commit, like a client's repo or your team's,
-- you run agents in worktrees, and a new worktree starts without your `CLAUDE.local.md`,
-- you use more than one agent, and keep copying text between `CLAUDE.md` and `AGENTS.md` (`ctxtra import`
-  merges them into one file, and backs up the originals).
+Let's add another layer.
 
 ```bash
-brew install atelpis/tap/ctxtra   # or see Quick start below
+brew install atelpis/tap/ctxtra
 ctxtra onboard
 ```
 
-`onboard` previews and asks before installing hooks, explains and offers the bundled skills, then offers
-to start an installed agent to help bring your existing instructions into ctxtra. It needs an interactive
-terminal. For scripts or hook maintenance, use `ctxtra setup` (`--dry-run` lists the changes without writing them).
-
-`setup` adds its hooks to the agents' user-level configs and backs up each file first. `ctxtra setup --remove`
-takes out only its hooks. Your repos, their `AGENTS.md` and your skill folders stay as they are. If ctxtra
-fails or goes missing, sessions start as usual, without the files. ctxtra's hook never uses the network.
-
-<p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/story-dark.svg">
-    <img src="docs/assets/story-light.svg" alt="Out of the box, one agent reads its own files. Generators write each agent's files into your project and need a rerun and a new diff after every change. ctxtra hooks into every agent and adds files from your own folder or a pinned team repo, bound to each project, with nothing written into the projects" width="100%">
-  </picture>
-</p>
-
-## Bind your files, don't copy them
-
-Generators write each agent's files into your repo. Commit them, and every edit means a rerun and a generated
-diff. Don't commit them, and every new clone and worktree needs a rerun. ctxtra leaves your files where they
-are and binds them instead:
+ctxtra preloads instructions and makes skills available at session start, using bindings that match
+folders or Git remotes. Bindings in `~/.config/ctxtra/config.yaml` can reference files in different
+locations and sources, and the config can include separate binding files.
 
 ```yaml
+schema: ctxtra/v1
 bindings:
-  - name: go
+  - name: personal
     match:
-      dirs: ['~/dev/**']              # every repo under ~/dev
-      repos: ['github.com/acme/**']   # every acme repo, wherever it's cloned
-    instructions: [~/notes/go-style.md]
-    skills: [~/notes/skills/review]
+      global: true  # Every session.
+    instructions:
+      - ~/dotfiles/agents/preferences.md
+    skills:
+      - ~/dev/review-tools/skills/review  # Contains SKILL.md.
+
+  - name: work
+    match:  # Any entry matches; dirs and repos are alternatives.
+      dirs:
+        # Matches session folders or the main checkout, including worktrees.
+        - '~/dev/work/**'
+      repos:
+        # Any clone or worktree; SSH and HTTPS remotes both match.
+        - github.com/acme/billing
+        - 'github.com/acme/payments-*'  # Repo name prefix.
+    instructions:
+      - work/instructions.md  # Relative to this YAML file.
+      - '~/docs/team/**/*.md'  # Markdown files, recursively.
+    skills:
+      - '~/dev/team-tools/skills/**'  # Skill folders, recursively.
+
+  - name: billing-service
+    match:
+      repos:
+        - remote: github.com/acme/mono
+          subpath: services/billing/**  # Remote AND session subfolder.
+    instructions:
+      - /opt/agent-context/billing.md  # Absolute path.
+      - ctxtra://team-ctx/billing.md  # From an added source.
+    skills:
+      - ctxtra://team-ctx/skills/billing  # Skills from that source too.
+
+include:
+  - ~/dev/team-context/bindings.yaml  # Load bindings from another file.
 ```
-
-- Match by folder, by git remote, or by one folder of a monorepo. Worktrees match too, wherever they are on
-  disk, including the one your agent created a minute ago.
-- Your Markdown, your config and your code can each live in a different place: a notes folder, your
-  dotfiles, a team repo on GitHub.
-- Bind instructions and skills the same way. Globs work too: `~/notes/**/*.md`.
-- The agents' own `AGENTS.md` and `CLAUDE.md` files keep working. ctxtra only adds to them. Already commit
-  rules with a generator, or sync your skills? Keep that, and use ctxtra for the rest: notes you don't
-  commit, and rules for only some repos.
-- Each session gets the files for the folder it starts in. If the agent then works in another repo, the
-  optional `ctxtra-follow` skill tells it how to get that repo's files, but like any skill, the model can
-  miss it.
-
-<p align="center">
-  <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get four different sets of files from one config" width="100%">
-</p>
 
 ## Ask your agent to set it up
 
-ctxtra ships with skills that teach your agents its commands and config, so you can try it without reading
-the docs: `ctxtra skill install ctxtra` adds them. Then ask any agent in your own words: to add your notes to some repos,
-to add your team's repo, to move your existing `CLAUDE.md` and `AGENTS.md` into ctxtra, or why a session
-didn't get a file. The agent shows you each command before it runs it and waits for your OK. It never
-trusts a repo or accepts a team update for you.
+You don't have to learn ctxtra's config to get started — it comes with a skill that teaches your agents
+to operate ctxtra. Install it during the interactive `ctxtra onboard` flow or later with
+`ctxtra skill install ctxtra`.
 
 <p align="center">
   <picture>
@@ -123,7 +124,7 @@ you run it.
 Claude Code · Codex CLI · GitHub Copilot CLI · Cursor (CLI and app) · OpenCode · Pi · Antigravity · Devin ·
 Hermes Agent · Muse Code · DeepSeek Harness
 
-Only use Claude Code? You still get notes per repo that you don't commit, in every worktree, and skills
+Only use Claude Code? You still get instructions per repo that you don't commit, in every worktree, and skills
 only in the repos that need them. Unlike a hook of your own that prints a file, ctxtra matches by git
 remote, and `ctxtra context explain` says why a file is missing.
 
@@ -149,22 +150,22 @@ Then run:
 ctxtra onboard
 ```
 
-Then open your agent in one of your repos and ask it, for example: "Use ctxtra to add a notes file for this
+Then open your agent in one of your repos and ask it, for example: "Use ctxtra to add an instruction file for this
 repo to every session here." Or do it yourself, in the repo:
 
 ```bash
-mkdir -p ~/notes && touch ~/notes/my-repo.md       # write your notes for this repo in this file
-ctxtra binding add my-repo --dir "$PWD" --instruction ~/notes/my-repo.md
+mkdir -p ~/agent-context && touch ~/agent-context/my-repo.md       # write your instructions for this repo in this file
+ctxtra binding add my-repo --dir "$PWD" --instruction ~/agent-context/my-repo.md
 ctxtra context explain    # what a session here gets, and why
 ```
 
-The next session in this repo, or in any worktree of it, gets your notes. To match every clone by its
+The next session in this repo, or in any worktree of it, gets your instructions. To match every clone by its
 remote instead, use `--repo github.com/you/my-repo`.
 
 ## Docs
 
 - [Guide](docs/guide.md): every command, how each agent gets the text, and the limits.
-- [Scenarios](docs/scenarios.md): step by step, from your own notes to a team repo.
+- [Scenarios](docs/scenarios.md): step by step, from personal instructions to a team repo.
 - [Config spec](docs/spec.md).
 
 ctxtra is in preview, and the config format may still change. It runs on macOS and Linux. Changes are in
