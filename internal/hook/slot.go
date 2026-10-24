@@ -312,7 +312,7 @@ func clean(d string, gens []string) {
 // changes when clean makes its lock to check it.
 func lastUse(dir string) time.Time {
 	var last time.Time
-	filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(dir, func(path string, e fs.DirEntry, err error) error {
 		if err != nil || path == dir || e.Name() == "lock" {
 			return nil
 		}

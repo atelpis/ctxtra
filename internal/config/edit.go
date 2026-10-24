@@ -417,7 +417,7 @@ func same(before, after []byte, change func(map[string]any)) bool {
 	if yaml.Unmarshal(before, &a) != nil || yaml.Unmarshal(after, &b) != nil || a == nil {
 		return false
 	}
-	defer func() { recover() }() // a change that doesn't fit the data: not the same
+	defer func() { _ = recover() }() // a change that doesn't fit the data: not the same
 	change(a)
 	return reflect.DeepEqual(a, b)
 }

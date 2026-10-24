@@ -207,7 +207,7 @@ func TestJSON(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got, want := JSON.Len(s), len(b)-2; got != want && !(got > want && !utf8.ValidString(s)) {
+		if got, want := JSON.Len(s), len(b)-2; got != want && (got < want || utf8.ValidString(s)) {
 			t.Errorf("%q: %d, want %d", s, got, want)
 		}
 	}

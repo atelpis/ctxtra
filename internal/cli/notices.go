@@ -59,7 +59,7 @@ func remember(agents []string) {
 	for _, a := range agents {
 		setups.Detect(a)
 	}
-	state.WriteSetups(setups)
+	_ = state.WriteSetups(setups)
 }
 
 // trustNote is what a notice adds when its command changes the hooks of

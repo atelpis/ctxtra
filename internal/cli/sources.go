@@ -405,7 +405,7 @@ func (s *sources) addGitClone(dir string, o addOptions) error {
 	}
 	if err := s.addSource(name, [][2]string{{"git", url}, {"branch", branch}, {"commit", commit}}, o.includes); err != nil {
 		if mapped {
-			state.Unmap(c.Top)
+			_ = state.Unmap(c.Top)
 		}
 		return err
 	}
@@ -449,7 +449,7 @@ func (s *sources) mapToSource(same []config.Source, top, url string, o addOption
 	if len(o.includes) > 0 {
 		if err := s.includeFrom(src, o.includes, false); err != nil {
 			if mapped {
-				state.Unmap(top)
+				_ = state.Unmap(top)
 			}
 			return err
 		}
@@ -804,8 +804,8 @@ func mapList(l []string, f func(string) string) []string {
 // bindings.
 func (s *sources) listSourceBindingFiles(name, root string) {
 	var found []string
-	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || !(strings.HasSuffix(p, ".yaml") || strings.HasSuffix(p, ".yml")) {
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !strings.HasSuffix(p, ".yaml") && !strings.HasSuffix(p, ".yml") {
 			return nil
 		}
 		if b, err := fsutil.ReadBounded(p, config.MaxFileBytes); err == nil && reSchema.Match(b) && !reConfigKey.Match(b) {

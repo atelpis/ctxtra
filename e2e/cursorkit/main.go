@@ -50,7 +50,7 @@ func main() {
 	chars := fs.Int("chars", 100_000, "prepare: size of the bound file in characters")
 	delay := fs.Duration("delay", 0, "prepare: how long the hook waits before it answers")
 	model := fs.String("model", "auto", "cli: cursor-agent model")
-	fs.Parse(os.Args[2:])
+	_ = fs.Parse(os.Args[2:])
 	if *dir == "" {
 		fail(errors.New("-dir is required"))
 	}
