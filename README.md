@@ -72,7 +72,7 @@ bindings:
           subpath: services/billing/**  # Remote AND session subfolder.
     instructions:
       - /opt/agent-context/billing.md  # Absolute path.
-      - ctxtra://team-ctx/billing.md  # From an added source.
+      - ctxtra://team-ctx/billing-runbook.md  # From an added source.
     skills:
       - ctxtra://team-ctx/skills/billing  # Skills from that source too.
 
@@ -81,7 +81,7 @@ include:
 ```
 
 <p align="center">
-  <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get four different sets of files from one config" width="100%">
+  <img src="docs/assets/demo.svg" alt="Four agent sessions in four folders get the files that the config above binds to them" width="100%">
 </p>
 
 ## Ask your agent to set it up

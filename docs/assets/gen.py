@@ -184,16 +184,24 @@ def social():
 def demo():
     """Four panes, one session each, with the summary that ctxtra shows at session start."""
     c = THEMES["dark"]
-    w, ph = 1100, 236  # ph: pane height
+    w, ph = 1100, 260  # ph: pane height
     h = 46 + 2 * ph
     T = 18.0  # loop length, seconds
     cw = 9.0  # monospace advance at 15px
     lh = 22
+    # The bindings of the README's example config, one color per binding.
+    personal = [("preferences.md", "VIOLET")], [("review", "VIOLET")]
+    work = [("instructions.md", "CYAN"), ("go-style.md", "CYAN")], [("deploy", "CYAN")]
+    billing = [("billing.md", "AMBER"), ("billing-runbook.md", "AMBER")], [("billing", "AMBER")]
+
+    def bound(*bindings):
+        return [f for fs, _ in bindings for f in fs], [k for _, ks in bindings for k in ks]
+
     scenes = [
-        ("~/dev/acme/billing", "claude", [0, 1, 2], True, "# remote is github.com/acme/billing"),
-        ("~/wt/billing-fix", "codex", [0, 1, 2], True, "# a worktree of it, outside ~/dev"),
-        ("~/dev/side-project", "pi", [0, 1], False, "# under ~/dev, not acme/billing"),
-        ("~/Downloads", "claude", [0], False, "# global only"),
+        ("~/dev/acme/billing", "claude", "# remote is github.com/acme/billing", bound(personal, work)),
+        ("~/wt/billing-fix", "codex", "# a worktree of it, outside ~/dev", bound(personal, work)),
+        ("~/dev/acme/mono/services/billing", "pi", "# github.com/acme/mono, in services/billing", bound(personal, billing)),
+        ("~/Downloads", "claude", "# global only", bound(personal)),
     ]
     b = [frame(c, w, h, 14)]
     b.append(f'<rect x="1" y="1" width="{w-2}" height="44" rx="13" fill="{c["PANEL"]}"/>')
@@ -220,7 +228,7 @@ def demo():
 
     m = c["MUTED"]
     start = 0.6
-    for s, (cwd, agent, files, skill, note) in enumerate(scenes):
+    for s, (cwd, agent, note, (files, skills)) in enumerate(scenes):
         x0, y = 28 + (s % 2) * w / 2, 45 + (s // 2) * ph + 34
         cmd = f"cd {cwd} && {agent}"
         t0, t1 = start, start + 0.045 * len(cmd)
@@ -235,17 +243,22 @@ def demo():
                  f'<tspan fill="{c["GREEN"]}">❯</tspan> <tspan fill="{c["TEXT"]}">cd </tspan><tspan fill="{c["CYAN"]}">{cwd}</tspan>'
                  f'<tspan fill="{c["TEXT"]}"> &amp;&amp; </tspan><tspan fill="{c["TEXT"]}" font-weight="700">{agent}</tspan></text></g>')
         # ctxtra's summary, as the agent shows it, each name in its color
-        n = len(files)
-        head = f'ctxtra added {n} instruction{"s" if n != 1 else ""}' + (" and 1 skill" if skill else "")
+        def count(n, what):
+            return f'{n} {what}{"s" if n != 1 else ""}'
+
+        def items(names):
+            return [f'<tspan fill="{m}">- </tspan><tspan fill="{c[col]}">{name}</tspan>' for name, col in names]
+
+        head = "ctxtra added " + " and ".join(
+            [count(len(files), "instruction")] + ([count(len(skills), "skill")] if skills else []))
         rows = [f'<tspan fill="{c["GREEN"]}">✓</tspan> <tspan fill="{c["TEXT"]}">{head}</tspan>',
-                f'<tspan fill="{m}">Instructions:</tspan>']
-        rows += [f'<tspan fill="{m}">- </tspan><tspan fill="{c[FILE_COLORS[i]]}">{FILE_NAMES[i]}</tspan>' for i in files]
-        if skill:
-            rows += [f'<tspan fill="{m}">Skills:</tspan>', f'<tspan fill="{m}">- </tspan><tspan fill="{c["LIME"]}">deploy</tspan>']
+                f'<tspan fill="{m}">Instructions:</tspan>', *items(files)]
+        if skills:
+            rows += [f'<tspan fill="{m}">Skills:</tspan>', *items(skills)]
         for k, row in enumerate(rows):
             b.append(text(x0 + cw * 2, y + lh * (k + 2) + 6, row, t_out + 0.06 * k))
         start = t_out + 2.6
-    write("demo.svg", "\n".join(b), w, h, "ctxtra demo: four sessions in four folders get four different sets of files from one config")
+    write("demo.svg", "\n".join(b), w, h, "ctxtra demo: four sessions in four folders get the files that the example config binds to them")
 
 
 # ---------------------------------------------------------------- skill chat
