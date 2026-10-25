@@ -1,0 +1,159 @@
+{
+ "api": "chat",
+ "path": "/chat/completions",
+ "script": [
+  "read:/fixture/dev/svc/a.txt",
+  "read:/fixture/dev/svc/a.txt",
+  "read:/fixture/dev/svc/a.txt",
+  "read:/fixture/dev/svc/a.txt",
+  "read:/fixture/dev/svc/a.txt",
+  "read:/fixture/dev/svc/a.txt"
+ ],
+ "role": "side",
+ "reply": "text",
+ "body": {
+  "model": "mock-model",
+  "stream": true,
+  "tools": [
+   {
+    "type": "function",
+    "function": {
+     "name": "bash"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_bash"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "stop_bash"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "list_bash"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "view"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "create"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "edit"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "fetch_copilot_cli_documentation"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "skill"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "sql"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "session_store_sql"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "read_agent"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "list_agents"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "write_agent"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "grep"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "glob"
+    }
+   },
+   {
+    "type": "function",
+    "function": {
+     "name": "task"
+    }
+   }
+  ],
+  "messages": [
+   {
+    "role": "system",
+    "content": "[removed]"
+   },
+   {
+    "role": "user",
+    "content": "[removed]"
+   },
+   {
+    "role": "user",
+    "content": "E2E-MAIN-TASK: reply with OK and nothing else."
+   },
+   {
+    "role": "assistant",
+    "content": null,
+    "tool_calls": [
+     {
+      "id": "call-1",
+      "type": "function",
+      "function": {
+       "name": "view",
+       "arguments": "{\"path\": \"/fixture/dev/svc/a.txt\"}"
+      }
+     }
+    ]
+   },
+   {
+    "role": "tool",
+    "tool_call_id": "call-1",
+    "content": "[removed]"
+   },
+   {
+    "role": "user",
+    "content": "Please create a detailed summary of the conversation so far. [removed]\n\nTools are unavailable in this step, so do not call any tools, even if other instructions say to call one before responding: respond only with the summary text."
+   }
+  ]
+ }
+}

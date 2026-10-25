@@ -185,13 +185,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// classify: a request without tools is a side call; a subagent's requests
-// carry SubagentTask but not Prompt.
+// classify: a request without tools is a side call, and so is one that says
+// they are unavailable (Copilot's compaction offers its tools anyway); a
+// subagent's requests carry SubagentTask but not Prompt.
 func classify(api API, body map[string]any) Role {
 	if tools, _ := body["tools"].([]any); len(tools) == 0 {
 		return Side
 	}
 	texts := strings.Join(userTexts(api, body), "\n")
+	if strings.Contains(texts, "Tools are unavailable in this step") {
+		return Side
+	}
 	if strings.Contains(texts, "SUBAGENT-PROBE") && !strings.Contains(texts, "E2E-MAIN-TASK") {
 		return Subagent
 	}

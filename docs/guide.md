@@ -255,7 +255,7 @@ session folder: a binding for `~/dev/mono/billing/**` doesn't reach a session st
   text to every model request, not to the transcript, so resumed sessions get it too. Its background
   service keeps the plugin loaded: when the bound skills change, they apply from the second model request
   of the next session, or right away after `opencode service restart`.
-- Antigravity: tested with the CLI (1.4.0); the App and IDE read the same hook file but aren't tested. A
+- Antigravity: tested with the CLI (1.4.7); the App and IDE read the same hook file but aren't tested. A
   subagent is a session of its own there, so it gets the files from the same hook. Antigravity asks before
   it reads a file outside the workspace, such as a bound skill's `SKILL.md`, and headless runs (`agy -p`)
   refuse it. To skip the question, allow your skill folders, not everything, in
