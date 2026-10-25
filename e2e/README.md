@@ -78,8 +78,9 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped
 with the reason for the others. A declared capability that stops working fails the test.
 
-`TestImportTUI/claude` is temporarily disabled until its interactive startup handling is fixed.
-`TestCodexTrustTUI` is temporarily disabled pending investigation of the suite timeout.
+`TestImportTUI/claude` marks its isolated home as already onboarded and approves the dummy API key.
+Claude's first-run onboarding checks Anthropic's servers even when the model points at the mock.
+The test still handles folder trust and runs the import against the real interactive app.
 
 Not covered here, and checked by hand before a release:
 
