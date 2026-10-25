@@ -20,7 +20,6 @@ import (
 // then gets every line of the bound files, and running setup again changes
 // nothing that Codex would ask to trust again.
 func TestCodexTrustTUI(t *testing.T) {
-	t.Skip("Disabled pending investigation of the e2e suite timeout")
 	forEachAgent(t, nil, func(t *testing.T, a Agent) {
 		if a.Name() != "codex" {
 			t.Skip("Codex only")

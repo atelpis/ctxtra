@@ -28,11 +28,12 @@ var importFile = map[string]string{
 // checks what ctxtra hands over, not what a real model makes of it.
 func TestImportTUI(t *testing.T) {
 	forEachAgent(t, nil, func(t *testing.T, a Agent) {
-		if a.Name() == "claude" {
-			t.Skip("Disabled until Claude's interactive startup handling is fixed")
-		}
 		tmux := tmuxBin(t)
 		s := newSession(t, a)
+		if a.Name() == "claude" {
+			// First-run onboarding checks Anthropic's servers even with a mock model.
+			s.Write(".claude/.claude.json", `{"hasCompletedOnboarding":true,"customApiKeyResponses":{"approved":["sk-e2e-mock"],"rejected":[]}}`)
+		}
 		file := importFile[a.Name()]
 		s.Marked(file, "own")
 		owner := a.Name()
