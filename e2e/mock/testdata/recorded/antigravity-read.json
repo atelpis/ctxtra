@@ -1,0 +1,150 @@
+{
+ "api": "gemini",
+ "path": "/v1beta/models/gemini-3.1-pro-preview:streamGenerateContent",
+ "script": [
+  "read:/fixture/proj/svc/internal/code.txt",
+  "subagent"
+ ],
+ "role": "main",
+ "reply": {
+  "tool": "read_file",
+  "args": {
+   "Path": "/fixture/proj/svc/internal/code.txt"
+  }
+ },
+ "body": {
+  "systemInstruction": {
+   "parts": [
+    {
+     "text": "[removed]"
+    }
+   ]
+  },
+  "tools": [
+   {
+    "functionDeclarations": [
+     {
+      "description": "Read the contents of a text, image, pdf, video, or audio file. Each read returns at most 800 lines or 46080 bytes.",
+      "name": "read_file",
+      "parametersJsonSchema": {
+       "$schema": "https://json-schema.org/draft/2020-12/schema",
+       "additionalProperties": false,
+       "properties": {
+        "ByteOffset": {
+         "description": "Byte offset into the line range. Use to continue reading when content is truncated by the byte limit.",
+         "type": "integer"
+        },
+        "EndLine": {
+         "description": "End line to read (inclusive). Omit to read until the end of the file, within the per-read limits.",
+         "type": "integer"
+        },
+        "Path": {
+         "description": "The absolute path of the file to read.",
+         "type": "string"
+        },
+        "StartLine": {
+         "description": "Start line to read (inclusive). Omit to read from the beginning of the file.",
+         "type": "integer"
+        }
+       },
+       "required": [
+        "Path"
+       ],
+       "type": "object"
+      }
+     },
+     {
+      "name": "run_command"
+     },
+     {
+      "name": "manage_task"
+     },
+     {
+      "name": "send_message"
+     },
+     {
+      "name": "schedule"
+     },
+     {
+      "description": "Launch a subagent. It runs in the background with its own prompt and sends you a message when it completes or needs guidance; there is no need to poll.\n\nGuidelines:\n* The subagent is identified by the conversationId returned; message it with the send_message tool.\n* Multiple subagents may share a type name; each still gets a unique conversationId.\n* If a task continues an existing subagent's work, message that subagent instead of launching a new one.\n* Default the Model argument to 'inherit' unless the user explicitly requests a different model.",
+      "name": "invoke_subagent",
+      "parametersJsonSchema": {
+       "$schema": "https://json-schema.org/draft/2020-12/schema",
+       "additionalProperties": false,
+       "properties": {
+        "Model": {
+         "description": "Model for the subagent. 'inherit' (default) uses your model. 'flash_lite' and 'flash' are lighter, faster models for simple tasks. 'pro' is a larger model for complex work.",
+         "enum": [
+          "inherit",
+          "flash_lite",
+          "flash",
+          "pro"
+         ],
+         "type": "string"
+        },
+        "Prompt": {
+         "description": "A clear, actionable task description for the subagent. Be specific about what the subagent should do and what information it should return.",
+         "type": "string"
+        },
+        "Role": {
+         "description": "A 2-5 word description of the subagent's role. Should read similar to a job title, e.g. 'Codebase Researcher', 'Database Debugger', etc. Should also be detailed enough to distinguish between different subagents who might share similar purposes.",
+         "type": "string"
+        },
+        "TypeName": {
+         "description": "Type name of the subagent to invoke.",
+         "type": "string"
+        },
+        "Workspace": {
+         "description": "Workspace mode for the subagent. 'inherit' (default) uses the same workspace as the parent. 'branch' creates a new isolated workspace branched or cloned from the parent. 'share' creates a new workspace sharing the parent's underlying repository directory (similar to a git worktree or Mercurial 'hg share'), allowing independent branching without duplicating storage. If omitted, defaults to 'inherit'.",
+         "type": "string"
+        }
+       },
+       "required": [
+        "TypeName",
+        "Role",
+        "Prompt"
+       ],
+       "type": "object"
+      }
+     },
+     {
+      "name": "define_subagent"
+     },
+     {
+      "name": "manage_subagents"
+     },
+     {
+      "name": "write_file"
+     },
+     {
+      "name": "edit_file"
+     },
+     {
+      "name": "search_web"
+     },
+     {
+      "name": "ask_question"
+     }
+    ]
+   }
+  ],
+  "contents": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "<USER_REQUEST>\nE2E-MAIN-TASK: reply with OK and nothing else.\n</USER_REQUEST>"
+     }
+    ]
+   },
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "[removed]"
+     }
+    ]
+   }
+  ]
+ }
+}

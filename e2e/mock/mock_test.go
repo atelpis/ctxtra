@@ -85,7 +85,8 @@ func TestStreamingRoundTrip(t *testing.T) {
 	tools := []any{map[string]any{"name": "Read", "input_schema": map[string]any{}},
 		map[string]any{"type": "function", "name": "exec_command", "parameters": map[string]any{}},
 		map[string]any{"type": "function", "function": map[string]any{"name": "read"}},
-		map[string]any{"functionDeclarations": []any{map[string]any{"name": "view_file"}}}}
+		map[string]any{"functionDeclarations": []any{map[string]any{"name": "read_file",
+			"parametersJsonSchema": map[string]any{"properties": map[string]any{"Path": map[string]any{"type": "string"}}}}}}}
 	for _, tc := range []struct {
 		path, last string
 		body       map[string]any

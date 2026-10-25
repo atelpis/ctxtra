@@ -9,9 +9,11 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // Prompt is the main agent's task. It tells requests of the main agent
@@ -61,12 +63,21 @@ type Server struct {
 	mu    sync.Mutex
 	reqs  []Request
 	calls int
+
+	subagentSeen chan struct{} // closed at the first subagent request
+	subagentOnce sync.Once
 }
+
+// subagentWait is how long the main agent's answer after a subagent's start
+// waits for the subagent's first request. Antigravity runs subagents in the
+// background and exits when the main agent is done, which can be before the
+// subagent's first request.
+const subagentWait = 30 * time.Second
 
 // New starts a mock that runs script in the main agent, one step per model
 // request, and stops it when the test ends.
 func New(t testing.TB, script ...Step) *Server {
-	s := &Server{script: script}
+	s := &Server{script: script, subagentSeen: make(chan struct{})}
 	s.srv = httptest.NewServer(http.HandlerFunc(s.handle))
 	t.Cleanup(s.srv.Close)
 	return s
@@ -132,8 +143,18 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 
 	role := classify(api, body)
 	var c *call
-	if role == Main {
+	switch role {
+	case Main:
+		if i := slices.Index(s.script, StartSubagent()); i >= 0 && len(toolResults(api, body)) > i {
+			select {
+			case <-s.subagentSeen:
+			case <-time.After(subagentWait):
+			case <-r.Context().Done():
+			}
+		}
 		c = decide(api, body, s.script)
+	case Subagent:
+		s.subagentOnce.Do(func() { close(s.subagentSeen) })
 	}
 	reply := "text"
 	if c != nil {
@@ -185,13 +206,17 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// classify: a request without tools is a side call; a subagent's requests
-// carry SubagentTask but not Prompt.
+// classify: a request without tools is a side call, and so is one that says
+// they are unavailable (Copilot's compaction offers its tools anyway); a
+// subagent's requests carry SubagentTask but not Prompt.
 func classify(api API, body map[string]any) Role {
 	if tools, _ := body["tools"].([]any); len(tools) == 0 {
 		return Side
 	}
 	texts := strings.Join(userTexts(api, body), "\n")
+	if strings.Contains(texts, "Tools are unavailable in this step") {
+		return Side
+	}
 	if strings.Contains(texts, "SUBAGENT-PROBE") && !strings.Contains(texts, "E2E-MAIN-TASK") {
 		return Subagent
 	}
