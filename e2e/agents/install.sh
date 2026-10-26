@@ -23,8 +23,6 @@
 set -eu
 cd "$(dirname "$0")"
 hermes_repo=https://github.com/NousResearch/hermes-agent.git
-# uv installs Hermes from its lock file.
-uv_version=0.13.1
 if [ "${1:-}" = latest ]; then
 	npm install --ignore-scripts --no-audit --no-fund --no-save \
 		@anthropic-ai/claude-code@latest @openai/codex@latest @earendil-works/pi-coding-agent@latest @opencode/cli@latest \
@@ -92,7 +90,7 @@ git init -q hermes
 git -C hermes fetch -q --depth 1 "$hermes_repo" "$hermes"
 git -C hermes -c advice.detachedHead=false checkout -q FETCH_HEAD
 "$py" -m venv hermes/.uv
-hermes/.uv/bin/pip install --quiet --disable-pip-version-check "uv==$uv_version"
+hermes/.uv/bin/pip install --quiet --disable-pip-version-check --require-hashes --only-binary=:all: -r requirements.txt
 (cd hermes && UV_PYTHON="$py" UV_PYTHON_DOWNLOADS=never .uv/bin/uv sync --quiet --frozen --no-dev)
 
 for b in node_modules/.bin/claude node_modules/.bin/codex node_modules/.bin/pi node_modules/.bin/opencode node_modules/.bin/copilot bin/agy \

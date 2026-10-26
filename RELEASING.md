@@ -5,6 +5,20 @@ A `v*` tag runs [release.yml](.github/workflows/release.yml): CI, a check of the
 tag without a `-` it then opens a PR in the Homebrew tap. A pushed tag is installable with `go install` at
 once, even while the release is a draft, so tag only a commit that passed CI on `main`.
 
+The workflow verifies every archive and the checksum file against the release workflow, tag and commit.
+It attaches their signed attestation bundle as `ctxtra.sigstore.json` before publishing the draft.
+To verify a downloaded archive with GitHub CLI:
+
+```bash
+gh release download vX.Y.Z --repo atelpis/ctxtra --pattern 'ctxtra_*_linux_amd64.tar.gz' --pattern ctxtra.sigstore.json
+gh attestation verify ctxtra_X.Y.Z_linux_amd64.tar.gz --repo atelpis/ctxtra \
+  --signer-workflow atelpis/ctxtra/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z --bundle ctxtra.sigstore.json
+```
+
+Choose the archive for your platform. Releases before this bundle was added can use
+`gh attestation verify ARCHIVE --repo atelpis/ctxtra` to fetch their attestations from GitHub.
+
 ## Each release
 
 1. CI and e2e are green on `main`, and the latest nightly e2e-latest run is green or its failure is

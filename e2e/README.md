@@ -137,3 +137,12 @@ the tag object, not the commit) and run `./install.sh`.
 
 The nightly `e2e-latest` workflow runs the tests against the latest versions and opens an issue when they
 fail.
+
+The normal container pins its base images by digest. Dependabot updates them and the hashed `uv` wheels
+in `agents/requirements.txt`. When updating `uv` by hand, include the PyPI wheel hashes for macOS and
+Linux on both amd64 and arm64. `install.sh` refuses other package files.
+
+`agents/package.json` overrides vulnerable transitive packages until the pinned agents include fixes.
+Run `npm audit --package-lock-only` in `agents/` after an update, and rerun the agent contract tests before
+accepting it. Remove an override when the agents' own dependencies resolve to patched versions.
+The nightly test intentionally installs current agent versions rather than the normal lockfile.

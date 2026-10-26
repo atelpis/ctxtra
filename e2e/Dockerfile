@@ -7,9 +7,9 @@
 #
 # --network none: the agents can reach only the mock on 127.0.0.1. Everything
 # is downloaded while building the image.
-FROM golang:1.27-trixie AS go
+FROM golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS go
 
-FROM node:24-trixie-slim
+FROM node:24-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea
 COPY --from=go /usr/local/go /usr/local/go
 # Python 3.13 for Hermes, tmux for the TUI tests.
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates curl python3 python3-venv tmux \
@@ -24,7 +24,8 @@ WORKDIR /src
 # AGENTS=latest installs the latest agent releases instead of the pinned ones.
 ARG AGENTS=pinned
 COPY --chown=e2e e2e/agents/package.json e2e/agents/package-lock.json e2e/agents/install.sh \
-	e2e/agents/install-muse.mjs e2e/agents/muse.json e2e/agents/antigravity.lock e2e/agents/hermes.ref e2e/agents/
+	e2e/agents/install-muse.mjs e2e/agents/muse.json e2e/agents/antigravity.lock e2e/agents/hermes.ref \
+	e2e/agents/requirements.txt e2e/agents/
 RUN e2e/agents/install.sh "$AGENTS"
 
 COPY --chown=e2e go.mod go.sum ./

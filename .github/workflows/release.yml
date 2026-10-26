@@ -86,15 +86,23 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
 
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        id: attest
         with:
           subject-path: |
             dist/*.tar.gz
             dist/checksums.txt
 
-      - name: Verify an attestation
+      - name: Verify the release attestations
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
         run: |
-          f=$(find dist -maxdepth 1 -name 'ctxtra_*_linux_amd64.tar.gz')
-          gh attestation verify "$f" --repo "$GITHUB_REPOSITORY"
+          for f in dist/*.tar.gz dist/checksums.txt; do
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "$GITHUB_REF" --source-digest "$GITHUB_SHA" --bundle "$BUNDLE"
+          done
+          cp "$BUNDLE" dist/ctxtra.sigstore.json
+          gh release upload "$TAG" dist/ctxtra.sigstore.json --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Publish the release
         run: gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
