@@ -31,8 +31,9 @@ people and coding agents.
 
 Security problems go to [SECURITY.md](SECURITY.md), not to issues.
 
-CodeQL analyzes both Go modules on PRs, pushes to `main` and a weekly schedule. The same workflow audits
-the e2e agents' npm lockfile. The lint job runs `govulncheck` for both Go modules.
+GitHub manages CodeQL through the repository's default setup. The dependency-audit workflow checks the
+e2e agents' npm lockfile on PRs, pushes to `main` and a weekly schedule. The lint job runs `govulncheck`
+for both Go modules.
 
 Go fuzz tests check config parsing, source path containment and invalid hook input. Ordinary `go test`
 runs their seed cases. The fuzz workflow explores each target for 10 seconds on PRs and pushes, and two
