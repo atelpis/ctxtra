@@ -6,6 +6,9 @@ that line, the hooks that an earlier release set up keep working as they are
 
 ## Unreleased
 
+- Building from source requires Go 1.27.3 or newer, which fixes a certificate validation vulnerability.
+- Release downloads include a signed attestation bundle. [RELEASING.md](RELEASING.md) shows how to verify it.
+
 ## v0.1.0
 
 The first release. ctxtra adds your instruction files and skills to coding-agent sessions, chosen by folder

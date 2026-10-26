@@ -1,0 +1,6 @@
+# uv bootstraps Hermes on macOS and Linux, on amd64 and arm64.
+uv==0.13.1 \
+    --hash=sha256:7e60223e3e9636a3734d6c11b3552aeed987c40f1ca2497a546af58f2f883d56 \
+    --hash=sha256:cfa719fbbd23f26713394dea2692b7f146aa1b5713ce5e776e878701214ea52c \
+    --hash=sha256:f2518450da2f6d0ea8a943c9f402abda63d5a66acc9999216c2792115b922ba4 \
+    --hash=sha256:696dcf6d807d85da978f4db8472da81dccc1254b18b52cbd1367c4d923c421e0

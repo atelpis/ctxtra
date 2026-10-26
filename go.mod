@@ -1,6 +1,6 @@
 module github.com/atelpis/ctxtra
 
-go 1.27
+go 1.27.3
 
 require (
 	github.com/bmatcuk/doublestar/v4 v4.10.3

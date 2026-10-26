@@ -159,7 +159,7 @@ Install with Homebrew on macOS or Linux:
 brew install atelpis/tap/ctxtra
 ```
 
-Or with Go 1.27+ (installs into `~/go/bin`):
+Or with Go 1.27.3+ (installs into `~/go/bin`):
 
 ```bash
 go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
