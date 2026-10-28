@@ -6,6 +6,11 @@ that line, the hooks that an earlier release set up keep working as they are
 
 ## Unreleased
 
+## v0.2.0
+
+- An entry in `instructions` or `skills` that starts with `!` leaves out the paths it matches, for
+  example `'!agents/drafts/**'`. ctxtra 0.1.0 reads such an entry as a path that matches nothing and adds
+  the files anyway: upgrade before you use it.
 - Building from source requires Go 1.27.3 or newer, which fixes a certificate validation vulnerability.
 - Release downloads include a signed attestation bundle. [RELEASING.md](RELEASING.md) shows how to verify it.
 
