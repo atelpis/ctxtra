@@ -6,6 +6,10 @@ that line, the hooks that an earlier release set up keep working as they are
 
 ## Unreleased
 
+- The list of bound skills tells the agent that its skill tool can't load them, so it reads the `SKILL.md`
+  instead. Before, an instruction that named a bound skill could make Claude Code call its Skill tool first
+  and get "Unknown skill".
+
 ## v0.2.0
 
 - An entry in `instructions` or `skills` that starts with `!` leaves out the paths it matches, for

@@ -379,7 +379,8 @@ any of them matches.
 - `SKILL.md` must start with YAML frontmatter that has a `description`. `name` is optional (default: the
   folder name). Other keys are ignored.
 - Claude Code, Codex, Muse, Cursor, Copilot, Antigravity, Hermes, DSH and Devin get the file contents and a list of the skills (name, description, path),
-  and read a `SKILL.md` when a task needs it. Pi gets instruction files as context files and skills as native skills.
+  and read a `SKILL.md` when a task needs it. The list says that these skills are not the agent's own: its skill
+  tool and slash commands can't load them. Pi gets instruction files as context files and skills as native skills.
   OpenCode gets instruction files in the system prompt and skills as native skills, which its `skill` tool loads.
 
 ## Order and budget
