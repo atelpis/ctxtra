@@ -71,7 +71,9 @@ func (r *Result) scope(global bool) string {
 func (r *Result) skillBlock() string {
 	var b strings.Builder
 	b.WriteString("Skills added by ctxtra for this session. Each skill is a folder with a SKILL.md file of instructions for one kind of task. " +
-		"When a task matches a skill's description, read its SKILL.md before you start and follow it, as you would with your own skills. " +
+		"These skills are not installed in your agent: your skill tool and slash commands can't load them. " +
+		"To use one, read its SKILL.md at the location below with your file-reading tool. " +
+		"When a task matches a skill's description, or an instruction names one of these skills, read its SKILL.md before you start and follow it. " +
 		"When a SKILL.md references a relative path, resolve it against the skill's folder (the folder of SKILL.md).\n\n<available_skills>\n")
 	for _, h := range r.Skills {
 		fmt.Fprintf(&b, "  <skill>\n    <name>%s</name>\n    <description>%s</description>\n    <location>%s</location>\n  </skill>\n",

@@ -93,7 +93,7 @@ func TestBudgetDropsFromTheEnd(t *testing.T) {
 	for _, n := range []string{"a", "b", "c"} {
 		testenv.Write(t, filepath.Join(h, n+".md"), strings.Repeat("é", 500))
 	}
-	cfg := load(t, h, head+"  - {name: x, match: {global: true}, instructions: [~/a.md, ~/b.md, ~/c.md], skills: [~/s/deploy]}\n", "budget: {max-chars: 1500}\n")
+	cfg := load(t, h, head+"  - {name: x, match: {global: true}, instructions: [~/a.md, ~/b.md, ~/c.md], skills: [~/s/deploy]}\n", "budget: {max-chars: 1800}\n")
 	res := run(h, cfg)
 	if got := names(res.Files); !slices.Equal(got, []string{"a.md"}) {
 		t.Errorf("kept %v, dropped %v, %d chars", got, names(res.Dropped), Chars(res.Render()))
@@ -101,7 +101,7 @@ func TestBudgetDropsFromTheEnd(t *testing.T) {
 	if len(res.Dropped) != 2 || res.Dropped[0].Over != "budget.max-chars" {
 		t.Errorf("dropped %+v", res.Dropped)
 	}
-	if len(res.Skills) != 1 || Chars(res.Render()) > 1500 || len(res.Render()) <= 1500 {
+	if len(res.Skills) != 1 || Chars(res.Render()) > 1800 || len(res.Render()) <= 1800 {
 		t.Errorf("skills %v, %d chars, %d bytes", names(res.Skills), Chars(res.Render()), len(res.Render()))
 	}
 }
