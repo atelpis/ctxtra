@@ -518,8 +518,8 @@ matches x itself.`,
 	f.BoolVar(&b.Global, "global", false, "add it to every session")
 	f.StringArrayVar(&b.Dirs, "dir", nil, "add it to sessions in folders that match `PATTERN` (repeatable)")
 	f.StringArrayVar(&b.Repos, "repo", nil, "add it to sessions in repositories whose remote matches `PATTERN` (repeatable), such as github.com/acme/**")
-	f.StringArrayVar(&b.Instructions, "instruction", nil, "add the instruction file `FILE` (repeatable)")
-	f.StringArrayVar(&b.Skills, "skill", nil, "add the skill folder `DIR`, with a SKILL.md (repeatable)")
+	f.StringArrayVar(&b.Instructions, "instruction", nil, "add the instruction file `FILE` (repeatable); !FILE leaves files out")
+	f.StringArrayVar(&b.Skills, "skill", nil, "add the skill folder `DIR`, with a SKILL.md (repeatable); !DIR leaves skills out")
 	f.BoolVar(&dryRun, "dry-run", false, "check the binding and show it; change nothing")
 	var asJSON bool
 	list := &cobra.Command{

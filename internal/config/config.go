@@ -83,6 +83,8 @@ type Binding struct {
 	Selector     Selector // match
 	Instructions []string // resolved paths of instruction files
 	Skills       []string // resolved paths of skill folders, each with a SKILL.md
+	// Paths that entries starting with ! removed from Instructions and Skills.
+	ExcludedInstructions, ExcludedSkills []string
 }
 
 // ID names the binding in explain output, logs and injected text.
@@ -331,12 +333,12 @@ func (c *Config) decodeBinding(n *yaml.Node, file string, in *Source) (Binding, 
 		return Binding{}, err
 	}
 	if v := f["instructions"]; v != nil {
-		if b.Instructions, err = c.pathList(v, "instructions", file, in); err != nil {
+		if b.Instructions, b.ExcludedInstructions, err = c.pathList(v, "instructions", file, in); err != nil {
 			return Binding{}, err
 		}
 	}
 	if v := f["skills"]; v != nil {
-		if b.Skills, err = c.pathList(v, "skills", file, in); err != nil {
+		if b.Skills, b.ExcludedSkills, err = c.pathList(v, "skills", file, in); err != nil {
 			return Binding{}, err
 		}
 	}
@@ -356,56 +358,135 @@ func checkSchema(doc *yaml.Node, f map[string]*yaml.Node) error {
 
 // pathList resolves and expands the paths listed in file. A reference to
 // a pinned source that isn't available is skipped alone, with a problem.
-func (c *Config) pathList(n *yaml.Node, what, file string, in *Source) ([]string, error) {
+// An entry that starts with ! removes the paths it matches from what the
+// other entries add, whatever its position; the removed paths are returned
+// too.
+func (c *Config) pathList(n *yaml.Node, what, file string, in *Source) (out, excluded []string, err error) {
 	list, err := strList(n, what)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	base := filepath.Dir(file)
-	var out []string
+	var excludes []exclusion
+	adds := 0
 	for _, p := range list {
-		isGlob := strings.ContainsAny(p, "*?[{")
-		ref, pattern := p, ""
-		if isGlob {
-			if !doublestar.ValidatePattern(filepath.ToSlash(p)) {
-				return nil, fmt.Errorf("line %d: invalid glob pattern %q", n.Line, p)
+		if rest, ok := strings.CutPrefix(p, "!"); ok {
+			if rest == "" {
+				return nil, nil, fmt.Errorf("line %d: %s entry %q is only a !: write the path to leave out after it", n.Line, what, p)
 			}
-			var prefix string
-			prefix, pattern = doublestar.SplitPattern(filepath.ToSlash(p))
-			// Resolve a child of the fixed prefix so a pattern at a source's
-			// top also passes ref's requirement for a path inside the source.
-			ref = strings.TrimSuffix(prefix, "/") + "/.ctxtra-glob-root"
-		}
-		notesBefore := len(c.Notes)
-		r, src, err := c.ref(ref, base, in)
-		displayErr := err
-		if isGlob {
-			c.Notes = c.Notes[:notesBefore]
+			// An exclusion that can't be resolved skips the binding: without
+			// it, the binding would add more than intended.
+			x, err := c.exclusion(rest, what, base, in)
 			if err != nil {
-				displayErr = errors.New(strings.ReplaceAll(err.Error(), ref, p))
+				return nil, nil, fmt.Errorf("line %d: %s entry %q: %w", n.Line, what, p, err)
 			}
+			x.entry = p
+			excludes = append(excludes, x)
+			continue
 		}
+		adds++
+		r, src, pattern, err := c.entry(p, base, in, true)
 		var unavailable errUnavailable
 		switch {
 		case errors.As(err, &unavailable):
-			c.problem(file, fmt.Errorf("line %d: %w", n.Line, displayErr))
+			c.problem(file, fmt.Errorf("line %d: %w", n.Line, err))
 			continue
 		case err != nil:
-			return nil, fmt.Errorf("line %d: %w", n.Line, displayErr)
+			return nil, nil, fmt.Errorf("line %d: %w", n.Line, err)
 		}
-		if isGlob {
-			root := filepath.Dir(r)
-			matches, err := c.expand(root, pattern, what, src)
-			if err != nil {
-				c.problem(file, fmt.Errorf("line %d: %s entry %q (in %q): %w", n.Line, what, p, paths.Tilde(root), err))
-				continue
-			}
-			out = append(out, matches...)
-		} else {
+		if pattern == "" {
 			out = append(out, r)
+			continue
+		}
+		matches, err := c.expand(r, pattern, what, src)
+		if err != nil {
+			c.problem(file, fmt.Errorf("line %d: %s entry %q (in %q): %w", n.Line, what, p, paths.Tilde(r), err))
+			continue
+		}
+		out = append(out, matches...)
+	}
+	if adds == 0 {
+		return nil, nil, fmt.Errorf("line %d: %s has only entries that start with !, which remove paths that the other entries add", n.Line, what)
+	}
+	if len(out) == 0 {
+		return nil, nil, nil
+	}
+	for _, x := range excludes {
+		n0 := len(out)
+		out = slices.DeleteFunc(out, func(p string) bool {
+			if x.match(p) {
+				excluded = append(excluded, p)
+				return true
+			}
+			return false
+		})
+		if len(out) == n0 && !slices.ContainsFunc(excluded, x.match) {
+			c.problem(file, fmt.Errorf("line %d: %s entry %q excludes nothing", n.Line, what, x.entry))
 		}
 	}
-	return out, nil
+	return out, excluded, nil
+}
+
+// entry resolves the path p, written in a file in base. A glob resolves to
+// its fixed folder and the pattern below it; a plain path has no pattern.
+// follow is passed to refLinks.
+func (c *Config) entry(p, base string, in *Source, follow bool) (r string, src *Source, pattern string, err error) {
+	if !strings.ContainsAny(p, "*?[{") {
+		r, src, err = c.refLinks(p, base, in, follow)
+		return r, src, "", err
+	}
+	if !doublestar.ValidatePattern(filepath.ToSlash(p)) {
+		return "", nil, "", fmt.Errorf("invalid glob pattern %q", p)
+	}
+	prefix, pattern := doublestar.SplitPattern(filepath.ToSlash(p))
+	// Resolve a child of the fixed prefix so a pattern at a source's top
+	// also passes ref's requirement for a path inside the source.
+	ref := strings.TrimSuffix(prefix, "/") + "/.ctxtra-glob-root"
+	notesBefore := len(c.Notes)
+	r, src, err = c.refLinks(ref, base, in, follow)
+	c.Notes = c.Notes[:notesBefore]
+	if err != nil {
+		var unavailable errUnavailable
+		err2 := errors.New(strings.ReplaceAll(err.Error(), ref, p))
+		if errors.As(err, &unavailable) {
+			err2 = errUnavailable{err2}
+		}
+		return "", nil, "", err2
+	}
+	return filepath.Dir(r), src, pattern, nil
+}
+
+// exclusion is an entry that starts with !: a path, or a pattern below
+// root.
+type exclusion struct {
+	entry   string
+	root    string
+	pattern string // "" for a plain path: root is the path
+	dirs    bool   // skill folders, which a pattern ending in / matches
+}
+
+func (c *Config) exclusion(p, what, base string, in *Source) (exclusion, error) {
+	r, _, pattern, err := c.entry(p, base, in, false)
+	if err == nil {
+		err = checkParents(pattern)
+	}
+	if err != nil {
+		return exclusion{}, err
+	}
+	return exclusion{root: r, pattern: pattern, dirs: what == "skills"}, nil
+}
+
+// match reports whether x removes p. Paths are compared as text, without
+// following symlinks: a symlink in someone else's repository must not
+// choose what is left out.
+func (x exclusion) match(p string) bool {
+	if x.pattern == "" {
+		return filepath.Clean(p) == filepath.Clean(x.root)
+	}
+	// As in expansion, a pattern matches below its fixed folder, not the
+	// folder itself.
+	rel, ok := paths.Rel(x.root, p)
+	return ok && rel != "." && (globMatch(x.pattern, rel) || x.dirs && globMatch(x.pattern, rel+"/"))
 }
 
 func (c *Config) problem(file string, err error) {

@@ -98,6 +98,10 @@ func require(n *yaml.Node, f map[string]*yaml.Node, keys ...string) error {
 }
 
 func str(n *yaml.Node, what string) (string, error) {
+	if n.Kind == yaml.ScalarNode && strings.HasPrefix(n.Tag, "!") && !strings.HasPrefix(n.Tag, "!!") {
+		v := strings.TrimSpace(n.Tag + " " + n.Value)
+		return "", fmt.Errorf("line %d: %s %s: YAML reads a value that starts with ! as a tag; quote it: '%s'", n.Line, what, v, v)
+	}
 	if n.Kind != yaml.ScalarNode || n.ShortTag() != "!!str" || n.Value == "" {
 		return "", fmt.Errorf("line %d: %s must be a non-empty string", n.Line, what)
 	}

@@ -190,10 +190,17 @@ func folder(v *yaml.Node, what string) (string, error) {
 //
 // ref also returns the pinned source the path is in, or nil.
 func (c *Config) ref(s, base string, in *Source) (string, *Source, error) {
+	return c.refLinks(s, base, in, true)
+}
+
+// refLinks is ref; without follow, a plain path is served from an imported
+// clone only when it is under the clone's folder as written, not through a
+// symlink.
+func (c *Config) refLinks(s, base string, in *Source, follow bool) (string, *Source, error) {
 	rest, isRef := strings.CutPrefix(s, Scheme)
 	if !isRef {
 		if in == nil {
-			return c.mapped(s, paths.Resolve(base, s))
+			return c.mapped(s, paths.Resolve(base, s), follow)
 		}
 		p := filepath.Join(base, filepath.FromSlash(s))
 		if filepath.IsAbs(filepath.FromSlash(s)) || strings.HasPrefix(s, "~") || !within(in.Gen(), p) {
@@ -264,7 +271,7 @@ func (c *Config) inStore(s string, src Source, p string) (string, *Source, error
 // When mappings.json can't be read, ctxtra can't tell which paths were
 // mapped: every plain path outside the trusted-path sources is skipped
 // until the file is fixed or deleted.
-func (c *Config) mapped(s, p string) (string, *Source, error) {
+func (c *Config) mapped(s, p string, follow bool) (string, *Source, error) {
 	if c.mappings == nil {
 		ms, err := state.LoadMappings()
 		c.mappings, c.mappingsErr = &ms, err
@@ -286,7 +293,7 @@ func (c *Config) mapped(s, p string) (string, *Source, error) {
 		return "", nil, errUnavailable{fmt.Errorf("%s: %v; until then, paths outside trusted-path sources are skipped", s, c.mappingsErr)}
 	}
 	m, rel, ok := c.mappings.Lookup(p)
-	if !ok {
+	if !ok && follow {
 		m, rel, ok = c.mappings.Lookup(real)
 	}
 	if !ok {
