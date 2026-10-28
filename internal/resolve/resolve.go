@@ -41,6 +41,8 @@ type Trace struct {
 	Skills   []string // SKILL.md paths
 	Missing  []string
 	Problems []string
+	// Removed by the binding's entries that start with !.
+	ExcludedFiles, ExcludedSkills []string
 }
 
 // Result is what a session in Dir gets.
@@ -162,6 +164,12 @@ func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
 		}
 		r.Skills = append(r.Skills, Hit{Path: f, Origin: t.Origin, Global: b.Selector.Global, Name: name, Description: desc,
 			Content: body})
+	}
+	for _, f := range b.ExcludedInstructions {
+		t.ExcludedFiles = append(t.ExcludedFiles, paths.Real(f))
+	}
+	for _, dir := range b.ExcludedSkills {
+		t.ExcludedSkills = append(t.ExcludedSkills, paths.Real(filepath.Join(dir, "SKILL.md")))
 	}
 	r.Missing = append(r.Missing, t.Missing...)
 	for _, p := range t.Problems {

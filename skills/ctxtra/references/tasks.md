@@ -71,6 +71,7 @@ so that every agent gets them. Do every step; don't skip the files of an agent.
 3. List files and skill folders by name or use quoted glob patterns. Use `ctxtra context files` or
    `ctxtra context show` to check the expansion. Local globs include new matching files immediately; pinned-source globs change
    after accepting a commit. A skill folder needs a `SKILL.md` with a `description` in its frontmatter.
+   To leave some out, add an entry that starts with `!`, quoted: `'!agents/drafts/**'`.
 4. A new binding in the config: `ctxtra binding add NAME --global --instruction FILE --skill DIR`, with
    `--dir PATTERN` or `--repo PATTERN` instead of `--global` (the flags can repeat). Quote patterns, or the
    shell expands them. It writes only a

@@ -357,6 +357,16 @@ any of them matches.
   folder (such as the home or config folder) remain literal.
 - Entries apply in list order; each pattern expands in lexical path order. Overlapping entries are
   deduplicated at their first position. A pattern with no matches is reported and skipped.
+- An entry that starts with `!` leaves out the paths it matches: `instructions: ['agents/**/*.md',
+  '!agents/drafts/**']`. It removes what the other entries of the same list add, wherever it is in the
+  list. It is a path or a pattern, resolved like the other entries, and is compared with the added paths
+  as text: symlinks are not followed. When `~/alias` links to `~/notes`, `!~/alias/x.md` does not leave
+  out `~/notes/x.md`. Quote it: YAML reads an unquoted `!` as a tag. For a relative path whose name starts
+  with `!`, write `./!name`.
+- An exclusion that leaves nothing out is reported, and the binding still applies. A list of only
+  exclusions, and an exclusion that can't be resolved (an unknown source, a source that isn't available,
+  a path outside the pinned source), are errors, and the binding is skipped: without the exclusion, it
+  would add more than intended. `context explain` lists the paths that exclusions left out.
 - Glob expansion skips symlink entries and does not descend into symlinked folders. Symlinks in the
   fixed prefix retain the usual trust checks. Every local file still needs to be trusted.
 - Each pattern is limited to 10,000 directory entries and operations, with a maximum traversal depth of

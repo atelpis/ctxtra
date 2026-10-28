@@ -288,6 +288,12 @@ func traces(res *resolve.Result) []traceInfo {
 				ti.Skills = append(ti.Skills, traceItem{Path: s, Status: "skipped: not added; see problems"})
 			}
 		}
+		for _, f := range t.ExcludedFiles {
+			ti.Files = append(ti.Files, traceItem{Path: f, Status: "skipped: excluded"})
+		}
+		for _, s := range t.ExcludedSkills {
+			ti.Skills = append(ti.Skills, traceItem{Path: s, Status: "skipped: excluded"})
+		}
 		out = append(out, ti)
 	}
 	return out

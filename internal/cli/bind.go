@@ -33,8 +33,12 @@ func bindingAdd(stdio IO, b config.NewBinding, dryRun bool) error {
 	// absolute: in the config, they would be relative to its folder.
 	wd, _ := os.Getwd()
 	path := func(p string) string {
-		if strings.HasPrefix(p, config.Scheme) {
+		rest, exclude := strings.CutPrefix(p, "!")
+		if strings.HasPrefix(rest, config.Scheme) || rest == "" {
 			return p
+		}
+		if exclude {
+			return "!" + paths.Tilde(paths.Resolve(wd, rest))
 		}
 		return paths.Tilde(paths.Resolve(wd, p))
 	}

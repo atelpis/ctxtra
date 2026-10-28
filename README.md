@@ -62,8 +62,10 @@ bindings:
     instructions:
       - work/instructions.md  # Relative to this YAML file.
       - '~/docs/team/**/*.md'  # Markdown files, recursively.
+      - '!~/docs/team/drafts/**'  # Leaves these out; quote entries that start with !.
     skills:
       - '~/dev/team-tools/skills/**'  # Skill folders, recursively.
+      - '!~/dev/team-tools/skills/experimental-*'  # Except these.
 
   - name: billing-service
     match:

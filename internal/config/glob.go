@@ -25,10 +25,8 @@ func (c *Config) expand(root, pattern, what string, src *Source) ([]string, erro
 	if src != nil && src.Pinned() && !within(src.Gen(), root) {
 		return nil, fmt.Errorf("glob root is outside the pinned source")
 	}
-	for _, part := range strings.FieldsFunc(pattern, func(r rune) bool { return strings.ContainsRune("/{},", r) }) {
-		if part == ".." {
-			return nil, fmt.Errorf("glob alternatives cannot traverse parent folders")
-		}
+	if err := checkParents(pattern); err != nil {
+		return nil, err
 	}
 	tree := &globFS{FS: os.DirFS(root), root: root, cfg: c, pinned: src != nil && src.Pinned(), left: maxGlobEntries}
 	var matches []string
@@ -67,6 +65,15 @@ func (c *Config) expand(root, pattern, what string, src *Source) ([]string, erro
 		}
 	}
 	return matches, nil
+}
+
+func checkParents(pattern string) error {
+	for _, part := range strings.FieldsFunc(pattern, func(r rune) bool { return strings.ContainsRune("/{},", r) }) {
+		if part == ".." {
+			return fmt.Errorf("glob alternatives cannot traverse parent folders")
+		}
+	}
+	return nil
 }
 
 type globFS struct {
