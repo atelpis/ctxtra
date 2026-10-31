@@ -540,7 +540,8 @@ Problems never make ctxtra add more than the config says:
 - A missing file is reported. The session still starts.
 - A file that isn't trusted (see [Sources and trust](#sources-and-trust)) is skipped and reported.
 
-`ctxtra doctor` lists every problem.
+`ctxtra doctor` lists every problem, also in bindings that don't match its folder, and exits with 1. The
+`context` commands report only what a session in their folder gets.
 
 ## Command line
 
@@ -549,7 +550,7 @@ with its flags and examples. The commands that change the config are grouped by 
 `source`, `binding-file` and `binding`, each with `add`, `list` and `remove`.
 
 - Exit codes: 0 when the command did what it was asked; 1 when it failed, or when `doctor` or a `context`
-  command found that a session wouldn't get everything it should; 2 for a usage error (an unknown command
+  command found that a session wouldn't get everything it should (for `doctor`, a session in any folder); 2 for a usage error (an unknown command
   or flag, a missing argument), with the command's usage hint on stderr.
 - Results go to stdout; problems, warnings, notices and questions go to stderr. In a report (`doctor`,
   `context explain`, the review of `source update`), its problems and warnings are part of the result, on

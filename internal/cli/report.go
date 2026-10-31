@@ -416,7 +416,8 @@ func (r report) doctor(dir string, asJSON bool) int {
 		repo = res.Repo.Root
 	}
 	runs := hook.LastRuns(res.Dir, repo)
-	ok = ok && status(res) == 0
+	others := res.OtherProblems(cfg)
+	ok = ok && status(res) == 0 && len(others) == 0
 	if asJSON {
 		sources := []sourceInfo{}
 		for _, src := range cfg.Sources {
@@ -430,7 +431,7 @@ func (r report) doctor(dir string, asJSON bool) int {
 			"sources": sources, "session": session(res),
 			"files": hits(res.Files, false), "skills": hits(res.Skills, true), "agents_over": agentDrops(res),
 			"hooks": agents, "last_hook_runs": runs,
-		}, append(sessionDiagnostics(res), diagnostics("notice", cfg.Notes)...))
+		}, slices.Concat(sessionDiagnostics(res), diagnostics("error", others), diagnostics("notice", cfg.Notes)))
 		if ok {
 			return 0
 		}
@@ -447,7 +448,7 @@ func (r report) doctor(dir string, asJSON bool) int {
 	for _, n := range cfg.Notes {
 		fmt.Fprintf(r.Out, "  NOTE: %s\n", n)
 	}
-	for _, p := range res.Problems {
+	for _, p := range slices.Concat(res.Problems, others) {
 		fmt.Fprintf(r.Out, "  PROBLEM: %s\n", p)
 	}
 	fmt.Fprintln(r.Out)

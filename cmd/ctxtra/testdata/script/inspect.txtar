@@ -38,6 +38,39 @@ stdout 'dropped .*/ctx/svc.md \(over budget.max-chars\)'
 stdout 'DROPPED \(over budget.max-chars\): .*/ctx/svc.md'
 env CTXTRA_CONFIG=
 
+# doctor checks the bindings that don't match its folder too. The context
+# commands report only what a session in the folder gets.
+exec ctxtra doctor dev/svc
+env CTXTRA_CONFIG=$HOME/broken.yaml
+! exec ctxtra doctor dev/svc
+stdout 'PROBLEM: other \(~/broken.yaml\): missing: .*/ctx/gone.md'
+stdout 'PROBLEM: other \(~/broken.yaml\): missing: .*/skills/gone/SKILL.md'
+stdout 'PROBLEM: other \(~/broken.yaml\): .*/skills/broken/SKILL.md: .*; skipped'
+! stdout 'MISSING'
+! exec ctxtra doctor --json dev/svc
+stdout '"severity": "error",\s+"message": "other \(~/broken.yaml\): missing: .*/ctx/gone.md"'
+exec ctxtra context files dev/svc
+! stderr .
+env CTXTRA_CONFIG=
+
+-- broken.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: svc
+    match:
+      repos:
+        - remote: github.com/acme/svc
+    instructions: [ctx/svc.md]
+  - name: other
+    match:
+      repos:
+        - remote: github.com/acme/other
+    instructions: [ctx/other.md, ctx/gone.md]
+    skills: [skills/gone, skills/broken]
+-- skills/broken/SKILL.md --
+---
+description: [
+---
 -- budget.yaml --
 schema: ctxtra/v1
 budget:
