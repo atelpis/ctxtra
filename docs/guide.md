@@ -186,7 +186,7 @@ ctxtra doctor [DIR]            # config problems, setup state, Codex trust, rece
 ```
 
 They exit with 1 when a session wouldn't get everything it should, and take `--json` (except
-`context show`). `ctxtra help` lists every command; `ctxtra help COMMAND` shows one.
+`context show`). `doctor` checks every binding, also those that don't match DIR. `ctxtra help` lists every command; `ctxtra help COMMAND` shows one.
 
 Every hook run is logged to `~/.ctxtra/log.jsonl`. The hook never blocks a session: on any error it adds
 nothing and logs the error.

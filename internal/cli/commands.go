@@ -661,9 +661,9 @@ func (a *app) doctorCmd() *cobra.Command {
 	c := &cobra.Command{
 		Use:   "doctor [DIR]",
 		Short: "Check the config, the agents' setup and recent hook runs",
-		Long: `Check config problems, what a session in DIR (default: the current folder)
-gets, the setup of every agent (including Codex's hook trust), and the last
-hook runs there. It exits with 1 when it finds a problem.`,
+		Long: `Check config problems in every binding, what a session in DIR (default: the
+current folder) gets, the setup of every agent (including Codex's hook trust),
+and the last hook runs there. It exits with 1 when it finds a problem.`,
 		Example: `  ctxtra doctor`,
 		Args:    atMost(1),
 		GroupID: "inspect",
