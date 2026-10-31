@@ -30,7 +30,7 @@ func (r report) resolve(dir string) (*resolve.Result, *config.Config) {
 // status is the exit code of a command that shows res: 1 when a session
 // wouldn't get all it should.
 func status(res *resolve.Result) int {
-	if len(res.Problems) > 0 || len(res.Missing) > 0 {
+	if len(res.Problems) > 0 || len(res.Missing) > 0 || len(res.Dropped) > 0 {
 		return 1
 	}
 	return 0
@@ -121,6 +121,9 @@ func (r report) show(dir string, o showOptions) int {
 	}
 	for _, m := range res.Missing {
 		fmt.Fprintf(r.Err, "missing: %s\n", m)
+	}
+	for _, h := range res.Dropped {
+		fmt.Fprintf(r.Err, "dropped (over %s): %s\n", h.Over, h.Path)
 	}
 	empty := "(nothing is added here)"
 	if len(o.exclude) > 0 {

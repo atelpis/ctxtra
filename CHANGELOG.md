@@ -6,6 +6,9 @@ that line, the hooks that an earlier release set up keep working as they are
 
 ## Unreleased
 
+- `doctor` and the `context` commands exit with 1 when `budget.max-chars` drops a file, as the docs say.
+  `context show` also names the dropped files on stderr.
+
 ## v0.2.1
 
 - The list of bound skills tells the agent that its skill tool can't load them, so it reads the `SKILL.md`
