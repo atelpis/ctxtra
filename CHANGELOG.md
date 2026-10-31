@@ -8,6 +8,8 @@ that line, the hooks that an earlier release set up keep working as they are
 
 - `doctor` and the `context` commands exit with 1 when `budget.max-chars` drops a file, as the docs say.
   `context show` also names the dropped files on stderr.
+- `doctor` checks every binding, also those that don't match its folder, and exits with 1 when one has a
+  missing file or another problem.
 
 ## v0.2.1
 

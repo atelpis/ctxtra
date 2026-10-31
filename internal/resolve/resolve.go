@@ -92,6 +92,29 @@ func Resolve(dir string, cfg *config.Config, rd config.Reader) *Result {
 	return res
 }
 
+// OtherProblems checks the bindings that don't match Dir the way a session
+// they match would, and returns what is wrong with them. Each binding reads
+// with its own limits: the limits are per session.
+func (r *Result) OtherProblems(cfg *config.Config) []string {
+	var out []string
+	for i, b := range cfg.Bindings {
+		if r.Trace[i].Matched {
+			continue
+		}
+		rd := fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes)
+		l := &loader{rd: rd, cfg: cfg, files: map[string]bool{}, skills: map[string]bool{}}
+		t := Trace{Origin: b.ID()}
+		c := &Result{}
+		c.apply(&t, b, l)
+		c.dedupeSkillNames()
+		for _, m := range c.Missing {
+			out = append(out, t.Origin+": missing: "+m)
+		}
+		out = append(out, c.Problems...)
+	}
+	return out
+}
+
 // checkAge is how old the last check for new commits may be before the
 // session says so. now is a variable for tests.
 var (
