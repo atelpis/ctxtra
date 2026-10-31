@@ -6,6 +6,10 @@ that line, the hooks that an earlier release set up keep working as they are
 
 ## Unreleased
 
+## v0.2.2
+
+**Upgrade:** No need to run `ctxtra setup`.
+
 - `doctor` and the `context` commands exit with 1 when `budget.max-chars` drops a file, as the docs say.
   `context show` also names the dropped files on stderr.
 
