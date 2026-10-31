@@ -23,6 +23,30 @@ exec ctxtra context files dev/other
 stdout '/ctx/other.md'
 ! stdout 'svc.md'
 
+# A file over budget.max-chars doesn't reach the session: each command says so
+# and exits with 1.
+env CTXTRA_CONFIG=$HOME/budget.yaml
+! exec ctxtra context files dev/svc
+stderr '^dropped \(over budget.max-chars\): .*/ctx/svc.md$'
+! exec ctxtra context files --json dev/svc
+stdout 'dropped \(over budget.max-chars\)'
+! exec ctxtra context show dev/svc
+stderr '^dropped \(over budget.max-chars\): .*/ctx/svc.md$'
+! exec ctxtra context explain dev/svc
+stdout 'dropped .*/ctx/svc.md \(over budget.max-chars\)'
+! exec ctxtra doctor dev/svc
+stdout 'DROPPED \(over budget.max-chars\): .*/ctx/svc.md'
+env CTXTRA_CONFIG=
+
+-- budget.yaml --
+schema: ctxtra/v1
+budget:
+  max-chars: 5
+bindings:
+  - name: me
+    match:
+      global: true
+    instructions: [ctx/svc.md]
 -- .config/ctxtra/config.yaml --
 schema: ctxtra/v1
 include: [b.yaml]

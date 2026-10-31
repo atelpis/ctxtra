@@ -56,7 +56,7 @@ a task in that folder matches its description.
 
 ## When it doesn't work
 
-- `problem:` or `missing:` lines on stderr (the command then exits with 1): tell the user in one line, and
+- `problem:`, `missing:` or `dropped` lines on stderr (the command then exits with 1): tell the user in one line, and
   go on with what was added. Don't fix the config yourself. If the user wants it fixed, the `ctxtra` skill has the steps.
 - The command isn't found, the sandbox blocks it, or the user declines the permission prompt: don't go on
   silently. Tell the user that you couldn't get their instructions for `DIR`, with the error, and ask
