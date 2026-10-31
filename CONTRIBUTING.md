@@ -31,7 +31,9 @@ people and coding agents.
 
 Security problems go to [SECURITY.md](SECURITY.md), not to issues.
 
-GitHub manages CodeQL through the repository's default setup. The dependency-audit workflow checks the
+The CodeQL workflow scans Go, JavaScript/TypeScript and GitHub Actions on PRs (including Dependabot),
+pushes to `main` and a weekly schedule. It uses advanced setup; keep GitHub's default setup disabled so
+it accepts the workflow's results. The dependency-audit workflow checks the
 e2e agents' npm lockfile on PRs, pushes to `main` and a weekly schedule. The lint job runs `govulncheck`
 for both Go modules.
 
