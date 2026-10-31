@@ -12,6 +12,7 @@
   "overrides": {
     "@modelcontextprotocol/client": "2.3.0",
     "fflate": "0.8.3",
+    "minimatch": "11.0.1",
     "undici": "8.12.2",
     "zod": "4.6.7"
   }
