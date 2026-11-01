@@ -1,7 +1,6 @@
 # ctxtra tasks
 
-Step by step, for the tasks of the ctxtra skill. The rules and the warnings in its `SKILL.md` apply to
-every step.
+The rules and warnings in the ctxtra skill's `SKILL.md` apply to every step.
 
 ## First setup
 
@@ -94,12 +93,15 @@ so that every agent gets them. Do every step; don't skip the files of an agent.
 
 ## A session didn't get a file, or got the wrong one
 
-1. `ctxtra context explain DIR` in the session folder: does the binding match, and why not.
+1. `ctxtra context explain DIR` in the session folder: does the binding match, and why not. Check for
+   dropped files too: `budget.max-chars` drops whole files from the end. `ctxtra context files DIR` lists
+   what remains and names dropped files on stderr. Read `ctxtra help config` for the budget rules.
 2. `ctxtra doctor DIR`: problems (missing files, untrusted repositories, pinned commits not in the store),
-   hook setup for the agent, and whether the hook ran in that folder. A `PROBLEM:` line that names a binding
-   can be about a binding that doesn't match DIR.
-3. Check the limits of the agent in `ctxtra help agents`: some show the model only the start of a long
-   text, some don't add the text again in a resumed session.
+   dropped files, hook setup for the agent, and whether the hook ran in that folder. A `PROBLEM:` line that
+   names a binding can be about a binding that doesn't match DIR.
+3. Check the agent's limits in `ctxtra help agents`: files can also be dropped to fit the agent's
+   capacity. The session-start message and hook log name them; `ctxtra doctor DIR` shows recent hook runs.
+   Some agents show the model only the start of a long text, or don't add it again in a resumed session.
 4. If the file is bound to another repository than the session folder's, for example a session started in
    one repository that then worked in another: the session gets only what its own folder matches. The
    optional `ctxtra-follow` skill gets the other repository's files when the agent works there. Offer

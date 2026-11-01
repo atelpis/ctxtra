@@ -14,9 +14,7 @@ team repository pinned to a commit the user accepted (a `git` source).
 
 ## Where the facts are
 
-This skill says how to work with ctxtra. It doesn't describe the config format: that changes between
-versions, and the installed binary knows its own version. Before you write config, read the rules from the
-binary:
+Before writing config, read the installed binary's rules; the format changes between versions:
 
 - `ctxtra help config`: the config format, `match`, sources and trust, updates, limits.
 - `ctxtra help scenarios`: use cases step by step, and what ctxtra protects from.
@@ -27,15 +25,18 @@ Ask the binary about the user's setup instead of guessing:
 
 | Command | Answers |
 |---|---|
-| `ctxtra doctor [DIR]` | Where the config is, its sources and their state, every problem with a fix, hook setup per agent, recent hook runs. Start here. |
-| `ctxtra context explain DIR` | Every binding: matched in DIR or not, and why; the size of what is added. |
+| `ctxtra doctor [DIR]` | Config path, sources and state, problems and fixes, hook setup, recent hook runs. Start here. |
+| `ctxtra context explain DIR` | Bindings: matched or not, why, and the size added. |
 | `ctxtra context files DIR` | The files and skills a session in DIR gets. |
 | `ctxtra context show DIR` | The exact text a session in DIR gets. |
 | `ctxtra source list`, `ctxtra binding-file list`, `ctxtra binding list` | What the config has. |
+| `ctxtra source show NAME` | One source's state, binding files and clones. |
+| `ctxtra source update --check [NAME]...` | Fetch and review; accepts and dismisses nothing. Only the user accepts updates (rule 4). |
 
-`doctor`, `context files`, `context explain` and the `list` commands take `--json`.
-Problems in this output say how to fix them. Use these fixes, but the ones that add trust need the user's
-decision (see below). Read all of a command's output, also stderr: notices and warnings don't change the exit code.
+`doctor`, `context files`, `context explain`, the `list` commands, `source show` and
+`source update --check` take `--json`.
+Use the fixes in this output, but adding trust needs the user's decision (see below).
+Read stderr too: notices and warnings don't change the exit code.
 
 ## Rules
 

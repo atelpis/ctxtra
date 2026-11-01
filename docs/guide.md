@@ -170,7 +170,7 @@ ctxtra source restore          # a new laptop: fetch exactly the accepted commit
 ```
 
 `ctxtra source list`, `ctxtra binding-file list` and `ctxtra binding list` show what the config has; each
-group has `remove` too.
+group has `remove` too. `ctxtra source show NAME` shows one source's state, binding files and clones.
 
 Full spec: [spec.md](spec.md). Use cases, from your own instruction files to a team repository you
 contribute to: [scenarios.md](scenarios.md). `ctxtra help config` and `ctxtra help scenarios` show
@@ -228,8 +228,9 @@ session folder: a binding for `~/dev/mono/billing/**` doesn't reach a session st
   text into labeled parts there: 40 hooks per event in Claude Code and Muse, a plugin callback per part in
   Hermes, an injected step per part in Antigravity. See [the spec](spec.md#capacity).
 - Except in Pi and OpenCode, bound skills are a list in the session text, not the agent's own skills. The
-  agent reads a skill's `SKILL.md` with its file tool when a task needs it. You can't start one with a slash
-  command, and frontmatter keys other than `name` and `description` have no effect.
+  agent reads a skill's `SKILL.md` at its listed location with its file tool when a task needs it or an
+  instruction names it. This also applies to skills listed by `ctxtra-follow`: the agent's skill tool and
+  slash commands can't load them. Frontmatter keys other than `name` and `description` have no effect.
 - Codex gets the text in full only from version 0.145.0, which reads the hook's `additionalContextLimit`;
   older versions show the model about 10,000 characters, and `doctor` warns.
 - Resumed sessions don't get the text again, because the transcript already has it. `/compact` and

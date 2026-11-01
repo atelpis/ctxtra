@@ -51,8 +51,10 @@ in the list "Files that ctxtra also adds ..." apply there too, as well as where 
 file from the other repository and one from the session's repository disagree, follow the one for the
 folder the work is in. When that isn't clear, ask the user.
 
-Skills in the output's list work like your other skills: read a skill's SKILL.md at its `<location>` when
-a task in that folder matches its description.
+Skills in the output's list are not installed in your agent: your skill tool and slash commands can't
+load them. When a task in that folder matches a skill's description, or an instruction names it, read its
+`SKILL.md` at the listed `<location>` with your file-reading tool before you start and follow it.
+Resolve relative paths in a `SKILL.md` against that skill's folder.
 
 ## When it doesn't work
 
