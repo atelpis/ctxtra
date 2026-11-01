@@ -103,7 +103,11 @@ Not covered here, and checked by hand before a release:
 - Devin CLI and Devin Local: they need a Devin login before a session starts (also with `-p`), and get
   models from Cognition's API server over an undocumented protocol, with no own API key or base URL. The
   CLI test `setup_devin` covers the hook, and that Claude's hook adds nothing when Devin runs it.
-- Whether a real model follows the files and skills.
+- Whether a real model follows the files and skills. For skill-loading wording, use real `claude -p`
+  runs with its native `Skill` tool available. Check both a task matching a bound skill's description and
+  an instruction naming it, also for skills listed by `ctxtra-follow` in another folder. Inspect the
+  tool calls: the agent should read the listed `SKILL.md` without first calling `Skill`. The mock's
+  scripted tool calls cannot establish this behavior.
 
 ## Add an agent
 
