@@ -271,8 +271,17 @@ func TestOwnFileRemoved(t *testing.T) {
 	if _, err := os.Stat(c.Path); !os.IsNotExist(err) {
 		t.Errorf("not removed: %v", err)
 	}
-	if b, _ := os.ReadDir(filepath.Join(h, ".ctxtra", "backups")); len(b) == 0 {
-		t.Error("no backup")
+	for range 4 {
+		on.Binary += "x"
+		if err := c.Apply(on, &r); err != nil {
+			t.Fatal(err)
+		}
+		if err := c.Apply(remove, &r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if b, err := os.ReadDir(filepath.Join(h, ".ctxtra", "backups")); err != nil || len(b) != 3 {
+		t.Fatalf("want three backups after removal: %v, %v", b, err)
 	}
 	target := filepath.Join(h, "dotfiles", "ctxtra.json")
 	testenv.Write(t, target, "{}")

@@ -172,7 +172,13 @@ func (c Config) Apply(o agent.Options, r *agent.Report) error {
 		if err := fsutil.Backup(c.Path, old, paths.BackupDir()); err != nil {
 			return err
 		}
-		return os.Remove(c.Path)
+		if err := os.Remove(c.Path); err != nil {
+			return err
+		}
+		if err := fsutil.PruneBackups(c.Path, paths.BackupDir()); err != nil {
+			r.Warnings = append(r.Warnings, err.Error())
+		}
+		return nil
 	}
 	out, err := jsonorder.MarshalIndent(data)
 	if err != nil {

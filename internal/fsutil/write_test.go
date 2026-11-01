@@ -7,8 +7,7 @@ import (
 	"testing"
 )
 
-// Two writes in the same second keep both old versions: the first backup
-// is the original file, which must never be lost.
+// Two changes keep both old versions, even within the same second.
 func TestWriteAtomicBackups(t *testing.T) {
 	dir := t.TempDir()
 	backups := filepath.Join(dir, "backups")

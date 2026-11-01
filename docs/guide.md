@@ -48,7 +48,13 @@ ctxtra setup                      # every agent found on this machine, or --agen
 
 `setup` adds hooks that run the binary you started it from, by its full path: agents started from the Dock
 often don't have `~/go/bin` in their `PATH`. It changes only its own hook entries and backs up each file it
-changes to `~/.ctxtra/backups`. Codex runs the hooks only after you trust them once (`/hooks` in Codex), and
+changes to `~/.ctxtra/backups`. Setup and config edits keep the latest three backups per original file,
+pruning only after a successful change. The latest backup is reused when its content is unchanged.
+Cleanup is best effort: if an older backup cannot be removed, extra copies stay without failing the
+config change. Import backups are not pruned. Older config backups without a
+full-path hash in their names are left alone: their original paths cannot be identified safely. You can
+remove those manually when you no longer need them; agent config backups may contain tokens.
+Codex runs the hooks only after you trust them once (`/hooks` in Codex), and
 asks once more after a hook changed, for example after an upgrade that changes the hooks.
 Hermes loads the plugin only after you enable it once (`hermes plugins enable ctxtra`).
 `ctxtra setup --remove` removes them.

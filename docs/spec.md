@@ -251,8 +251,17 @@ Accepting it is still your choice.
 The commands that change the config change it as text: they replace the `commit` value or add lines, and keep your
 comments and layout. In a flow-style map (`{...}`) they write the file again from its YAML, which keeps
 comments but not the layout. A changed config is checked before it is written, written atomically, and the
-old one is kept in `~/.ctxtra/backups`. A symlinked config stays a symlink. If the source changed in the
-config while `source update` waited for your answer, nothing is accepted.
+old one is kept in `~/.ctxtra/backups`. Setup and config edits keep the latest three backups per original
+file, pruning only after the config is successfully replaced or removed. Cleanup is best effort: a
+cleanup error can leave extra copies, but does not turn a completed config change into a failed one.
+If the latest backup has the same content, it is reused. New backup names contain a SHA-256 hash of the
+absolute original path, a short readable name and a UTC nanosecond timestamp. Parent-directory symlinks
+are resolved before hashing. Timestamps advance even if the clock moves backward; names break ties.
+A symlinked config stays a symlink, and its target path identifies its backups. Import backups and
+unrelated files are not pruned. Older config backups lack the full-path identity and are left alone,
+because their names can refer to several original paths. Remove them manually when no longer needed;
+agent config backups may contain tokens. If the source changed in the config while `source update`
+waited for your answer, nothing is accepted.
 
 ### Store
 
