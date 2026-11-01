@@ -6,6 +6,12 @@ that line, the hooks that an earlier release set up keep working as they are
 
 ## Unreleased
 
+- Setup and config edits keep only the latest three backups per original file, pruning after a successful
+  change. Cleanup errors leave extra copies without failing the config change. An unchanged latest
+  backup is reused. New backup names identify the full original path, so files with matching names in different
+  folders do not share retention. Import backups are unchanged. Older config backups cannot be safely
+  matched to their original paths and are left for manual cleanup; they may contain tokens.
+
 - `ctxtra-follow` tells agents to read bound skills at their listed locations, also when an instruction
   names one, instead of trying their native skill tool. The `ctxtra` skill now covers dropped files in
   troubleshooting and lists `source show` and `source update --check`.
