@@ -2,6 +2,8 @@ package resolve
 
 import (
 	"fmt"
+	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/atelpis/ctxtra/internal/chunk"
@@ -19,6 +21,24 @@ func (r *Result) RenderFiles() string {
 		return ""
 	}
 	return chunk.Join(r.fileBlocks())
+}
+
+// Namer is how messages name r's files, kept or dropped: by base name, or by
+// the full path, as the user knows it, of files that share their base name.
+func (r *Result) Namer() func(Hit) string {
+	count := map[string]int{}
+	for _, h := range slices.Concat(r.Files, r.Dropped) {
+		count[filepath.Base(h.Path)]++
+	}
+	return func(h Hit) string {
+		switch name := filepath.Base(h.Path); {
+		case count[name] < 2:
+			return name
+		case h.Ref != "":
+			return h.Ref
+		}
+		return paths.TildeReal(h.Path)
+	}
 }
 
 // Blocks are the parts of Render: a block per file, then one for the list

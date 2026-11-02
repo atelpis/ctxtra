@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/atelpis/ctxtra/internal/resolve"
 	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
@@ -184,4 +186,24 @@ bindings:
 			t.Fatalf("more than 6 parts for 30,000 bytes of text")
 		}
 	}
+}
+
+// A file an agent doesn't get is told from the same-named file it gets.
+func TestAgentDropsSameNames(t *testing.T) {
+	h := testenv.Home(t)
+	big := strings.Repeat("x", 100_000)
+	res := &resolve.Result{Files: []resolve.Hit{
+		{Path: filepath.Join(h, "a", "style.md"), Content: big},
+		{Path: filepath.Join(h, "b", "style.md"), Content: big},
+		{Path: filepath.Join(h, "b", "other.md"), Content: big},
+	}}
+	for _, d := range agentDrops(res) {
+		if d.Agent == "copilot" {
+			if want := []string{"~/b/style.md", "other.md"}; !slices.Equal(d.Dropped, want) {
+				t.Errorf("dropped %v, want %v", d.Dropped, want)
+			}
+			return
+		}
+	}
+	t.Error("copilot isn't over its limit")
 }

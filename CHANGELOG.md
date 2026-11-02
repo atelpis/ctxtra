@@ -6,6 +6,11 @@ that line, the hooks that an earlier release set up keep working as they are
 
 ## Unreleased
 
+- The session-start summary and the size warnings of `explain` and `doctor` show files with the same name by
+  full path: from `~` for local files, as `ctxtra://<source>/<path>` for files from a pinned source. Other
+  files keep their short name. The count of problems now comes before the dropped files in the summary, so
+  long paths can't hide it in Muse.
+
 - Setup and config edits keep only the latest three backups per original file, pruning after a successful
   change. Cleanup errors leave extra copies without failing the config change. An unchanged latest
   backup is reused. New backup names identify the full original path, so files with matching names in different

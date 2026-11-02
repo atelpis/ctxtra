@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -9,6 +10,8 @@ import (
 	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/resolve"
+	"github.com/atelpis/ctxtra/internal/source"
+	"github.com/atelpis/ctxtra/internal/testenv"
 )
 
 func TestSummary(t *testing.T) {
@@ -30,7 +33,7 @@ func TestSummary(t *testing.T) {
 		"✓ ctxtra added 2 instructions\nInstructions:\n- a.md\n- b.md":                                  {Files: files("a.md", "b.md")},
 		"✓ ctxtra added 1 instruction and 2 skills\nInstructions:\n- a.md\nSkills:\n- deploy\n- review": {Files: files("a.md"), Skills: skills},
 		"✓ ctxtra added 5 instructions\nInstructions:\n- a.md\n- b.md\n- c.md\n- d.md\n- e.md":          {Files: files("a.md", "b.md", "c.md", "d.md", "e.md")},
-		"✓ ctxtra added 1 instruction; 1 not found, dropped b.md, c.md (over budget.max-chars), 1 problem (run ctxtra doctor)\nInstructions:\n- a.md": {
+		"✓ ctxtra added 1 instruction; 1 not found, 1 problem, dropped b.md, c.md (over budget.max-chars) (run ctxtra doctor)\nInstructions:\n- a.md": {
 			Files: files("a.md"), Missing: []string{"x"}, Dropped: over(files("b.md", "c.md"), "budget.max-chars"), Problems: []string{"p"}},
 		"✓ ctxtra added 1 instruction; dropped b.md, c.md, d.md, +1 more (over Claude Code's limit of 360,000 characters), dropped z.md (over budget.max-chars) (run ctxtra doctor)\nInstructions:\n- a.md": {
 			Files: files("a.md"), Dropped: append(over(files("b.md", "c.md", "d.md", "e.md"), "Claude Code's limit of 360,000 characters"),
@@ -120,6 +123,70 @@ func TestSystemMessage(t *testing.T) {
 	}
 	if got := agent.SystemMessage("SubagentStart", "x"); got != "" {
 		t.Errorf("subagent: %s", got)
+	}
+}
+
+// Files with the same base name are shown by full path, and only those.
+func TestSummarySameNames(t *testing.T) {
+	h := testenv.Home(t)
+	local := func(rel string) resolve.Hit { return resolve.Hit{Path: filepath.Join(h, rel)} }
+	dropped := func(hit resolve.Hit) resolve.Hit { hit.Over = "budget.max-chars"; return hit }
+	pinned := func(ref string) resolve.Hit {
+		return resolve.Hit{Path: "/store/" + strings.TrimPrefix(ref, "ctxtra://"), Ref: ref}
+	}
+	for want, res := range map[string]*resolve.Result{
+		"✓ ctxtra added 3 instructions\nInstructions:\n- other.md\n- ~/global/style.md\n- ~/personal/style.md": {
+			Files: []resolve.Hit{local("global/other.md"), local("global/style.md"), local("personal/style.md")}},
+		"✓ ctxtra added 2 instructions\nInstructions:\n- /etc/ctx/style.md\n- ~/global/style.md": {
+			Files: []resolve.Hit{{Path: "/etc/ctx/style.md"}, local("global/style.md")}},
+		"✓ ctxtra added 3 instructions\nInstructions:\n- engineering.md\n- ~/aictx/style.md\n- ctxtra://team-ctx/style.md": {
+			Files: []resolve.Hit{local("aictx/engineering.md"), local("aictx/style.md"), pinned("ctxtra://team-ctx/style.md")}},
+		"✓ ctxtra added 2 instructions\nInstructions:\n- ctxtra://a/style.md\n- ctxtra://b/style.md": {
+			Files: []resolve.Hit{pinned("ctxtra://a/style.md"), pinned("ctxtra://b/style.md")}},
+		"✓ ctxtra added 1 instruction\nInstructions:\n- style.md": {Files: []resolve.Hit{pinned("ctxtra://a/style.md")}},
+		// A kept file and a dropped one are told apart too.
+		"✓ ctxtra added 1 instruction; dropped ~/b/style.md, ctxtra://a/style.md, c.md (over budget.max-chars) (run ctxtra doctor)\nInstructions:\n- ~/a/style.md": {
+			Files: []resolve.Hit{local("a/style.md")}, Dropped: []resolve.Hit{dropped(local("b/style.md")), dropped(pinned("ctxtra://a/style.md")), dropped(local("b/c.md"))}},
+		"ctxtra added nothing; dropped ~/a/style.md, ~/b/style.md (over budget.max-chars) (run ctxtra doctor)": {
+			Dropped: []resolve.Hit{dropped(local("a/style.md")), dropped(local("b/style.md"))}},
+		// A line end in a parent folder stays on the line.
+		`ctxtra added nothing; dropped "~/a\nb/style.md", ~/b/style.md (over budget.max-chars) (run ctxtra doctor)`: {
+			Dropped: []resolve.Hit{dropped(local("a\nb/style.md")), dropped(local("b/style.md"))}},
+		// Skills keep their names, which sessions use to tell them apart.
+		"✓ ctxtra added 1 skill\nSkills:\n- deploy": {Skills: []resolve.Hit{local("skills/deploy/SKILL.md")}},
+	} {
+		for i := range res.Skills {
+			res.Skills[i].Name = "deploy"
+		}
+		if got := agent.Summary(res); got != want {
+			t.Errorf("got  %q\nwant %q", got, want)
+		}
+	}
+}
+
+// Resolved from a config: files of pinned sources by reference, never by
+// their path in the store.
+func TestSummaryPinnedFiles(t *testing.T) {
+	h := testenv.Home(t)
+	commit := strings.Repeat("a", 40)
+	a, b := source.GenDir("https://h/a", commit), source.GenDir("https://h/b", commit)
+	for _, f := range []string{filepath.Join(a, "style.md"), filepath.Join(a, "go", "style.md"), filepath.Join(b, "style.md"), filepath.Join(h, "ctx", "style.md")} {
+		testenv.Write(t, f, "text")
+	}
+	cfg := testenv.Config(t, h, `schema: ctxtra/v1
+sources:
+  a: {git: 'https://h/a', branch: main, commit: '`+commit+`'}
+  b: {git: 'https://h/b', branch: main, commit: '`+commit+`'}
+bindings:
+  - {name: all, match: {global: true}, instructions: [~/ctx/style.md, 'ctxtra://a/**/style.md', ctxtra://b/style.md]}
+`)
+	res, _ := resolve.Session(h, cfg)
+	if len(res.Problems) > 0 {
+		t.Fatalf("problems %v", res.Problems)
+	}
+	want := "✓ ctxtra added 4 instructions\nInstructions:\n- ~/ctx/style.md\n- ctxtra://a/go/style.md\n- ctxtra://a/style.md\n- ctxtra://b/style.md\n"
+	if got := agent.Summary(res); !strings.HasPrefix(got, want) {
+		t.Errorf("got  %q\nwant %q...", got, want)
 	}
 }
 

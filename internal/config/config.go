@@ -59,9 +59,9 @@ type Config struct {
 	Bindings    []Binding // the config's own, then those of each binding file
 	MaxChars    int       // budget.max-chars, in characters (Unicode code points); 0 means no limit
 	Problems    []string
-	Notes       []string        // hints, for doctor
-	pinned      map[string]bool // paths resolved into the store
-	mappings    *state.Mappings // of imported clones; read when needed
+	Notes       []string          // hints, for doctor
+	pinned      map[string]string // paths resolved into the store, and their references
+	mappings    *state.Mappings   // of imported clones; read when needed
 	mappingsErr error
 	touched     map[string]bool // generations touched for this load
 	storeBusy   error           // a touch failed: don't wait again

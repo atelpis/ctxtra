@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"unicode/utf8"
@@ -314,9 +313,10 @@ func agentDrops(res *resolve.Result) []agentDrop {
 		if len(c.Dropped) == 0 {
 			continue
 		}
+		name := c.Namer()
 		names := make([]string, len(c.Dropped))
 		for i, h := range c.Dropped {
-			names[i] = filepath.Base(h.Path)
+			names[i] = name(h)
 		}
 		out = append(out, agentDrop{a.Name(), d.Over(), names})
 	}

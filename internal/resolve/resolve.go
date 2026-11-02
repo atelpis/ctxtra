@@ -22,6 +22,7 @@ import (
 // Hit is a file or a skill added to the session.
 type Hit struct {
 	Path    string // the file, or the skill's SKILL.md
+	Ref     string // a file of a pinned source: ctxtra://<source>/<path>
 	Content string // a file's text; a skill's SKILL.md text after the frontmatter
 	Origin  string // the binding that added it
 	Global  bool   // from a binding with `global: true`
@@ -166,7 +167,7 @@ func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
 		f := paths.Real(raw)
 		t.Files = append(t.Files, f)
 		if content, ok := l.load(t, raw, f, l.files); ok {
-			r.Files = append(r.Files, Hit{Path: f, Content: content, Origin: t.Origin, Global: b.Selector.Global})
+			r.Files = append(r.Files, Hit{Path: f, Ref: l.cfg.Ref(raw), Content: content, Origin: t.Origin, Global: b.Selector.Global})
 		}
 	}
 	for _, dir := range b.Skills {

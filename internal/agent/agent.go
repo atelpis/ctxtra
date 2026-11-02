@@ -294,10 +294,11 @@ func Summary(res *resolve.Result) string {
 		return ""
 	}
 	var added, issues, lists []string
+	name := res.Namer()
 	if n := len(res.Files); n > 0 {
 		names := make([]string, n)
 		for i, h := range res.Files {
-			names[i] = filepath.Base(h.Path)
+			names[i] = name(h)
 		}
 		added = append(added, plural(n, "instruction"))
 		lists = append(lists, summaryList("Instructions", names))
@@ -313,10 +314,12 @@ func Summary(res *resolve.Result) string {
 	if n := len(res.Missing); n > 0 {
 		issues = append(issues, fmt.Sprintf("%d not found", n))
 	}
-	issues = append(issues, dropped(res.Dropped)...)
+	// Before the dropped files, whose paths can be long: Muse cuts the end of
+	// a summary that is too long for it.
 	if n := len(res.Problems); n > 0 {
 		issues = append(issues, plural(n, "problem"))
 	}
+	issues = append(issues, dropped(res.Dropped, name)...)
 	if len(added) == 0 && len(issues) == 0 && len(res.Notices) == 0 {
 		return ""
 	}
@@ -338,14 +341,14 @@ func Summary(res *resolve.Result) string {
 
 // dropped is a line per limit that files were dropped for: "dropped a.md,
 // b.md (over budget.max-chars)".
-func dropped(hits []resolve.Hit) []string {
+func dropped(hits []resolve.Hit, name func(resolve.Hit) string) []string {
 	var out, over []string
 	names := map[string][]string{}
 	for _, h := range hits {
 		if _, ok := names[h.Over]; !ok {
 			over = append(over, h.Over)
 		}
-		names[h.Over] = append(names[h.Over], filepath.Base(h.Path))
+		names[h.Over] = append(names[h.Over], plain(name(h)))
 	}
 	for _, o := range over {
 		out = append(out, fmt.Sprintf("dropped %s (over %s)", Names(names[o]), o))
@@ -358,15 +361,21 @@ func summaryList(title string, names []string) string {
 	const limit = 15
 	listed := make([]string, len(names))
 	for i, name := range names {
-		if strings.ContainsAny(name, "\r\n") || strings.HasPrefix(name, "+") && strings.HasSuffix(name, " more") {
-			name = strconv.Quote(name)
-		}
-		listed[i] = name
+		listed[i] = plain(name)
 	}
 	if len(names) > limit {
 		listed = append(listed[:limit:limit], fmt.Sprintf("+%d more", len(names)-limit))
 	}
 	return title + ":\n- " + strings.Join(listed, "\n- ")
+}
+
+// plain is name, quoted when it would read as more than one name: a file name
+// can hold a line end, or look like "+N more".
+func plain(name string) string {
+	if strings.ContainsAny(name, "\r\n") || strings.HasPrefix(name, "+") && strings.HasSuffix(name, " more") {
+		return strconv.Quote(name)
+	}
+	return name
 }
 
 // Names is "a, b, c", or "a, b, c, +2 more" for more than three names.

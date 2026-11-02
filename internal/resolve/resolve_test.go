@@ -251,6 +251,30 @@ func TestParseSkillDelimiters(t *testing.T) {
 
 // Sessions that use a pinned source say when it wasn't checked for new
 // commits for a while, and when a newer commit wasn't accepted.
+func TestRefs(t *testing.T) {
+	h := testenv.Home(t)
+	url, commit := "https://h/team", strings.Repeat("a", 40)
+	gen := source.GenDir(url, commit)
+	testenv.Write(t, filepath.Join(gen, "x", "a.md"), "A")
+	testenv.Write(t, filepath.Join(gen, "b.yaml"), head+"  - {name: rel, match: {global: true}, instructions: [x/b.md]}\n")
+	testenv.Write(t, filepath.Join(gen, "x", "b.md"), "B")
+	testenv.Write(t, filepath.Join(h, "n", "me.md"), "me")
+	// The same commit of the same repository: the first reference names the file.
+	cfgPath := testenv.Config(t, h, "schema: ctxtra/v1\nsources:\n  one: {git: '"+url+"', branch: main, commit: '"+commit+"'}\n  two: {git: '"+url+"', branch: dev, commit: '"+commit+"'}\n"+
+		"include: [ctxtra://one/b.yaml]\nbindings:\n  - {name: me, match: {global: true}, instructions: [ctxtra://two/x/a.md, ctxtra://one/x/a.md, ~/n/me.md]}\n")
+	res, _ := Session(h, cfgPath)
+	if len(res.Problems) > 0 {
+		t.Fatalf("problems %v", res.Problems)
+	}
+	var got []string
+	for _, f := range res.Files {
+		got = append(got, f.Ref)
+	}
+	if want := []string{"ctxtra://two/x/a.md", "", "ctxtra://one/x/b.md"}; !slices.Equal(got, want) {
+		t.Errorf("refs %q, want %q", got, want)
+	}
+}
+
 func TestNotices(t *testing.T) {
 	h := testenv.Home(t)
 	url, commit := "https://h/team", strings.Repeat("a", 40)

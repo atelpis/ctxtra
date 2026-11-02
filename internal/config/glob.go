@@ -61,7 +61,7 @@ func (c *Config) expand(root, pattern, what string, src *Source) ([]string, erro
 	slices.Sort(matches)
 	if tree.pinned {
 		for _, p := range matches {
-			c.pin(p)
+			c.pin(*src, p)
 		}
 	}
 	return matches, nil
