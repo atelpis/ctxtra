@@ -34,9 +34,20 @@ Skills:
 - deploy
 ```
 
-Each list shows up to 15 names, followed by `+N more` when needed. Muse may show fewer names to fit its message size limit. The summary also reports problems
-found, if any. The session-start hooks of Cursor, Copilot and Antigravity, and OpenCode, Hermes and DSH plugins, can't
-show a message.
+Each list shows up to 15 names, followed by `+N more` when needed. Muse may show fewer names to fit its message size limit.
+
+Files with the same name are shown by full path, so that you can tell them apart. A file under your home folder is
+shown from `~`, and a file from a pinned source as `ctxtra://<source>/<path>`:
+
+```text
+Instructions:
+- engineering.md
+- ~/dev/aictx/global/style.md
+- ctxtra://team-ctx/style.md
+```
+
+The summary also reports problems found, if any, and names the files that were dropped, in the same way. The
+session-start hooks of Cursor, Copilot and Antigravity, and OpenCode, Hermes and DSH plugins, can't show a message.
 
 ## Install
 

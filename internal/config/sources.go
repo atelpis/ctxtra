@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -70,8 +71,17 @@ func (c *Config) policy() *trust.Policy {
 // Pinned reports whether path was resolved from a ctxtra:// reference into
 // the store, or is a skill's SKILL.md in such a folder. These paths aren't
 // checked with Trust: ctxtra wrote the store, without symlinks.
-func (c *Config) Pinned(path string) bool {
-	return c.pinned[path] || filepath.Base(path) == "SKILL.md" && c.pinned[filepath.Dir(path)]
+func (c *Config) Pinned(path string) bool { return c.Ref(path) != "" }
+
+// Ref is the ctxtra:// reference of a Pinned path, "" for any other path.
+func (c *Config) Ref(path string) string {
+	if r := c.pinned[path]; r != "" {
+		return r
+	}
+	if r := c.pinned[filepath.Dir(path)]; r != "" && filepath.Base(path) == "SKILL.md" {
+		return r + "/SKILL.md"
+	}
+	return ""
 }
 
 func (c *Config) roots() []trust.Root {
@@ -206,7 +216,7 @@ func (c *Config) refLinks(s, base string, in *Source, follow bool) (string, *Sou
 		if filepath.IsAbs(filepath.FromSlash(s)) || strings.HasPrefix(s, "~") || !within(in.Gen(), p) {
 			return "", nil, fmt.Errorf("%s is not a path in the source %s", s, in.Name)
 		}
-		c.pin(p)
+		c.pin(*in, p)
 		return p, in, nil
 	}
 	name, p, _ := strings.Cut(rest, "/")
@@ -259,7 +269,7 @@ func (c *Config) inStore(s string, src Source, p string) (string, *Source, error
 		return "", nil, errUnavailable{fmt.Errorf("%s: %s %s is not in ctxtra's store; run: ctxtra source restore %s; skipped", s, src.Name, source.Short(src.Commit), src.Name)}
 	}
 	p = filepath.Join(src.Gen(), filepath.FromSlash(p))
-	c.pin(p)
+	c.pin(src, p)
 	return p, &src, nil
 }
 
@@ -314,11 +324,16 @@ func (c *Config) mapped(s, p string, follow bool) (string, *Source, error) {
 // touch is source.Touch; a variable for tests.
 var touch = source.Touch
 
-func (c *Config) pin(p string) {
+// pin records that p is in src. Two sources at the same commit share their
+// paths: the source referenced first names them.
+func (c *Config) pin(src Source, p string) {
 	if c.pinned == nil {
-		c.pinned = map[string]bool{}
+		c.pinned = map[string]string{}
 	}
-	c.pinned[p] = true
+	if c.pinned[p] == "" {
+		rel, _ := paths.Rel(src.Gen(), p)
+		c.pinned[p] = Scheme + path.Join(src.Name, rel)
+	}
 }
 
 // within reports whether p is root or below it, compared as cleaned paths.

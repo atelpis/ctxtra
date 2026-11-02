@@ -61,6 +61,19 @@ func Tilde(p string) string {
 	return p
 }
 
+// TildeReal is Tilde for messages about a path with symlinks resolved, also
+// when the home directory is reached through a symlink. Unlike Tilde's, its
+// result doesn't always expand to the same text, so it must not be saved.
+func TildeReal(p string) string {
+	home := Home()
+	if real := Real(home); real != home {
+		if rel, ok := Rel(real, p); ok {
+			p = filepath.Join(home, rel)
+		}
+	}
+	return Tilde(p)
+}
+
 // StateDir is ~/.ctxtra: backups of changed agent configs and the hook log.
 func StateDir() string { return filepath.Join(Home(), ".ctxtra") }
 

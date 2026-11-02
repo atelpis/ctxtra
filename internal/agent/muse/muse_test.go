@@ -1,6 +1,7 @@
 package muse
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -33,6 +34,28 @@ func TestLongSummaryLists(t *testing.T) {
 		if len(b)-2 > maxSummary || !strings.Contains(got, "Skills:\n- deploy") || !strings.Contains(got, "ctxtra: source needs checking") || !strings.Contains(got, " more\nSkills:") || strings.HasSuffix(got, "…") {
 			t.Fatalf("lost summary information (%d JSON bytes): %q", len(b)-2, got)
 		}
+	}
+}
+
+// Long paths of same-named files don't hide the problems: those in a list
+// are omitted first, and dropped ones come after the count of problems.
+func TestLongPathsKeepProblems(t *testing.T) {
+	long := func(i int) resolve.Hit {
+		return resolve.Hit{Path: fmt.Sprintf("/%d/%s/style.md", i, strings.Repeat("é", 400)), Over: "budget.max-chars"}
+	}
+	res := &resolve.Result{Problems: []string{"p"}, Notices: []string{"source needs checking"}}
+	for i := range 15 {
+		h := long(i)
+		h.Over = ""
+		res.Files = append(res.Files, h)
+	}
+	if got := clip(agent.Summary(res)); !strings.Contains(got, "1 problem (run ctxtra doctor)") || !strings.Contains(got, "ctxtra: source needs checking") {
+		t.Errorf("long list: %q", got)
+	}
+	res.Dropped = []resolve.Hit{long(20), long(21), long(22)}
+	got := clip(agent.Summary(res))
+	if b, _ := jsonorder.Marshal(got); len(b)-2 > maxSummary || !strings.Contains(got, "; 1 problem, dropped /20/") {
+		t.Errorf("long dropped names (%d JSON bytes): %q", len(b)-2, got)
 	}
 }
 
