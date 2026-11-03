@@ -6,6 +6,10 @@ that line, the hooks that an earlier release set up keep working as they are
 
 ## Unreleased
 
+## v0.2.3
+
+**Upgrade:** No need to run `ctxtra setup`.
+
 - `doctor` also reads the rotated hook log, `log.jsonl.1`, so it no longer shows "none yet" for runs logged
   before the log was rotated.
 
@@ -24,10 +28,15 @@ that line, the hooks that an earlier release set up keep working as they are
   names one, instead of trying their native skill tool. The `ctxtra` skill now covers dropped files in
   troubleshooting and lists `source show` and `source update --check`.
 
-- `doctor` and the `context` commands exit with 1 when `budget.max-chars` drops a file, as the docs say.
-  `context show` also names the dropped files on stderr.
 - `doctor` checks every binding, also those that don't match its folder, and exits with 1 when one has a
   missing file or another problem.
+
+## v0.2.2
+
+**Upgrade:** No need to run `ctxtra setup`.
+
+- `doctor` and the `context` commands exit with 1 when `budget.max-chars` drops a file, as the docs say.
+  `context show` also names the dropped files on stderr.
 
 ## v0.2.1
 
