@@ -30,7 +30,8 @@ Choose the archive for your platform. Releases before this bundle was added can 
    should run `ctxtra setup` (and trust the hooks again in Codex). The release fails without the snapshot.
 4. In `CHANGELOG.md`, rename `## Unreleased` to `## vX.Y.Z`, with its **Upgrade** line, and add a new
    empty `## Unreleased`. The release fails without the section. A release candidate uses the section of
-   its version: `v0.2.0-rc.1` takes `## v0.2.0`.
+   its version: `v0.2.0-rc.1` takes `## v0.2.0`. Merge the changelog change into `main` and wait for
+   CI and e2e to pass on that commit before tagging it. Do not tag an unmerged release branch.
 5. `git tag vX.Y.Z && git push origin vX.Y.Z`. For a release candidate, use `vX.Y.Z-rc.N`: it becomes a
    prerelease and doesn't touch the tap. Never move or delete a pushed tag: the Go module proxy keeps the
    first one. Fix a bad release with the next patch version.
