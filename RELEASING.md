@@ -28,8 +28,9 @@ Choose the archive for your platform. Releases before this bundle was added can 
 3. If `internal/setup/testdata/contract` changed since the last release, copy it with each agent's
    `client.json` to `testdata/clients/<version>` (for example `0.2`), and say in the changelog that users
    should run `ctxtra setup` (and trust the hooks again in Codex). The release fails without the snapshot.
-4. In `CHANGELOG.md`, rename `## Unreleased` to `## vX.Y.Z`, with its **Upgrade** line, and add a new
-   empty `## Unreleased`. The release fails without the section. A release candidate uses the section of
+4. In `CHANGELOG.md`, rename `## Unreleased` to `## vX.Y.Z` and add a new empty `## Unreleased`.
+   Add an **Upgrade** note only when users need to take action. Omit no-action notes.
+   The release fails without the version section. A release candidate uses the section of
    its version: `v0.2.0-rc.1` takes `## v0.2.0`. Merge the changelog change into `main` and wait for
    CI and e2e to pass on that commit before tagging it. Do not tag an unmerged release branch.
 5. `git tag vX.Y.Z && git push origin vX.Y.Z`. For a release candidate, use `vX.Y.Z-rc.N`: it becomes a
