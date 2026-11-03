@@ -73,24 +73,17 @@ func logEntry(e Entry) {
 }
 
 // LastRuns returns the last logged run per agent and event for sessions in
-// dir (or in repo, when repo is set), sorted by agent and event.
+// dir (or in repo, when repo is set), sorted by agent and event. It reads the
+// rotated log first, so a run in the current log wins.
 func LastRuns(dir, repo string) []Entry {
-	f, err := fsutil.OpenRegular(paths.LogPath(), os.O_RDONLY, 0)
-	if err != nil {
-		return nil
-	}
-	defer f.Close()
 	last := map[string]Entry{}
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1<<20), 1<<24)
-	for sc.Scan() {
-		var e Entry
-		if json.Unmarshal(sc.Bytes(), &e) != nil {
-			continue
-		}
-		if (repo != "" && e.Repo == repo) || (repo == "" && e.Dir == dir) {
-			last[e.Harness+" "+e.Event] = e
-		}
+	path := paths.LogPath()
+	for _, p := range []string{path + ".1", path} {
+		scanLog(p, func(e Entry) {
+			if (repo != "" && e.Repo == repo) || (repo == "" && e.Dir == dir) {
+				last[e.Harness+" "+e.Event] = e
+			}
+		})
 	}
 	keys := make([]string, 0, len(last))
 	for k := range last {
@@ -102,4 +95,22 @@ func LastRuns(dir, repo string) []Entry {
 		out[i] = last[k]
 	}
 	return out
+}
+
+// scanLog calls fn for each entry in the log at path. It skips a missing or
+// unreadable file and malformed lines.
+func scanLog(path string, fn func(Entry)) {
+	f, err := fsutil.OpenRegular(path, os.O_RDONLY, 0)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1<<20), 1<<24)
+	for sc.Scan() {
+		var e Entry
+		if json.Unmarshal(sc.Bytes(), &e) == nil {
+			fn(e)
+		}
+	}
 }

@@ -6,6 +6,9 @@ that line, the hooks that an earlier release set up keep working as they are
 
 ## Unreleased
 
+- `doctor` also reads the rotated hook log, `log.jsonl.1`, so it no longer shows "none yet" for runs logged
+  before the log was rotated.
+
 - The session-start summary and the size warnings of `explain` and `doctor` show files with the same name by
   full path: from `~` for local files, as `ctxtra://<source>/<path>` for files from a pinned source. Other
   files keep their short name. The count of problems now comes before the dropped files in the summary, so
