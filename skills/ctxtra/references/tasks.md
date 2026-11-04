@@ -12,7 +12,7 @@ import existing instructions. When you perform setup for the user, use the steps
    project's README and stop.
 2. `ctxtra doctor`: shows the config path, whether a config exists, and which agents have hooks.
 3. Ask what the user wants in their sessions, and where: their own instructions in every session, rules for some
-   repositories, a team repository. Ask for the files. Don't invent instruction files for them.
+   repositories, a source repository. Ask for the files. Don't invent instruction files for them.
 4. Add the first binding with `ctxtra binding add` (see "Add or change a binding" below). It creates the
    config.
    Start with one binding and add more later.
@@ -79,7 +79,7 @@ so that every agent gets them. Do every step; don't skip the files of an agent.
 5. Run `ctxtra context explain DIR` in a folder that should match, and in one that shouldn't.
 6. To remove a binding of the config: `ctxtra binding remove NAME`.
 
-## Add a team repository
+## Add a source repository
 
 1. Give the warning from "Remote repositories" in `SKILL.md`, and offer to read the repository first.
 2. With the user's OK, `ctxtra source add git URL --include PATH`. Without `--include`, it adds the source

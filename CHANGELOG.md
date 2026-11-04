@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- `ctxtra source check DIR` checks a team repository's binding files in a checkout, the way sessions read
+- `ctxtra source check DIR` checks a source repository's binding files in a checkout, the way sessions read
   them from a pinned source: broken YAML and bindings, config-only keys, paths outside the source, missing
   files, unusable skills, and symlinks and submodules that a pinned source leaves out. It reads only DIR,
   runs and fetches nothing, and exits with 1 on an error, so it fits CI. A glob that matches nothing is a

@@ -206,7 +206,7 @@ func (a *app) sourceCmd() *cobra.Command {
 		Short:                 "Add, update and remove sources: repositories and folders of files",
 		Long: `A source is where instruction files, skills and binding files come from:
 
-  git           a team repository, pinned to a commit you accepted
+  git           a git repository, pinned to a commit you accepted
   local-git     your clone of a repository, pinned like git, following its
                 committed HEAD
   trusted-path  a folder of your own files, read from disk; changes apply
@@ -263,7 +263,7 @@ func (a *app) sourceAddCmd(kind string) *cobra.Command {
 	switch kind {
 	case "git":
 		c.Use = "git (URL | DIR)"
-		c.Short = "Add a team repository as a pinned source"
+		c.Short = "Add a git repository as a pinned source"
 		c.Long = `Add a git repository as a pinned source: ctxtra fetches it and records the
 current commit, and sessions use exactly that commit until you accept a newer
 one with ctxtra source update.
@@ -414,8 +414,8 @@ func (a *app) sourceCheckCmd() *cobra.Command {
 	var asJSON bool
 	c := &cobra.Command{
 		Use:   "check DIR [FILE]...",
-		Short: "Check a team repository's binding files, for example in CI",
-		Long: `Check the binding files in DIR, a checkout of a team repository, the way
+		Short: "Check a source repository's binding files, for example in CI",
+		Long: `Check the binding files in DIR, a checkout of a source repository, the way
 sessions read them from a pinned source: their YAML, their bindings, and the
 instruction files and skills they reference. Without FILE, it checks every YAML
 file in DIR with a ctxtra schema; FILE paths are relative to DIR.
@@ -472,7 +472,7 @@ func (a *app) bindingFileCmd() *cobra.Command {
 		RunE:                  group,
 		DisableFlagsInUseLine: true,
 		Short:                 "Include, list and remove binding files",
-		Long: `A binding file is a YAML file of bindings, yours or a team's. The config's
+		Long: `A binding file is a YAML file of bindings, yours or from a source. The config's
 include list names the binding files whose bindings apply.`,
 		Example: `  ctxtra binding-file add ctxtra://team/bindings/work.yaml
   ctxtra binding-file list`,

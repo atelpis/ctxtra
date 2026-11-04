@@ -261,8 +261,8 @@ func (c *Config) loadBindings(file string, rd Reader, in *Source) {
 }
 
 // configOnly are the keys a binding file can't have: only the config chooses
-// sources, other files and the budget. A team repository's binding file
-// must not.
+// sources, other files and the budget. A source repository's binding
+// file must not.
 var configOnly = []string{"sources", "include", "budget"}
 
 // decodeBindingFile checks the top level of a binding file and returns its
