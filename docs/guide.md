@@ -205,6 +205,12 @@ ctxtra doctor [DIR]            # config problems, setup state, Codex trust, rece
 They exit with 1 when a session wouldn't get everything it should, and take `--json` (except
 `context show`). `doctor` checks every binding, also those that don't match DIR. `ctxtra help` lists every command; `ctxtra help COMMAND` shows one.
 
+If you maintain a team repository, `ctxtra source check DIR` checks its binding files the way users' sessions
+read them: their YAML and bindings, and that the files and skills they reference exist and are usable. It
+reads only DIR, not your config, and runs nothing, so it works in CI ([example](spec.md#check-a-team-repository)).
+It exits with 1 on an error; a glob that matches nothing is a warning. It doesn't check what the files say,
+or whether they fit a user's agent.
+
 Every hook run is logged to `~/.ctxtra/log.jsonl`. Past 1 MiB, the log moves to `log.jsonl.1`, replacing the
 older one; `doctor` reads both. The hook never blocks a session: on any error it adds nothing and logs the
 error.

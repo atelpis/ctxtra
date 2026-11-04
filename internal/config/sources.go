@@ -30,10 +30,14 @@ type Source struct {
 	// follows the clone's committed HEAD.
 	LocalGit string // absolute, ~ expanded
 	Commit   string
+	// dir is set only by LoadSource: a folder that stands for the accepted
+	// commit, for source check.
+	dir string
 }
 
-// Pinned reports whether s is read from the store.
-func (s Source) Pinned() bool { return s.Remote() != "" }
+// Pinned reports whether s is read from the store, or is checked as if it
+// were.
+func (s Source) Pinned() bool { return s.Remote() != "" || s.dir != "" }
 
 // Remote is where a pinned source's commits come from: the git URL, or the
 // clone of a local-git source. "" for a trusted source.
@@ -49,7 +53,12 @@ func (s Source) Remote() string {
 type errUnavailable struct{ error }
 
 // Gen is the store folder of the accepted commit.
-func (s Source) Gen() string { return source.GenDir(s.Remote(), s.Commit) }
+func (s Source) Gen() string {
+	if s.dir != "" {
+		return s.dir
+	}
+	return source.GenDir(s.Remote(), s.Commit)
+}
 
 // Source returns the source called name.
 func (c *Config) Source(name string) (Source, bool) {
@@ -222,17 +231,22 @@ func (c *Config) refLinks(s, base string, in *Source, follow bool) (string, *Sou
 	name, p, _ := strings.Cut(rest, "/")
 	src, ok := c.Source(name)
 	switch {
-	case !ok:
-		return "", nil, fmt.Errorf("%s: unknown source %q", s, name)
 	case in != nil && name != in.Name:
 		return "", nil, fmt.Errorf("%s: a binding file in the source %s can't reference other sources", s, in.Name)
+	case !ok:
+		return "", nil, fmt.Errorf("%s: unknown source %q", s, name)
 	}
 	p = filepath.Clean(filepath.FromSlash(p))
 	if p == "." || filepath.IsAbs(p) || p == ".." || strings.HasPrefix(p, ".."+string(filepath.Separator)) {
 		return "", nil, fmt.Errorf("%s: needs a path inside the source", s)
 	}
-	if !src.Pinned() {
+	switch {
+	case !src.Pinned():
 		return filepath.Join(src.TrustedPath, p), nil, nil
+	case src.dir != "":
+		p = filepath.Join(src.dir, p)
+		c.pin(src, p)
+		return p, &src, nil
 	}
 	return c.inStore(s, src, p)
 }

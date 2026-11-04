@@ -1,0 +1,244 @@
+# source check: a team repository's binding files, checked the way sessions
+# read them from a pinned source, without a config, a store or a network.
+
+gitrepo team-ctx/nested
+gitrepo team-ctx git@github.com:acme/team-ctx.git
+
+# A broken config of your own doesn't matter: source check doesn't read it.
+mkdir .config/ctxtra
+cp broken.yaml .config/ctxtra/config.yaml
+
+# A working repository.
+exec ctxtra source check team-ctx
+stdout '^checked ~/team-ctx as the source team-ctx$'
+stdout '^  bindings/work.yaml: 2 bindings$'
+stdout '^0 errors, 0 warnings$'
+! stdout 'example.yaml'
+
+# The same from inside it, and for named files only.
+cd team-ctx
+exec ctxtra source check . bindings/work.yaml
+stdout '^  bindings/work.yaml: 2 bindings$'
+cd $HOME
+
+# A maintainer renames an instruction file without changing the binding.
+mv team-ctx/instructions/security.md team-ctx/instructions/secure.md
+! exec ctxtra source check team-ctx
+stdout '^error: work \(bindings/work.yaml\): missing: instructions/security.md$'
+stdout '^1 error, 0 warnings$'
+mv team-ctx/instructions/secure.md team-ctx/instructions/security.md
+
+# A skill without a description, and a skill folder without SKILL.md.
+cp skill-nodesc.md team-ctx/skills/deploy/SKILL.md
+! exec ctxtra source check team-ctx
+stdout '^error: tools \(bindings/work.yaml\): skills/deploy/SKILL.md: frontmatter has no description; skipped$'
+rm team-ctx/skills/deploy/SKILL.md
+! exec ctxtra source check team-ctx
+stdout '^error: tools \(bindings/work.yaml\): missing: skills/deploy/SKILL.md$'
+cp skill.md team-ctx/skills/deploy/SKILL.md
+
+# Errors in the binding files: each one names the file and the line.
+cp broken-bindings.yaml team-ctx/bindings/broken.yaml
+cp config-only.yaml team-ctx/bindings/config-only.yaml
+cp bad-yaml.yaml team-ctx/bindings/bad-yaml.yaml
+! exec ctxtra source check team-ctx
+stdout '^  bindings/broken.yaml: 0 bindings$'
+stdout '^error: bindings/bad-yaml.yaml: .*nothing from this file is used$'
+stdout '^error: bindings/broken.yaml: line 5: unknown key "instrutions".*; binding skipped$'
+stdout '^error: bindings/broken.yaml: line 9: .*binding skipped$'
+stdout '^error: bindings/broken.yaml: line 14: ctxtra://other/a.md: a binding file in the source team-ctx can''t reference other sources; binding skipped$'
+stdout '^error: bindings/broken.yaml: line 18: ~/me.md is not a path in the source team-ctx; binding skipped$'
+stdout '^error: bindings/broken.yaml: line 22: ../../outside.md is not a path in the source team-ctx; binding skipped$'
+stdout '^error: bindings/config-only.yaml: line 2: sources works only in the config, not in a binding file; nothing from this file is used$'
+stdout '^7 errors, 0 warnings$'
+rm team-ctx/bindings/broken.yaml team-ctx/bindings/config-only.yaml team-ctx/bindings/bad-yaml.yaml
+
+# Globs keep their meaning: one that matches nothing, and an exclusion that
+# leaves nothing out, are warnings, and the check passes. A ctxtra://
+# reference to the source itself works only under that name.
+cp globs.yaml team-ctx/bindings/globs.yaml
+exec ctxtra source check team-ctx
+stdout '^warning: bindings/globs.yaml: line 5: instructions entry "../drafts/\*.md" \(in "drafts"\): glob matches no instructions$'
+stdout '^warning: bindings/globs.yaml: line 5: instructions entry "!../instructions/nope.md" excludes nothing$'
+stdout '^warning: bindings/globs.yaml: line 5: ctxtra://team-ctx/instructions/style.md works only where the source is named team-ctx; a relative path works under any name$'
+stdout '^0 errors, 3 warnings$'
+! exec ctxtra source check team-ctx --name acme
+stdout '^error: bindings/globs.yaml: line 5: ctxtra://team-ctx/instructions/style.md: a binding file in the source acme can''t reference other sources; binding skipped$'
+rm team-ctx/bindings/globs.yaml
+
+# What a pinned source leaves out: symlinks and nested repositories.
+cp left-out.yaml team-ctx/bindings/left-out.yaml
+symlink team-ctx/instructions/link.md -> security.md
+cp nested.md team-ctx/nested/a.md
+! exec ctxtra source check team-ctx
+stdout '^error: left-out \(bindings/left-out.yaml\): instructions/link.md is a symlink, which a pinned source leaves out$'
+stdout '^error: left-out \(bindings/left-out.yaml\): nested/a.md is in nested, a nested repository or submodule, which a pinned source leaves out$'
+stdout '^2 errors, 0 warnings$'
+rm team-ctx/bindings/left-out.yaml
+
+# Globs don't see them either: nested/a.md and .git are skipped.
+cp all.yaml team-ctx/bindings/all.yaml
+exec ctxtra source check team-ctx
+stdout '^warning: bindings/all.yaml: line 5: instructions entry "../.git\*/\*\*" \(in "."\): glob matches no instructions$'
+stdout '^warning: bindings/all.yaml: line 5: instructions entry "../{nested/a.md,missing.md}" \(in "."\): glob matches no instructions$'
+stdout '^0 errors, 2 warnings$'
+rm team-ctx/bindings/all.yaml
+
+# A path into .git, and a glob whose folder is a symlink: the store has
+# neither, and the glob isn't followed out of the folder.
+cp git-path.yaml team-ctx/bindings/git-path.yaml
+mkdir outside
+cp nested.md outside/x.md
+symlink team-ctx/linked -> ../outside
+! exec ctxtra source check team-ctx
+stdout '^error: git-path \(bindings/git-path.yaml\): .git/config is not a path a pinned source can have$'
+stdout '^error: bindings/git-path.yaml: line 9: instructions entry "../linked/\*.md" \(in "linked"\): the glob folder is a symlink, which a pinned source leaves out$'
+rm outside/x.md
+! exec ctxtra source check team-ctx
+stdout 'the glob folder is a symlink'
+rm team-ctx/bindings/git-path.yaml team-ctx/linked
+
+# It reads nothing of your setup and writes nothing: no setup notices.
+mkdir .cursor .ctxtra
+cp setup.json .ctxtra/setup.json
+exec ctxtra source check team-ctx
+! stderr .
+cmp .ctxtra/setup.json setup.json
+! exists .ctxtra/setup.lock
+
+# JSON, for CI.
+exec ctxtra source check team-ctx --json
+stdout '"binding_files": \[\n\s+"bindings/work.yaml"'
+stdout '"errors": 0'
+stdout '"diagnostics": \[\]'
+
+# No binding files, a file, and a missing folder fail.
+mkdir empty
+! exec ctxtra source check empty
+stderr '^ctxtra source check: no binding files in ~/empty \(YAML files with schema: ctxtra/v1\)$'
+! exec ctxtra source check skill.md
+stderr 'is not a folder'
+! exec ctxtra source check nope
+stderr '^ctxtra source check: ~/nope does not exist$'
+! exec ctxtra source check team-ctx bindings/nope.yaml
+stdout '^error: bindings/nope.yaml: open bindings/nope.yaml: no such file'
+
+# Usage errors exit with 2.
+! exec ctxtra source check
+stderr 'expected DIR'
+! exec ctxtra source check team-ctx ../x.yaml
+stderr 'Usage: ctxtra source check DIR \[FILE\]...'
+
+-- broken.yaml --
+schema: ctxtra/v1
+bindings: [
+-- team-ctx/README.md --
+Agent context for acme.
+-- team-ctx/examples/example.yaml --
+# Not a binding file: no ctxtra schema.
+key: value
+-- team-ctx/bindings/work.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: work
+    match:
+      repos:
+        - github.com/acme/**
+    instructions:
+      - ../instructions/security.md
+      - ../instructions/style.md
+  - name: tools
+    match:
+      global: true
+    skills:
+      - ../skills/deploy
+-- team-ctx/instructions/security.md --
+Never log tokens.
+-- team-ctx/instructions/style.md --
+Short functions.
+-- team-ctx/skills/deploy/SKILL.md --
+---
+name: deploy
+description: Deploys a service.
+---
+Run the pipeline.
+-- skill.md --
+---
+name: deploy
+description: Deploys a service.
+---
+Run the pipeline.
+-- skill-nodesc.md --
+---
+name: deploy
+---
+Run the pipeline.
+-- broken-bindings.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: typo
+    match: {global: true}
+    instrutions: [../instructions/style.md]
+
+  - name: bad-pattern
+    match:
+      dirs: ['~/dev/[']
+    instructions: [../instructions/style.md]
+
+  - name: other-source
+    match: {global: true}
+    instructions: [ctxtra://other/a.md]
+
+  - name: home
+    match: {global: true}
+    instructions: [~/me.md]
+
+  - name: outside
+    match: {global: true}
+    instructions: [../../outside.md]
+-- config-only.yaml --
+schema: ctxtra/v1
+sources:
+  x:
+    trusted-path: ~/x
+bindings:
+  - name: a
+    match: {global: true}
+    instructions: [../instructions/style.md]
+-- bad-yaml.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: a
+     match: {global: true}
+-- globs.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: globs
+    match: {global: true}
+    instructions: ['../drafts/*.md', ../instructions/security.md, '!../instructions/nope.md', ctxtra://team-ctx/instructions/style.md]
+-- left-out.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: left-out
+    match: {global: true}
+    instructions: [../instructions/link.md, ../nested/a.md, ../instructions/style.md]
+-- nested.md --
+In a submodule.
+-- git-path.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: git-path
+    match: {global: true}
+    instructions: [../.git/config]
+  - name: linked
+    match: {global: true}
+    instructions:
+      - ../linked/*.md
+-- setup.json --
+{"installed": {}, "detected": []}
+-- all.yaml --
+schema: ctxtra/v1
+bindings:
+  - name: all
+    match: {global: true}
+    instructions: ['../**/*.md', '../.git*/**', '../{nested/a.md,missing.md}']

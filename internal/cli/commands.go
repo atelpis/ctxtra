@@ -16,9 +16,10 @@ import (
 )
 
 // quiet are the commands after which setupNotices doesn't run: setup and
-// onboard, which just ran setup, doctor, which shows the same lines under each agent, and
-// the ones that only print help, the version or a completion script.
-var quiet = []string{"setup", "onboard", "doctor", "help", "version", "bash", "zsh", "fish", "powershell"}
+// onboard, which just ran setup, doctor, which shows the same lines under each agent,
+// source check, which reads only the folder it checks, and the ones that only print help,
+// the version or a completion script.
+var quiet = []string{"setup", "onboard", "doctor", "check", "help", "version", "bash", "zsh", "fish", "powershell"}
 
 // root is the command tree.
 func (a *app) root() *cobra.Command {
@@ -226,7 +227,7 @@ Files of a source are referenced as ctxtra://SOURCE/PATH.`,
 	}
 	add.AddCommand(a.sourceAddCmd("git"), a.sourceAddCmd("local-git"), a.sourceAddCmd("trusted-path"))
 	c.AddCommand(add, a.sourceListCmd(), a.sourceShowCmd(), a.sourceUpdateCmd(), a.sourceRestoreCmd(),
-		a.sourceTrustCmd(), a.sourceRemoveCmd())
+		a.sourceTrustCmd(), a.sourceRemoveCmd(), a.sourceCheckCmd())
 	return c
 }
 
@@ -405,6 +406,47 @@ DIR may be left out when ctxtra knows exactly one clone of the source.`,
 		}),
 	}
 	c.Flags().BoolVar(&dryRun, "dry-run", false, "show the change; change nothing")
+	return c
+}
+
+func (a *app) sourceCheckCmd() *cobra.Command {
+	var name string
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "check DIR [FILE]...",
+		Short: "Check a team repository's binding files, for example in CI",
+		Long: `Check the binding files in DIR, a checkout of a team repository, the way
+sessions read them from a pinned source: their YAML, their bindings, and the
+instruction files and skills they reference. Without FILE, it checks every YAML
+file in DIR with a ctxtra schema; FILE paths are relative to DIR.
+
+It reads only DIR: not your config or sources, and it runs and fetches
+nothing. It checks that the files are usable, not what they say: it doesn't
+check that instructions or skill scripts are safe, and doesn't know a user's
+agents or budget. A glob that matches nothing, and an exclusion that leaves nothing
+out, are warnings: the binding still applies.
+
+Exit code: 0 without errors, also with warnings; 1 with errors.`,
+		Example: `  ctxtra source check .
+  ctxtra source check . bindings/billing.yaml --name team-ctx
+  ctxtra source check ~/dev/team-ctx --json`,
+		Args: func(c *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return errors.New("expected DIR")
+			}
+			return nil
+		},
+		RunE: a.run(func(_ *cobra.Command, args []string) error {
+			files, err := cleanIncludes(args[1:])
+			if err != nil {
+				return err
+			}
+			wd, _ := os.Getwd()
+			return code(checkSource(a.IO, paths.Resolve(wd, args[0]), name, files, asJSON))
+		}),
+	}
+	c.Flags().StringVar(&name, "name", "", "check as the source `NAME`, for ctxtra://NAME/ references (default: DIR's folder name)")
+	c.Flags().BoolVar(&asJSON, "json", false, "print JSON")
 	return c
 }
 

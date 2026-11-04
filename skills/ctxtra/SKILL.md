@@ -29,12 +29,12 @@ Ask the binary about the user's setup instead of guessing:
 | `ctxtra context explain DIR` | Bindings: matched or not, why, and the size added. |
 | `ctxtra context files DIR` | The files and skills a session in DIR gets. |
 | `ctxtra context show DIR` | The exact text a session in DIR gets. |
-| `ctxtra source list`, `ctxtra binding-file list`, `ctxtra binding list` | What the config has. |
+| `ctxtra source list`, `binding-file list`, `binding list` | What the config has. |
 | `ctxtra source show NAME` | One source's state, binding files and clones. |
 | `ctxtra source update --check [NAME]...` | Fetch and review; accepts and dismisses nothing. Only the user accepts updates (rule 4). |
+| `ctxtra source check DIR` | For a team repository's maintainer: read `references/maintain.md`. |
 
-`doctor`, `context files`, `context explain`, the `list` commands, `source show` and
-`source update --check` take `--json`.
+All but `context show` take `--json`.
 Use the fixes in this output, but adding trust needs the user's decision (see below).
 Read stderr too: notices and warnings don't change the exit code.
 

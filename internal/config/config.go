@@ -59,6 +59,7 @@ type Config struct {
 	Bindings    []Binding // the config's own, then those of each binding file
 	MaxChars    int       // budget.max-chars, in characters (Unicode code points); 0 means no limit
 	Problems    []string
+	Warnings    []string          // only from LoadSource: problems that leave the binding in use
 	Notes       []string          // hints, for doctor
 	pinned      map[string]string // paths resolved into the store, and their references
 	mappings    *state.Mappings   // of imported clones; read when needed
@@ -67,6 +68,7 @@ type Config struct {
 	storeBusy   error           // a touch failed: don't wait again
 	waitLeft    time.Duration   // what touches may still wait for the store
 	waitSet     bool
+	checking    bool // loaded by LoadSource
 }
 
 // Reader reads the config and binding files. One Reader is shared by
@@ -268,6 +270,9 @@ var configOnly = []string{"sources", "include", "budget"}
 func (c *Config) decodeBindingFile(doc *yaml.Node) (*yaml.Node, error) {
 	for i := 0; i+1 < len(doc.Content); i += 2 {
 		if k := doc.Content[i]; slices.Contains(configOnly, k.Value) {
+			if c.File == "" {
+				return nil, fmt.Errorf("line %d: %s works only in the config, not in a binding file", k.Line, k.Value)
+			}
 			return nil, fmt.Errorf("line %d: %s works only in the config (%s)", k.Line, k.Value, paths.Tilde(c.File))
 		}
 	}
@@ -370,6 +375,9 @@ func (c *Config) pathList(n *yaml.Node, what, file string, in *Source) (out, exc
 	var excludes []exclusion
 	adds := 0
 	for _, p := range list {
+		if c.checking && in != nil && strings.HasPrefix(strings.TrimPrefix(p, "!"), Scheme+in.Name+"/") {
+			c.warn(file, fmt.Errorf("line %d: %s works only where the source is named %s; a relative path works under any name", n.Line, p, in.Name))
+		}
 		if rest, ok := strings.CutPrefix(p, "!"); ok {
 			if rest == "" {
 				return nil, nil, fmt.Errorf("line %d: %s entry %q is only a !: write the path to leave out after it", n.Line, what, p)
@@ -400,7 +408,12 @@ func (c *Config) pathList(n *yaml.Node, what, file string, in *Source) (out, exc
 		}
 		matches, err := c.expand(r, pattern, what, src)
 		if err != nil {
-			c.problem(file, fmt.Errorf("line %d: %s entry %q (in %q): %w", n.Line, what, p, paths.Tilde(r), err))
+			err = fmt.Errorf("line %d: %s entry %q (in %q): %w", n.Line, what, p, paths.Tilde(r), err)
+			if errors.As(err, new(noMatch)) {
+				c.warn(file, err)
+			} else {
+				c.problem(file, err)
+			}
 			continue
 		}
 		out = append(out, matches...)
@@ -421,7 +434,7 @@ func (c *Config) pathList(n *yaml.Node, what, file string, in *Source) (out, exc
 			return false
 		})
 		if len(out) == n0 && !slices.ContainsFunc(excluded, x.match) {
-			c.problem(file, fmt.Errorf("line %d: %s entry %q excludes nothing", n.Line, what, x.entry))
+			c.warn(file, fmt.Errorf("line %d: %s entry %q excludes nothing", n.Line, what, x.entry))
 		}
 	}
 	return out, excluded, nil
@@ -491,4 +504,14 @@ func (x exclusion) match(p string) bool {
 
 func (c *Config) problem(file string, err error) {
 	c.Problems = append(c.Problems, paths.Tilde(file)+": "+flat(err))
+}
+
+// warn is problem for what leaves the binding in use. Only source check
+// tells it apart.
+func (c *Config) warn(file string, err error) {
+	if !c.checking {
+		c.problem(file, err)
+		return
+	}
+	c.Warnings = append(c.Warnings, paths.Tilde(file)+": "+flat(err))
 }

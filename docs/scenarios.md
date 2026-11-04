@@ -410,6 +410,10 @@ note: ~/dev/team-ctx/... paths in your bindings were served from the pinned sour
 `ctxtra://team-ctx/...` references stay pinned. Remove `team-ctx-live` before you pull other people's
 changes into the clone.
 
+Before you push, `ctxtra source check ~/dev/team-ctx` finds broken binding files, missing files and skills
+without a `description`, the way users' sessions would. It reads only the clone, so it can run in the
+repository's CI too.
+
 ### 6c. A team repository as a submodule of your dotfiles
 
 `~/dev/dotfiles` is a trusted source, and `~/dev/dotfiles/vendor/team-ctx` is a submodule with the remote
