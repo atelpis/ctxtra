@@ -99,21 +99,28 @@ func Resolve(dir string, cfg *config.Config, rd config.Reader) *Result {
 func (r *Result) OtherProblems(cfg *config.Config) []string {
 	var out []string
 	for i, b := range cfg.Bindings {
-		if r.Trace[i].Matched {
-			continue
+		if !r.Trace[i].Matched {
+			out = append(out, CheckBinding(cfg, b)...)
 		}
-		rd := fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes)
-		l := &loader{rd: rd, cfg: cfg, files: map[string]bool{}, skills: map[string]bool{}}
-		t := Trace{Origin: b.ID()}
-		c := &Result{}
-		c.apply(&t, b, l)
-		c.dedupeSkillNames()
-		for _, m := range c.Missing {
-			out = append(out, t.Origin+": missing: "+m)
-		}
-		out = append(out, c.Problems...)
 	}
 	return out
+}
+
+// CheckBinding reads the files and skills of b the way a session that b
+// matches would, and returns what is wrong with them. It reads with its own
+// limits: the limits are per session.
+func CheckBinding(cfg *config.Config, b config.Binding) []string {
+	rd := fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes)
+	l := &loader{rd: rd, cfg: cfg, files: map[string]bool{}, skills: map[string]bool{}}
+	t := Trace{Origin: b.ID()}
+	c := &Result{}
+	c.apply(&t, b, l)
+	c.dedupeSkillNames()
+	var out []string
+	for _, m := range c.Missing {
+		out = append(out, t.Origin+": missing: "+m)
+	}
+	return append(out, c.Problems...)
 }
 
 // checkAge is how old the last check for new commits may be before the

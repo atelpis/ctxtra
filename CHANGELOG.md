@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `ctxtra source check DIR` checks a source repository's binding files in a checkout, the way sessions read
+  them from a pinned source: broken YAML and bindings, config-only keys, paths outside the source, missing
+  files, unusable skills, and symlinks and submodules that a pinned source leaves out. It reads only DIR,
+  runs and fetches nothing, and exits with 1 on an error, so it fits CI. A glob that matches nothing is a
+  warning. It doesn't check what the files say. `--json` is supported.
+
+- A `ctxtra://` reference to another source in a pinned source's binding file now says that a binding
+  file can't reference other sources, also when you don't have that source.
+
 ## v0.2.3
 
 - `doctor` also reads the rotated hook log, `log.jsonl.1`, so it no longer shows "none yet" for runs logged

@@ -1,6 +1,6 @@
 # Use cases
 
-How ctxtra is meant to be used, from your own instruction files to a team repository you contribute to. Each case
+How ctxtra is meant to be used, from your own instruction files to a source repository you share with others. Each case
 shows the commands and what they print. The rules behind them are in [spec.md](spec.md).
 
 Two words you will see:
@@ -9,7 +9,7 @@ Two words you will see:
 - **pinned**: read from ctxtra's copy of one commit; changes apply after you accept them with
   `ctxtra source update`.
 
-ctxtra protects you from unexpected changes in a team repository, not from the first version you choose
+ctxtra protects you from unexpected changes in a source repository, not from the first version you choose
 to add: adding it is the same decision as cloning it. It can't stop accepted text from telling the agent to
 read or run other things.
 
@@ -97,7 +97,7 @@ The new text is used right away. Trusted sources need no `ctxtra source update`.
 
 Where it can surprise you:
 
-- **You add it as a git source.** `ctxtra source add git ~/dev/dotfiles` makes your dotfiles a pinned team
+- **You add it as a git source.** `ctxtra source add git ~/dev/dotfiles` makes your dotfiles a pinned source
   repository (case 3b), and later edits need `ctxtra source update`. The output says how to change that:
   `ctxtra source trust dotfiles` converts the source to trusted under the same name.
 - **Trust is per folder, not per remote.** A second clone or a worktree of your dotfiles in another folder
@@ -127,7 +127,7 @@ included ctxtra://team-ctx/bindings/billing.yaml
     instructions: services-overview.md
 ```
 
-The first version is accepted without review. Read a team repository before you add it, as you would
+The first version is accepted without review. Read a source repository before you add it, as you would
 before you clone code you run. `config.yaml` now has:
 
 ```yaml
@@ -410,6 +410,10 @@ note: ~/dev/team-ctx/... paths in your bindings were served from the pinned sour
 `ctxtra://team-ctx/...` references stay pinned. Remove `team-ctx-live` before you pull other people's
 changes into the clone.
 
+Before you push, `ctxtra source check ~/dev/team-ctx` finds broken binding files, missing files and skills
+without a `description`, the way users' sessions would. It reads only the clone, so it can run in the
+repository's CI too.
+
 ### 6c. A team repository as a submodule of your dotfiles
 
 `~/dev/dotfiles` is a trusted source, and `~/dev/dotfiles/vendor/team-ctx` is a submodule with the remote
@@ -423,7 +427,7 @@ problem: work (~/dev/dotfiles/ctxtra/work.yaml): ~/dev/dotfiles/vendor/team-ctx/
 /Users/you/dev/dotfiles/agents/work.md
 ```
 
-A trusted source covers only its own repository. Add the team repository by its URL (case 3) and use
+A trusted source covers only its own repository. Add that repository by its URL (case 3) and use
 `ctxtra://team-ctx/jira-ticket.md`, or trust the submodule with `ctxtra source add trusted-path` if you treat its
 content as your own.
 
@@ -470,7 +474,7 @@ A reference to it is reported as not found.
 
 ### 7c. Making ctxtra run something
 
-- A binding file can't declare sources or include other files. Only your `config.yaml` does, so a team
+- A binding file can't declare sources or include other files. Only your `config.yaml` does, so a source
   repository can't make ctxtra fetch a URL.
 - Submodules are left out and never fetched.
 - `.gitattributes` filters (git-lfs, smudge) never run: ctxtra never checks out files.
@@ -484,7 +488,7 @@ add the repository, and in every `source update` review of the files you use. In
 shows only the file name; `source update --full` shows all. After you accept, the only protection is the agent's own
 permission prompts.
 
-## Before you add a team repository
+## Before you add a source repository
 
 - The first version is accepted without review. Read the repository first.
 - Review a `source update` diff as you would review code: accepted text runs with your agent's permissions.

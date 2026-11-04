@@ -83,7 +83,7 @@ start that the binary is missing; the other agents add nothing, without a word.
 ## Let your agent help
 
 ctxtra comes with a skill that teaches agents its commands, how to change the config safely, and the
-risks of team repositories. `ctxtra setup` prints the command that installs it:
+risks of source repositories that other people push to. `ctxtra setup` prints the command that installs it:
 
 ```bash
 ctxtra skill show ctxtra      # the skill's files, exactly as the agents get them
@@ -157,7 +157,7 @@ only when its files exist and are trusted:
 ctxtra binding add work --repo 'github.com/acme/**' --instruction ~/agent-context/work.md --skill ~/agent-context/skills/deploy
 ```
 
-Bindings can also live in their own files, which the config includes: your dotfiles, or a team repository.
+Bindings can also live in their own files, which the config includes: your dotfiles, or a source repository.
 
 Files in a git repository that has a remote are read only if you declare the repository as a source of
 your own files. Its content may come from other people, so ctxtra skips it otherwise and says how to trust
@@ -175,7 +175,7 @@ include:
   - ctxtra://dotfiles/ctxtra/work.yaml   # the same as ~/dev/dotfiles/ctxtra/work.yaml
 ```
 
-A team repository is added by URL. ctxtra keeps its own copy and serves the commit you accepted; a new
+A source repository is added by URL. ctxtra keeps its own copy and serves the commit you accepted; a new
 commit reaches your sessions after `ctxtra source update` shows you the diff and you accept it, in your
 terminal:
 
@@ -189,8 +189,8 @@ ctxtra source restore          # a new laptop: fetch exactly the accepted commit
 `ctxtra source list`, `ctxtra binding-file list` and `ctxtra binding list` show what the config has; each
 group has `remove` too. `ctxtra source show NAME` shows one source's state, binding files and clones.
 
-Full spec: [spec.md](spec.md). Use cases, from your own instruction files to a team repository you
-contribute to: [scenarios.md](scenarios.md). `ctxtra help config` and `ctxtra help scenarios` show
+Full spec: [spec.md](spec.md). Use cases, from your own instruction files to a source repository you
+share with others: [scenarios.md](scenarios.md). `ctxtra help config` and `ctxtra help scenarios` show
 them for the version you have.
 
 ## Check
@@ -204,6 +204,12 @@ ctxtra doctor [DIR]            # config problems, setup state, Codex trust, rece
 
 They exit with 1 when a session wouldn't get everything it should, and take `--json` (except
 `context show`). `doctor` checks every binding, also those that don't match DIR. `ctxtra help` lists every command; `ctxtra help COMMAND` shows one.
+
+If you maintain a source repository, `ctxtra source check DIR` checks its binding files the way users' sessions
+read them: their YAML and bindings, and that the files and skills they reference exist and are usable. It
+reads only DIR, not your config, and runs nothing, so it works in CI ([example](spec.md#check-a-source-repository)).
+It exits with 1 on an error; a glob that matches nothing is a warning. It doesn't check what the files say,
+or whether they fit a user's agent.
 
 Every hook run is logged to `~/.ctxtra/log.jsonl`. Past 1 MiB, the log moves to `log.jsonl.1`, replacing the
 older one; `doctor` reads both. The hook never blocks a session: on any error it adds nothing and logs the

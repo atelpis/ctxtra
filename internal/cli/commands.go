@@ -16,9 +16,10 @@ import (
 )
 
 // quiet are the commands after which setupNotices doesn't run: setup and
-// onboard, which just ran setup, doctor, which shows the same lines under each agent, and
-// the ones that only print help, the version or a completion script.
-var quiet = []string{"setup", "onboard", "doctor", "help", "version", "bash", "zsh", "fish", "powershell"}
+// onboard, which just ran setup, doctor, which shows the same lines under each agent,
+// source check, which reads only the folder it checks, and the ones that only print help,
+// the version or a completion script.
+var quiet = []string{"setup", "onboard", "doctor", "check", "help", "version", "bash", "zsh", "fish", "powershell"}
 
 // root is the command tree.
 func (a *app) root() *cobra.Command {
@@ -205,7 +206,7 @@ func (a *app) sourceCmd() *cobra.Command {
 		Short:                 "Add, update and remove sources: repositories and folders of files",
 		Long: `A source is where instruction files, skills and binding files come from:
 
-  git           a team repository, pinned to a commit you accepted
+  git           a git repository, pinned to a commit you accepted
   local-git     your clone of a repository, pinned like git, following its
                 committed HEAD
   trusted-path  a folder of your own files, read from disk; changes apply
@@ -226,7 +227,7 @@ Files of a source are referenced as ctxtra://SOURCE/PATH.`,
 	}
 	add.AddCommand(a.sourceAddCmd("git"), a.sourceAddCmd("local-git"), a.sourceAddCmd("trusted-path"))
 	c.AddCommand(add, a.sourceListCmd(), a.sourceShowCmd(), a.sourceUpdateCmd(), a.sourceRestoreCmd(),
-		a.sourceTrustCmd(), a.sourceRemoveCmd())
+		a.sourceTrustCmd(), a.sourceRemoveCmd(), a.sourceCheckCmd())
 	return c
 }
 
@@ -262,7 +263,7 @@ func (a *app) sourceAddCmd(kind string) *cobra.Command {
 	switch kind {
 	case "git":
 		c.Use = "git (URL | DIR)"
-		c.Short = "Add a team repository as a pinned source"
+		c.Short = "Add a git repository as a pinned source"
 		c.Long = `Add a git repository as a pinned source: ctxtra fetches it and records the
 current commit, and sessions use exactly that commit until you accept a newer
 one with ctxtra source update.
@@ -408,6 +409,47 @@ DIR may be left out when ctxtra knows exactly one clone of the source.`,
 	return c
 }
 
+func (a *app) sourceCheckCmd() *cobra.Command {
+	var name string
+	var asJSON bool
+	c := &cobra.Command{
+		Use:   "check DIR [FILE]...",
+		Short: "Check a source repository's binding files, for example in CI",
+		Long: `Check the binding files in DIR, a checkout of a source repository, the way
+sessions read them from a pinned source: their YAML, their bindings, and the
+instruction files and skills they reference. Without FILE, it checks every YAML
+file in DIR with a ctxtra schema; FILE paths are relative to DIR.
+
+It reads only DIR: not your config or sources, and it runs and fetches
+nothing. It checks that the files are usable, not what they say: it doesn't
+check that instructions or skill scripts are safe, and doesn't know a user's
+agents or budget. A glob that matches nothing, and an exclusion that leaves nothing
+out, are warnings: the binding still applies.
+
+Exit code: 0 without errors, also with warnings; 1 with errors.`,
+		Example: `  ctxtra source check .
+  ctxtra source check . bindings/billing.yaml --name team-ctx
+  ctxtra source check ~/dev/team-ctx --json`,
+		Args: func(c *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return errors.New("expected DIR")
+			}
+			return nil
+		},
+		RunE: a.run(func(_ *cobra.Command, args []string) error {
+			files, err := cleanIncludes(args[1:])
+			if err != nil {
+				return err
+			}
+			wd, _ := os.Getwd()
+			return code(checkSource(a.IO, paths.Resolve(wd, args[0]), name, files, asJSON))
+		}),
+	}
+	c.Flags().StringVar(&name, "name", "", "check as the source `NAME`, for ctxtra://NAME/ references (default: DIR's folder name)")
+	c.Flags().BoolVar(&asJSON, "json", false, "print JSON")
+	return c
+}
+
 func (a *app) sourceRemoveCmd() *cobra.Command {
 	var dryRun bool
 	c := &cobra.Command{
@@ -430,7 +472,7 @@ func (a *app) bindingFileCmd() *cobra.Command {
 		RunE:                  group,
 		DisableFlagsInUseLine: true,
 		Short:                 "Include, list and remove binding files",
-		Long: `A binding file is a YAML file of bindings, yours or a team's. The config's
+		Long: `A binding file is a YAML file of bindings, yours or from a source. The config's
 include list names the binding files whose bindings apply.`,
 		Example: `  ctxtra binding-file add ctxtra://team/bindings/work.yaml
   ctxtra binding-file list`,

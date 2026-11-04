@@ -13,7 +13,7 @@ For how this is meant to be used, step by step, see [scenarios.md](scenarios.md)
   `match` block matches, add these instruction files and these skills.
 - **Binding file:** a YAML file with a list of bindings, which the config includes.
 - **Config:** the file that declares your sources, has bindings of its own, and includes binding files.
-- **Source:** a folder of your own files (trusted), or a team git repository pinned to a commit you
+- **Source:** a folder of your own files (trusted), or a git repository pinned to a commit you
   accepted (pinned), declared in the config. Files in it are referenced as `ctxtra://<source>/<path>`.
 
 Instruction files are plain Markdown. Skills are folders with a `SKILL.md`, the same format other agent
@@ -104,7 +104,7 @@ above, so it can lead outside the source, but only to a file that is trusted on 
 
 ## Pinned sources
 
-A `git` source is a team repository. ctxtra keeps its own copy, so you don't need a clone, and serves one
+A `git` source is a git repository, usually one that other people push to. ctxtra keeps its own copy, so you don't need a clone, and serves one
 commit of it: the one in `commit`. A new commit on the branch reaches your sessions only after you review
 and accept it with `ctxtra source update`, or after you change `commit` yourself.
 
@@ -123,14 +123,14 @@ included ctxtra://team-ctx/bindings/billing.yaml
   `commit` is inactive until you accept its first commit with `ctxtra source update <name>` in a terminal;
   `--check` shows that commit without accepting it.
 - **The first version is accepted without review**, the same decision as cloning the repository: read a
-  team repository before you add it. `source add git` shows its bindings and its executable files.
+  source repository before you add it. `source add git` shows its bindings and its executable files.
 - Accepting a commit accepts **every file in it**, also files the review lists only by name: a file you
   reference later is used at once, without another review.
 - Anyone who can edit your config can choose the version, for example through a dotfiles repository that
   others push to. A `commit` copied from another laptop was reviewed there.
 - A binding file in a pinned source may only reference files in the same source: relative paths, or
   `ctxtra://` with its own name. Absolute paths, `~`, `..` that leaves the source and other sources are
-  errors, and the binding is skipped. A team repository can't add your files to a session, and can't
+  errors, and the binding is skipped. A source repository can't add your files to a session, and can't
   declare sources or include other files: only your config does.
 - Files are read from ctxtra's store (below), never from a clone. Symlinks and submodules in the
   repository are left out.
@@ -150,6 +150,7 @@ included ctxtra://team-ctx/bindings/billing.yaml
 | `ctxtra source restore [NAME]...` | Fetches exactly the commits in the config, and changes nothing in it. Use it on a new laptop, or when the store is gone. It fails when a commit can't be fetched (removed by a force-push, or never pushed). |
 | `ctxtra source trust NAME [DIR]` | Converts a pinned source to `trusted-path` in place (below). |
 | `ctxtra source remove NAME` | Removes the source and its `include` entries, and lists the lines of your config and binding files that still use it. |
+| `ctxtra source check DIR [FILE]...` | Checks a source repository's binding files in a checkout, for maintainers and CI (below). |
 
 Every `source add` takes `--name NAME` (default: the repository or folder name), `--include PATH` to add
 binding files of the source to `include` in the same edit (repeatable), and `--dry-run`, which checks and
@@ -186,7 +187,7 @@ included ctxtra://team-ctx/bindings/billing.yaml
   then on. DIR can be left out when ctxtra knows exactly one clone of the source. Other clones mapped to it
   stay mapped, and their paths stay skipped. `ctxtra source add trusted-path DIR --name OTHER` adds a
   separate trusted source instead, and the pinned one stays: paths under the clone are then live,
-  `ctxtra://` references to the pinned source stay pinned. Use this to edit the team repository and see
+  `ctxtra://` references to the pinned source stay pinned. Use this to edit a source repository and see
   your uncommitted changes.
 
 ### Your clone, pinned
@@ -202,6 +203,62 @@ A `local-git` source is pinned like a `git` source, but `source update` follows 
 (detached works too) instead of a remote: for trying your commits before you push them. ctxtra fetches the
 commit from the clone; it never copies the clone's working tree, index, config or hooks. It adds no mapping:
 reference its files as `ctxtra://team-ctx-dev/<path>`.
+
+### Check a source repository
+
+```text
+$ ctxtra source check .
+checked ~/dev/team-ctx as the source team-ctx
+  bindings/billing.yaml: 2 bindings
+error: billing (bindings/billing.yaml): missing: instructions/security.md
+warning: bindings/billing.yaml: line 9: instructions entry "drafts/*.md" (in "drafts"): glob matches no instructions
+1 error, 1 warning
+```
+
+`source check` reads the binding files in DIR, the top of the repository, the way sessions read them from
+a pinned source, with DIR in place of the accepted commit. It reports what someone who includes them would
+find broken:
+
+- Errors: a binding file that is skipped as a whole (broken YAML, a wrong `schema`, a key other than
+  `schema` and `bindings`, `sources`, `include` or `budget`); a binding that is skipped (an unknown key,
+  a broken `match` or pattern, a path outside the source, a reference to another source); a missing
+  instruction file or skill folder; a `SKILL.md` without frontmatter or `description`; two skills with the
+  same `name` in one binding; a path that a pinned source doesn't have: in `.git`, through a symlink
+  (also a glob's folder), or in a nested repository or submodule.
+- Warnings, after which the binding still applies: a glob that matches nothing, an exclusion that leaves
+  nothing out, and a `ctxtra://` reference to the source itself, which works only when users give the
+  source that name. A relative path works under any name.
+
+Without FILE, it checks every `.yaml` and `.yml` file in DIR with a top-level `schema: ctxtra/...` line,
+outside symlinks, `.git` and nested repositories; a YAML file it can't read is an error. FILE limits the
+check to those binding files, relative to DIR: use it when DIR has a YAML file with that line that isn't a
+binding file, an example config for instance.
+
+- `--name NAME` is the source name that `ctxtra://NAME/` references use. The default is DIR's folder name.
+  Every other source is an error, as in a pinned source.
+- It reads only DIR: not your config, sources, store or clones. It runs no git and fetches nothing, and
+  needs no trust: DIR can be a clone with a remote.
+- It reads the files on disk. An uncommitted or ignored file passes here, and is missing for others; in CI
+  the checkout is the commit.
+- Each binding file is read, and each binding checked as if it matched a session, with the limits of a
+  session of its own: users may include any one of them. Globs skip what a pinned source leaves out.
+- It checks that the files are usable, not what they say. It doesn't find unsafe instructions, prompt
+  injection, or risky skill scripts. It doesn't know which agents, budget or other bindings a user has, so
+  it says nothing about whether the text fits.
+- Exit codes: 0 without errors, also with warnings; 1 with an error, or when DIR has no binding files; 2
+  for a usage error. `--json` prints the result and every error and warning as `diagnostics`.
+
+In CI, for example GitHub Actions:
+
+```yaml
+steps:
+  - uses: actions/checkout@v4
+  - uses: actions/setup-go@v5
+    with:
+      go-version: stable
+  - run: go install github.com/atelpis/ctxtra/cmd/ctxtra@latest   # or a fixed version
+  - run: ctxtra source check . --name team-ctx                     # the name users give the source
+```
 
 ### Review
 
@@ -559,13 +616,14 @@ with its flags and examples. The commands that change the config are grouped by 
 `source`, `binding-file` and `binding`, each with `add`, `list` and `remove`.
 
 - Exit codes: 0 when the command did what it was asked; 1 when it failed, or when `doctor` or a `context`
-  command found that a session wouldn't get everything it should (for `doctor`, a session in any folder); 2 for a usage error (an unknown command
+  command found that a session wouldn't get everything it should (for `doctor`, a session in any folder),
+  or `source check` found an error; 2 for a usage error (an unknown command
   or flag, a missing argument), with the command's usage hint on stderr.
 - Results go to stdout; problems, warnings, notices and questions go to stderr. In a report (`doctor`,
-  `context explain`, the review of `source update`), its problems and warnings are part of the result, on
+  `context explain`, the review of `source update`, `source check`), its problems and warnings are part of the result, on
   stdout.
-- `--json` (on `doctor`, `context files`, `context explain`, the `list` commands, `source show` and
-  `source update --check`) prints one JSON object: `schema_version`, `data`, and `diagnostics`, a list of
+- `--json` (on `doctor`, `context files`, `context explain`, the `list` commands, `source show`,
+  `source update --check` and `source check`) prints one JSON object: `schema_version`, `data`, and `diagnostics`, a list of
   `{severity, message}` with the severity `error`, `warning` or `notice`. New fields can be added; a field
   doesn't change its meaning within a `schema_version`.
 - ctxtra asks a question only when stdin and stdout are a terminal. `--no-input` turns every question off:
@@ -594,7 +652,7 @@ with its flags and examples. The commands that change the config are grouped by 
 |---|---|---|
 | `schema` | yes | `ctxtra/v1` |
 | `sources.<name>.trusted-path` | no | A folder of your own files. Absolute or starts with `~`. |
-| `sources.<name>.git` | no | A team repository: `https://`, `ssh://` or `user@host:path`. |
+| `sources.<name>.git` | no | A git repository: `https://`, `ssh://` or `user@host:path`. |
 | `sources.<name>.branch` | with `git` | The branch `source update` follows. |
 | `sources.<name>.local-git` | no | Your clone, pinned to its committed `HEAD`. Absolute or starts with `~`. |
 | `sources.<name>.commit` | no | With `git` or `local-git`: the accepted commit, a full ID in quotes. |
