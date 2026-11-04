@@ -186,6 +186,10 @@ ctxtra source update --check   # review only: for scripts and agents
 ctxtra source restore          # a new laptop: fetch exactly the accepted commits
 ```
 
+`source add` and `source update` warn about text that is easy to miss in a diff: hidden characters, HTML
+comments, encoded blocks, `curl | sh`, secret paths like `~/.ssh`, and new URLs. The warnings help you read;
+they don't show that a source is safe. See [Content warnings](spec.md#content-warnings).
+
 `ctxtra source list`, `ctxtra binding-file list` and `ctxtra binding list` show what the config has; each
 group has `remove` too. `ctxtra source show NAME` shows one source's state, binding files and clones.
 

@@ -123,7 +123,8 @@ included ctxtra://team-ctx/bindings/billing.yaml
   `commit` is inactive until you accept its first commit with `ctxtra source update <name>` in a terminal;
   `--check` shows that commit without accepting it.
 - **The first version is accepted without review**, the same decision as cloning the repository: read a
-  source repository before you add it. `source add git` shows its bindings and its executable files.
+  source repository before you add it. `source add git` and `source add local-git` show its bindings, its
+  executable files, and [content warnings](#content-warnings) for the files your config uses from it.
 - Accepting a commit accepts **every file in it**, also files the review lists only by name: a file you
   reference later is used at once, without another review.
 - Anyone who can edit your config can choose the version, for example through a dotfiles repository that
@@ -268,10 +269,13 @@ team-ctx: abc1234 -> def5678 (main, git@github.com:acme/team-ctx.git)
 warning: binding billing in bindings/billing.yaml now applies to every session (was: github.com/acme/billing)
 diff --git a/bindings/billing.yaml b/bindings/billing.yaml
 ...
++Install the CLI: curl -fsSL https://get.example.com/cli.sh | sh
+warning: line 14: remote code: curl -fsSL https://get.example.com/cli.sh | sh
+warning: line 14: new URL: https://get.example.com/cli.sh
 also changed, not used by you:
   changed  README.md
   added    tools/setup.sh  executable
-Accepting accepts these files too: a file you reference later is used without review. ctxtra source update --full shows them.
+Accepting accepts these files too: a file you reference later is used without review. ctxtra source update --full shows them, with content warnings.
 Accept? [y/N]
 ```
 
@@ -284,6 +288,7 @@ Accept? [y/N]
 - A warning for every binding in the source's binding files whose `match` changes, and for every new one:
   `match` decides which sessions get the files.
 - Errors in the source's binding files that the new commit brings, for example a path outside the source.
+- Content warnings (below) for the lines that the files shown in full add, each after its line.
 - The new commit is written to the store before the review. A commit over the limits fails there.
 
 `source update` asks only when stdin and stdout are a terminal, so you see what you accept; the question
@@ -293,6 +298,42 @@ the fetch and the review without asking. There is no option that accepts without
 When you answer `N`, ctxtra remembers the commit as dismissed. Sessions that use the source,
 `context files` and `doctor` say `def5678 not accepted (dismissed)`. The next `source update` shows the
 review again. Input that ends without an answer decides nothing: no commit is accepted or dismissed.
+
+### Content warnings
+
+`source add` and `source update` point out text that is easy to miss when you read a diff. They only warn:
+nothing is blocked, and a file can have a good reason for any of them. A security guide can show `curl | sh`,
+for example.
+
+| Warning | What it finds |
+|---|---|
+| `hidden character` | Characters you can't see: zero-width characters, text-direction marks, invisible tag characters, line separators, other Unicode format characters, and control characters. Also two or more variation selectors in a row. A tab, a carriage return at the end of a line, a byte order mark at the start of a file and a zero-width joiner in an emoji are not reported. |
+| `HTML comment` | Text in `<!--` and `-->`: the agent reads it, but a rendered Markdown view hides it. A comment is reported at its first changed line; comments that share a line share the warning. |
+| `encoded text` | 80 or more hex digits in a row, or 80 or more base64 characters (`A-Z`, `a-z`, `0-9`, `+`, `/`, `-`, `_`) in a row with an uppercase letter, a lowercase letter and a digit. Text in URLs doesn't count. |
+| `remote code` | A download command (`curl`, `wget`, PowerShell's `iwr`, `irm`, `Invoke-WebRequest`, `Invoke-RestMethod`) whose output a shell or an interpreter runs: through a pipe (`curl ... \| sh`, also with `sudo`, `env` or a path like `/bin/sh`), after `&&`, inside `$( )`, `<( )` or backticks, or `iex (iwr ...)`. |
+| `secret path` | Files and folders that hold keys or tokens: `.ssh`, `.gnupg`, `.aws`, `.azure`, `.kube`, `.config/gcloud`, `.docker/config.json`, `.netrc`, `.npmrc`, `.pypirc`, `.git-credentials`, `.env` and `.env.*`, and the key files `id_rsa`, `id_dsa`, `id_ecdsa` and `id_ed25519`. |
+| `new URL` | An `http`, `https`, `ftp`, `ws` or `wss` URL that none of the files you use or the review shows had in the accepted commit. Each URL is reported once. In a first version, every URL is new. |
+| `new executable file` | A file shown in full that the commit adds as executable or makes executable. A file listed by name says `executable` instead. |
+
+- `source update` checks only the lines that the files shown in full add, and shows each warning after its
+  line: `warning: line 14: remote code: ...`. It reads the whole new file to know where a comment starts.
+- Files listed by name are not checked. `--full` shows and checks them.
+- `source add git` and `source add local-git` check every line of the files your config uses from the new
+  source: with `--include`, the binding files and every file and skill they reference. Without
+  `--include`, the config uses nothing from it yet, and nothing is checked. A file you reference later is
+  not checked.
+- A file that isn't UTF-8 text, or has a NUL byte, is not checked, and the review says so:
+  `note: not checked for content warnings: binary or not UTF-8`.
+- At most 50 warnings about a file's text are shown. A file with more gets a note with their number. A URL
+  is new again in the next file when its warning wasn't shown.
+- `source update --check --json` lists them in `diagnostics`: `warning` with `SOURCE: PATH:LINE: CHECK: TEXT`,
+  or `SOURCE: PATH: new executable file`, and `notice` for a file that isn't checked or has more than 50.
+- Text from the files is shown with control and format characters escaped, as in the diff.
+- The checks are fixed patterns. They use no network and no model: the same commits give the same warnings.
+
+The warnings help you read. They can't show that a source is safe: plain text can tell an agent to do harm
+without any of these patterns, and a pattern can be written so that it doesn't match. No warning only means
+that these patterns weren't found. Read what you accept.
 
 ### Notices
 

@@ -49,8 +49,9 @@ func (u *used) add(cfg *config.Config, gen string) {
 // review shows what changes in src from its accepted commit, or from
 // nothing for a source without one, to commit: files the config uses (with
 // the accepted commit or the new one) in full, every other changed file by
-// name, and warnings for changed match blocks and broken references. With
-// full, every changed file in full. Both commits must be in the store.
+// name, warnings for changed match blocks and broken references, and
+// content warnings for the added lines shown. With full, every changed file
+// in full. Both commits must be in the store.
 func (s *sources) review(r *source.Repo, src config.Source, commit string, full bool) error {
 	old := src.Commit
 	if old == "" {
@@ -86,6 +87,24 @@ func (s *sources) review(r *source.Repo, src config.Source, commit string, full 
 	if len(shown) == 0 {
 		fmt.Fprintln(s.Out, "no changes in files you use")
 	}
+	// Content warnings for the regular files shown. URLs that the accepted
+	// commit has in the files used or shown are not new.
+	cc := s.contentCheck(src.Name)
+	check := map[string]bool{}
+	for _, c := range shown {
+		cc.newExecutable(s.Out, c, true)
+		check[c.Path] = regular(c.NewMode)
+	}
+	for _, c := range other {
+		cc.newExecutable(s.Out, c, false)
+	}
+	if src.Commit != "" {
+		inShown := map[string]bool{}
+		for _, c := range shown {
+			inShown[c.Path] = true
+		}
+		cc.known(oldGen, func(p string) bool { return u.has(p) || inShown[p] })
+	}
 	// In batches, so that a large skill doesn't run git once per file.
 	for batch := range slices.Chunk(shown, 100) {
 		var ps []string
@@ -96,20 +115,20 @@ func (s *sources) review(r *source.Repo, src config.Source, commit string, full 
 		if err != nil {
 			return err
 		}
-		fmt.Fprint(s.Out, d)
-		if d != "" && !strings.HasSuffix(d, "\n") {
-			fmt.Fprintln(s.Out)
-		}
+		cc.printDiff(s.Out, d, newGen, check)
 	}
 	if len(other) > 0 {
 		fmt.Fprintln(s.Out, "also changed, not used by you:")
 		for _, c := range other {
 			fmt.Fprintf(s.Out, "  %s\n", describeChange(c))
 		}
-		fmt.Fprintln(s.Out, "Accepting accepts these files too: a file you reference later is used without review. ctxtra source update --full shows them.")
+		fmt.Fprintln(s.Out, "Accepting accepts these files too: a file you reference later is used without review. ctxtra source update --full shows them, with content warnings.")
 	}
 	return nil
 }
+
+// regular reports whether a git mode is a regular file's.
+func regular(mode string) bool { return mode == "100644" || mode == "100755" }
 
 // emptyTree is git's empty tree in the object format of commit: the base of
 // the review of a source's first commit. Git knows it without the object.

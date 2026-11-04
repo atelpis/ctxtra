@@ -270,7 +270,11 @@ one with ctxtra source update.
 
 DIR is your clone of the repository: its remote's URL is used, and plain paths
 under the clone are read from the pinned commit, not from disk. The source then
-starts at your local commit.`
+starts at your local commit.
+
+It shows content warnings for the files your config uses from the source:
+text that is easy to miss, like hidden characters or curl | sh. See ctxtra
+help source update.`
 		c.Example = `  ctxtra source add git https://github.com/acme/agent-context --include bindings/work.yaml
   ctxtra source add git ~/dev/agent-context --name team`
 		c.Args = exactly("URL or DIR")
@@ -338,6 +342,11 @@ func (a *app) sourceUpdateCmd() *cobra.Command {
 		Long: `Fetch the pinned sources (all of them without NAME), show what changed in
 the files your bindings use, and ask whether to accept the new commit. New
 sessions get the new files only after you accept them.
+
+The review warns about text that is easy to miss in the lines that change:
+hidden characters, HTML comments, long encoded blocks, curl | sh and similar
+commands, secret paths like ~/.ssh, new URLs, and new executable files. The
+warnings don't block anything, and no warning doesn't mean the source is safe.
 
 Accepting needs a terminal. --check fetches and shows the same review but
 accepts and dismisses nothing; it works anywhere, for example in an agent.`,

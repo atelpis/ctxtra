@@ -5,6 +5,8 @@
 gitrepo srv/team-ctx
 exec git clone -q $GITSRV/team-ctx dev/team-ctx
 cp local.md dev/team-ctx/jira-ticket.md
+cp local.md dev/team-ctx/tool.sh
+chmod 755 dev/team-ctx/tool.sh
 gitcommit dev/team-ctx
 exec ctxtra setup --agent claude
 
@@ -55,6 +57,7 @@ stdout '^-LOCAL-COMMIT$'
 # A local-git source follows the clone's committed HEAD instead.
 exec ctxtra source add local-git dev/team-ctx --name team-ctx-dev
 stdout '^added source team-ctx-dev \(local-git: ~/dev/team-ctx at [0-9a-f]{7}\); updates follow the clone''s committed HEAD$'
+stdout '^executable files: tool.sh$'
 grep '^    local-git: ~/dev/team-ctx$' .config/ctxtra/config.yaml
 cp wip.md dev/team-ctx/services-overview.md
 gitcommit dev/team-ctx
