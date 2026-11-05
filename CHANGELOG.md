@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.3.0
+
 - Sessions tell you about a new ctxtra release, with the command that upgrades it. Every 4 hours at most, a
   session asks GitHub for the latest release in the background, and the next session shows the result; it
   never waits for the check. This sends your IP address and ctxtra version to GitHub. `check-updates: false`
