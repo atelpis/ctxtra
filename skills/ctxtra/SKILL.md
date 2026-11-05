@@ -108,17 +108,17 @@ How ctxtra lowers the risk:
 - A source repository is pinned: sessions get the commit the user accepted, never the newest one. A new
   commit applies only after `ctxtra source update` shows the user the diff and they accept it, in a
   terminal. Sessions never fetch.
-- The review shows in full every file the user uses, and warns when a binding's `match` changes, for
-  example when a binding starts to apply to every session.
+- The review shows in full every file the user uses. It warns when a binding's `match` changes, for
+  example to every session, and on easy-to-miss text (`curl | sh`).
 - A binding file in a source repository can only reference files in that repository. It can't add the user's
   own files (`~/.ssh`, for example), declare sources or include other files. Symlinks and submodules in it
   are left out. ctxtra runs no git hooks or `.gitattributes` filters from it.
 
 What it doesn't cover:
 
-- The first commit is accepted without review, like a clone. Read the repository before you add it.
-- Accepted text can still tell the agent to read a secret or run a command. ctxtra can't detect that. After
-  accepting, the agent's own permission prompts are the last protection.
+- The first commit is accepted without review, like a clone. Read the repository first.
+- Accepted text can still make the agent read a secret or run a command; warnings catch only some
+  patterns. After accepting, the agent's own permission prompts are the last protection.
 - Accepting a commit accepts every file in it, also files the review only names.
   `ctxtra source update --full` shows them all.
 - A `trusted-path` source is read live: whatever is pulled into it is used at once, also other people's

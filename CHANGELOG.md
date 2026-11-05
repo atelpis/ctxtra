@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `source add` and `source update` show content warnings: hidden characters, HTML comments, long encoded
+  blocks, `curl | sh` and similar commands, secret paths like `~/.ssh` and `.env`, new URLs, and new
+  executable files. `source update` checks only the added lines of the files it shows in full, and shows
+  each warning after its line; `source add` checks the files your config uses from the new source.
+  `source update --check --json` lists them in `diagnostics`. They only warn, and they don't show that a
+  source is safe.
+
 - `ctxtra source check DIR` checks a source repository's binding files in a checkout, the way sessions read
   them from a pinned source: broken YAML and bindings, config-only keys, paths outside the source, missing
   files, unusable skills, and symlinks and submodules that a pinned source leaves out. It reads only DIR,

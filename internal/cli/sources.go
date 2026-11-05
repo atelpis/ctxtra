@@ -31,8 +31,9 @@ type sources struct {
 	ctx    context.Context
 	file   string // the config
 	in     *bufio.Reader
-	full   bool // source update --full: show every changed file in full
-	prompt bool // source update may ask whether to accept a commit
+	full   bool         // source update --full: show every changed file in full
+	prompt bool         // source update may ask whether to accept a commit
+	diags  []diagnostic // content warnings, for source update --check --json
 	// registerErr is set when the config couldn't be registered.
 	registerErr error
 }
@@ -305,6 +306,7 @@ func (s *sources) addGitURL(url string, o addOptions) error {
 	fmt.Fprintf(s.Out, "added source %s (pinned: new commits apply after you accept them in ctxtra source update)\n", name)
 	s.added(name, gen, o.includes)
 	s.showExecutables(r, commit)
+	s.checkAdded(name, commit, gen)
 	return nil
 }
 
@@ -413,6 +415,7 @@ func (s *sources) addGitClone(dir string, o addOptions) error {
 	fmt.Fprintf(s.Out, "starts at your local commit %s; later updates follow %s/%s (remote not checked yet)\n", source.Short(commit), remote, branch)
 	s.added(name, gen, o.includes)
 	s.showExecutables(r, commit)
+	s.checkAdded(name, commit, gen)
 	fmt.Fprintf(s.Out, "if the repository is yours, read it from disk instead: ctxtra source trust %s\n", name)
 	return nil
 }
@@ -505,6 +508,8 @@ func (s *sources) addLocalGit(dir string, o addOptions) error {
 	fmt.Fprintf(s.Out, "added source %s (local-git: %s at %s); updates follow the clone's committed HEAD\n",
 		name, paths.Tilde(c.Top), source.Short(commit))
 	s.added(name, gen, o.includes)
+	s.showExecutables(r, commit)
+	s.checkAdded(name, commit, gen)
 	return nil
 }
 
@@ -923,7 +928,7 @@ func (s *sources) update(names []string, mode syncMode, asJSON bool) int {
 		if results == nil {
 			results = []updateResult{}
 		}
-		writeJSON(out, results, nil)
+		writeJSON(out, results, s.diags)
 	}
 	return n
 }

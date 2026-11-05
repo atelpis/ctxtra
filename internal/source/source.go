@@ -151,6 +151,8 @@ var options = []string{
 	"-c", "gc.auto=0", "-c", "maintenance.auto=false",
 	"-c", "fetch.recurseSubmodules=false", "-c", "submodule.recurse=false",
 	"-c", "protocol.file.allow=never", "-c", "protocol.ext.allow=never",
+	// Paths in output are quoted the same way for every user.
+	"-c", "core.quotePath=true",
 }
 
 // git runs git with args. With the repository, it runs on it; without, in
@@ -485,7 +487,9 @@ func (r *Repo) IsAncestor(ctx context.Context, old, commit string) bool {
 func (r *Repo) Diff(ctx context.Context, old, commit string, paths ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, readTimeout)
 	defer cancel()
-	args := []string{"diff", "--text", "--no-ext-diff", "--no-textconv", "--no-color"}
+	// Fixed prefixes, whatever the user's git config says: the review finds
+	// each file's section by its +++ line.
+	args := []string{"diff", "--text", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/"}
 	if len(paths) == 0 {
 		args = append(args, "--find-renames")
 	}
