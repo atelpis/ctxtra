@@ -17,9 +17,9 @@ import (
 
 // quiet are the commands after which setupNotices doesn't run: setup and
 // onboard, which just ran setup, doctor, which shows the same lines under each agent,
-// source check, which reads only the folder it checks, and the ones that only print help,
-// the version or a completion script.
-var quiet = []string{"setup", "onboard", "doctor", "check", "help", "version", "bash", "zsh", "fish", "powershell"}
+// source check, which reads only the folder it checks, check-updates, which sessions run in
+// the background, and the ones that only print help, the version or a completion script.
+var quiet = []string{"setup", "onboard", "doctor", "check", "check-updates", "help", "version", "bash", "zsh", "fish", "powershell"}
 
 // root is the command tree.
 func (a *app) root() *cobra.Command {
@@ -54,7 +54,7 @@ Config: $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml (format: ctxtra help conf
 	root.AddCommand(
 		a.onboardCmd(), a.setupCmd(), a.importCmd(),
 		a.sourceCmd(), a.bindingFileCmd(), a.bindingCmd(), a.skillCmd(),
-		a.contextCmd(), a.doctorCmd(),
+		a.contextCmd(), a.doctorCmd(), a.checkUpdatesCmd(),
 		a.versionCmd(), hookCmd(),
 	)
 	root.SetHelpCommand(a.helpCmd(root))
@@ -301,6 +301,9 @@ only for files that you alone write.`
 	c.Flags().StringVar(&o.name, "name", "", "name the source `NAME` (default: from the URL or folder)")
 	c.Flags().StringArrayVar(&o.includes, "include", nil, "also include the binding file `PATH` of the source (repeatable)")
 	c.Flags().BoolVar(&o.dryRun, "dry-run", false, "check and show the change; change nothing and fetch nothing")
+	if kind != "trusted-path" {
+		c.Flags().BoolVar(&o.checkUpdates, "check-updates", false, "have sessions check the source for new commits every 4 hours (check-updates: true)")
+	}
 	return c
 }
 
@@ -669,7 +672,7 @@ bindings. These commands only read: they fetch nothing and change nothing.`,
 		Example: `  ctxtra context files ~/dev/work/api`,
 		Args:    atMost(1),
 		RunE: a.run(func(_ *cobra.Command, args []string) error {
-			return code(report{a.IO}.files(dirArg(args), filesJSON))
+			return code(report{a.IO, a.version}.files(dirArg(args), filesJSON))
 		}),
 	}
 	files.Flags().BoolVar(&filesJSON, "json", false, "print JSON")
@@ -687,7 +690,7 @@ long command output.`,
   ctxtra context show ~/dev/api --exclude-session ~/dev/web --part 1`,
 		Args: atMost(1),
 		RunE: a.run(func(_ *cobra.Command, args []string) error {
-			return code(report{a.IO}.show(dirArg(args), o))
+			return code(report{a.IO, a.version}.show(dirArg(args), o))
 		}),
 	}
 	show.Flags().StringArrayVar(&o.exclude, "exclude-session", nil, "leave out what a session in `DIR` gets (repeatable)")
@@ -699,7 +702,7 @@ long command output.`,
 		Example: `  ctxtra context explain ~/dev/work/api`,
 		Args:    atMost(1),
 		RunE: a.run(func(_ *cobra.Command, args []string) error {
-			return code(report{a.IO}.explain(dirArg(args), explainJSON))
+			return code(report{a.IO, a.version}.explain(dirArg(args), explainJSON))
 		}),
 	}
 	explain.Flags().BoolVar(&explainJSON, "json", false, "print JSON")
@@ -719,7 +722,7 @@ and the last hook runs there. It exits with 1 when it finds a problem.`,
 		Args:    atMost(1),
 		GroupID: "inspect",
 		RunE: a.run(func(_ *cobra.Command, args []string) error {
-			return code(report{a.IO}.doctor(dirArg(args), asJSON))
+			return code(report{a.IO, a.version}.doctor(dirArg(args), asJSON))
 		}),
 	}
 	c.Flags().BoolVar(&asJSON, "json", false, "print JSON")

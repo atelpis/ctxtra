@@ -119,12 +119,13 @@ team-ctx/
 **Add it with the maintainer's binding.** You don't need a clone: ctxtra keeps its own copy.
 
 ```text
-$ ctxtra source add git git@github.com:acme/team-ctx.git --include bindings/billing.yaml
+$ ctxtra source add git git@github.com:acme/team-ctx.git --include bindings/billing.yaml --check-updates
 fetched team-ctx: main at abc1234 (git@github.com:acme/team-ctx.git)
 added source team-ctx (pinned: new commits apply after you accept them in ctxtra source update)
 included ctxtra://team-ctx/bindings/billing.yaml
   binding billing: for github.com/acme/billing
     instructions: services-overview.md
+sessions check team-ctx for new commits every 4 hours and tell you when there are some (check-updates: true)
 ```
 
 The first version is accepted without review. Read a source repository before you add it, as you would
@@ -136,6 +137,7 @@ sources:
     git: git@github.com:acme/team-ctx.git
     branch: main
     commit: 'abc1234...'          # the full commit ID
+    check-updates: true
 include:
   - ctxtra://team-ctx/bindings/billing.yaml
 ```
@@ -158,8 +160,8 @@ Instructions:
 - jira-ticket.md
 ```
 
-**Two weeks later** the maintainer changed `services-overview.md`. Sessions never fetch, so ctxtra doesn't
-know about it, but it knows when it last checked:
+**Two weeks later** the maintainer changed `services-overview.md`. Sessions keep the accepted commit, but a
+background check found the new one, and the next session says so:
 
 ```text
 $ claude
@@ -168,7 +170,9 @@ Instructions:
 - work.md
 - services-overview.md
 - jira-ticket.md
-ctxtra: team-ctx last checked 14 days ago; run ctxtra source update to check for changes
+
+ℹ team-ctx has new commits on main
+  run `ctxtra source update team-ctx` to review them.
 ```
 
 **Review and accept:**
@@ -190,8 +194,10 @@ and accepts nothing.
 
 Where it can surprise you:
 
-- There is no notice when the maintainer pushes, only "last checked N days ago". Run `ctxtra source update`
-  yourself to get changes sooner.
+- The check runs at most every 4 hours, and its result shows in the session after it. Run
+  `ctxtra source update` yourself to get changes sooner.
+- The check connects to the remote with your git credentials. If your ssh key needs a touch or an approval,
+  it can ask for one when a session starts: leave `check-updates` off for that source.
 - Cursor, Copilot, OpenCode, Antigravity, Hermes and DSH don't show notices at session start. `ctxtra context files` and `ctxtra doctor` do.
 - If your config is in a repository, `source update` changes it (the new `commit`). Commit that like any other config
   change.
@@ -256,7 +262,7 @@ not accepted; you keep def5678
 ```
 
 Accepting is all or nothing: you can't take the new skill and leave the old match block. Until you accept a
-newer commit, sessions say `team-ctx 1a2b3c4 not accepted (dismissed); you have def5678`.
+newer commit, sessions say that `team-ctx` has a newer commit that you didn't accept.
 
 **Option A: accept it.** Run `ctxtra source update` again and answer `y`. Every session, in every repository, gets
 `services-overview.md` and the `deploy` skill.

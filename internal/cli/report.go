@@ -17,13 +17,23 @@ import (
 	"github.com/atelpis/ctxtra/internal/source"
 	"github.com/atelpis/ctxtra/internal/state"
 	"github.com/atelpis/ctxtra/internal/term"
+	"github.com/atelpis/ctxtra/internal/update"
 )
 
 // report implements the commands that show what a session gets.
-type report struct{ IO }
+type report struct {
+	IO
+	version string
+}
 
+// resolve is what a session in dir gets, with the release notice that
+// sessions show.
 func (r report) resolve(dir string) (*resolve.Result, *config.Config) {
-	return resolve.Session(dir, paths.ConfigPath())
+	res, cfg := resolve.Session(dir, paths.ConfigPath())
+	if n := update.ReleaseNotice(cfg, state.Load(), r.version); n != "" {
+		res.Notices = append([]string{n}, res.Notices...)
+	}
+	return res, cfg
 }
 
 // status is the exit code of a command that shows res: 1 when a session
@@ -45,7 +55,7 @@ func sessionDiagnostics(res *resolve.Result) []diagnostic {
 	for _, h := range res.Dropped {
 		d = append(d, diagnostic{"warning", fmt.Sprintf("dropped (over %s): %s", h.Over, h.Path)})
 	}
-	return append(d, diagnostics("notice", res.Notices)...)
+	return append(d, diagnostics("notice", oneLine(res.Notices))...)
 }
 
 // hitInfo is a file or skill a session gets, in --json output.
@@ -92,7 +102,7 @@ func (r report) files(dir string, asJSON bool) int {
 	for _, h := range res.Dropped {
 		fmt.Fprintf(r.Err, "dropped (over %s): %s\n", h.Over, h.Path)
 	}
-	for _, n := range res.Notices {
+	for _, n := range oneLine(res.Notices) {
 		fmt.Fprintf(r.Err, "notice: %s\n", n)
 	}
 	return status(res)
@@ -427,6 +437,7 @@ func (r report) doctor(dir string, asJSON bool) int {
 			runs = []hook.Entry{}
 		}
 		writeJSON(r.Out, map[string]any{
+			"ctxtra":  releaseInfo(cfg, state.Load(), r.version),
 			"config":  map[string]any{"file": cfg.File, "exists": statErr == nil, "binding_files": len(cfg.BindingFiles), "bindings": len(cfg.Bindings)},
 			"sources": sources, "session": session(res),
 			"files": hits(res.Files, false), "skills": hits(res.Skills, true), "agents_over": agentDrops(res),
@@ -437,6 +448,7 @@ func (r report) doctor(dir string, asJSON bool) int {
 		}
 		return 1
 	}
+	fmt.Fprintf(r.Out, "ctxtra %s: %s\n", r.version, releaseStatus(cfg, state.Load(), r.version))
 	fmt.Fprintf(r.Out, "config: %s\n", cfg.File)
 	if statErr != nil {
 		fmt.Fprintln(r.Out, "  not found: nothing is added (the format: ctxtra help config)")
@@ -465,7 +477,7 @@ func (r report) doctor(dir string, asJSON bool) int {
 	for _, h := range res.Dropped {
 		fmt.Fprintf(r.Out, "  DROPPED (over %s): %s\n", h.Over, h.Path)
 	}
-	for _, n := range res.Notices {
+	for _, n := range oneLine(res.Notices) {
 		fmt.Fprintf(r.Out, "  NOTICE: %s\n", n)
 	}
 	r.sizeWarnings(res, "  ")
@@ -507,6 +519,15 @@ func mentions(list []string, s string) bool {
 	return false
 }
 
+// oneLine is notices with their command on the same line, for reports.
+func oneLine(notices []string) []string {
+	out := make([]string, len(notices))
+	for i, n := range notices {
+		out[i] = strings.ReplaceAll(n, "\n", "; ")
+	}
+	return out
+}
+
 // describeSource is one line about a source and its state.
 func describeSource(s config.Source) string {
 	if !s.Pinned() {
@@ -520,21 +541,25 @@ func describeSource(s config.Source) string {
 	if s.LocalGit != "" {
 		d = "local-git " + paths.Tilde(s.LocalGit) + ", follows its committed HEAD, "
 	}
+	e := state.Load().Get(source.ID(s.Remote()), s.Remote(), s.Branch)
+	check := "; update checks off (check-updates: true turns them on)"
+	if s.CheckUpdates {
+		check = "; " + checkStatus(s, e)
+	}
 	switch {
 	case s.Commit == "":
-		return d + "no accepted commit yet (accept one in a terminal: ctxtra source update " + s.Name + ")"
+		return d + "no accepted commit yet (accept one in a terminal: ctxtra source update " + s.Name + ")" + check
 	case !source.Has(s.Remote(), s.Commit):
-		return d + "pinned to " + source.Short(s.Commit) + ", NOT IN THE STORE (run: ctxtra source restore " + s.Name + ")"
+		return d + "pinned to " + source.Short(s.Commit) + ", NOT IN THE STORE (run: ctxtra source restore " + s.Name + ")" + check
 	}
 	d += "pinned to " + source.Short(s.Commit) + " (new commits apply after you accept them in ctxtra source update)"
-	e := state.Load().Get(source.ID(s.Remote()), s.Remote(), s.Branch)
 	if e.LastCheck.IsZero() {
-		d += ", not checked for new commits on this machine yet"
+		d += ", not fetched on this machine yet"
 	} else {
-		d += ", last checked " + e.LastCheck.Format("2006-01-02 15:04")
+		d += ", last fetched " + e.LastCheck.Format(timeFormat)
 	}
 	if e.Dismissed != "" && e.Dismissed != s.Commit {
 		d += ", " + source.Short(e.Dismissed) + " not accepted (dismissed)"
 	}
-	return d
+	return d + check
 }

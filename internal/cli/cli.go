@@ -53,7 +53,7 @@ func code(n int) error {
 // the command failed, 2 for a usage error.
 func Run(args []string, stdio IO, version string) int {
 	if len(args) > 0 && args[0] == "hook" {
-		return runHook(args[1:], stdio)
+		return runHook(args[1:], stdio, version)
 	}
 	// Output can hold text from sources (selectors, paths, diffs): no
 	// control characters reach the terminal. The hook's stdout is JSON
@@ -174,7 +174,7 @@ func writeJSON(w io.Writer, data any, diags []diagnostic) {
 // runHook is ctxtra hook AGENT [EVENT [--slot K --of N]]. It never fails
 // and parses no flags but its own, so that hooks that any version set up
 // keep running.
-func runHook(args []string, stdio IO) int {
+func runHook(args []string, stdio IO, version string) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stdio.Out, "{}")
 		return 0
@@ -187,6 +187,7 @@ func runHook(args []string, stdio IO) int {
 	if len(args) > 2 {
 		h = hookArgs(args[2:])
 	}
+	h.Version = version
 	return hook.RunArgs(args[0], event, h, hookInput(stdio.In), stdio.Out, term.Writer{W: stdio.Err})
 }
 

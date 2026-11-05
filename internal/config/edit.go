@@ -121,6 +121,7 @@ func SetCommit(data []byte, name, commit string) ([]byte, error) {
 }
 
 // AddSource adds the source name with the given keys and values, in order.
+// check-updates is a boolean: "true" or "false".
 func AddSource(data []byte, name string, kv [][2]string) ([]byte, error) {
 	doc, err := root(data)
 	if err != nil {
@@ -133,14 +134,20 @@ func AddSource(data []byte, name string, kv [][2]string) ([]byte, error) {
 		e := map[string]any{}
 		for _, p := range kv {
 			e[p[0]] = p[1]
+			if p[0] == "check-updates" {
+				e[p[0]] = p[1] == "true"
+			}
 		}
 		m["sources"].(map[string]any)[name] = e
 	}
 	quoted := make([][2]string, len(kv))
 	for i, p := range kv {
 		quoted[i] = [2]string{p[0], scalar(p[1])}
-		if p[0] == "commit" {
+		switch p[0] {
+		case "commit":
 			quoted[i][1] = "'" + p[1] + "'" // as the docs show it
+		case "check-updates":
+			quoted[i][1] = p[1] // a boolean, not a string
 		}
 	}
 	sources := get(doc, "sources")
@@ -171,8 +178,11 @@ func AddSource(data []byte, name string, kv [][2]string) ([]byte, error) {
 		e := &yaml.Node{Kind: yaml.MappingNode}
 		for _, p := range kv {
 			v := &yaml.Node{Kind: yaml.ScalarNode, Value: p[1]}
-			if p[0] == "commit" {
+			switch p[0] {
+			case "commit":
 				v.Style = yaml.SingleQuotedStyle
+			case "check-updates":
+				v.Tag = "!!bool"
 			}
 			set(e, p[0], v)
 		}

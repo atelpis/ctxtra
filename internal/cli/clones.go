@@ -263,8 +263,13 @@ type sourceInfo struct {
 	Branch    string `json:"branch,omitempty"`
 	Commit    string `json:"commit,omitempty"`
 	InStore   *bool  `json:"in_store,omitempty"`
-	LastCheck string `json:"last_check,omitempty"`
+	LastCheck string `json:"last_check,omitempty"` // the last fetch that worked
 	Dismissed string `json:"dismissed,omitempty"`
+	// The update checks of a pinned source.
+	CheckUpdates *bool  `json:"check_updates,omitempty"`
+	Head         string `json:"head,omitempty"`        // the commit the last check or fetch found
+	Checked      string `json:"checked,omitempty"`     // when
+	CheckError   string `json:"check_error,omitempty"` // why the last check failed
 	// Only in source show.
 	BindingFiles []string `json:"binding_files,omitempty"`
 	Clones       []string `json:"clones,omitempty"`
@@ -286,6 +291,12 @@ func info(src config.Source) sourceInfo {
 	}
 	if e.Dismissed != "" && e.Dismissed != src.Commit {
 		i.Dismissed = e.Dismissed
+	}
+	check := src.CheckUpdates
+	i.CheckUpdates = &check
+	i.Head, i.CheckError = e.Head, e.Error
+	if !e.Checked.IsZero() {
+		i.Checked = e.Checked.Format(time.RFC3339)
 	}
 	return i
 }

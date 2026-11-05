@@ -14,7 +14,9 @@ import (
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/agent/registry"
 	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/atelpis/ctxtra/internal/state"
 	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/atelpis/ctxtra/internal/update"
 )
 
 func TestOutputPerAgent(t *testing.T) {
@@ -202,12 +204,12 @@ func TestLegacy(t *testing.T) {
 	testenv.Config(t, h, "schema: ctxtra/v1\nbindings:\n  - {name: a, match: {global: true}, instructions: [~/small.md, ~/big.md]}\n")
 	a, _ := registry.Get("claude")
 	d, upgrade, err := delivery(old{a}, "SessionStart", agent.Input{Slot: 0, Slots: 1})
-	if err != nil || d.Capacity != 9000 || !strings.Contains(upgrade, "Claude Code's limit of 9,000 characters; run ctxtra setup") {
+	if err != nil || d.Capacity != 9000 || !strings.Contains(upgrade, "Claude Code's limit of 9,000 characters\nrun `ctxtra setup` to update it.") {
 		t.Fatalf("%+v, %q, %v", d, upgrade, err)
 	}
-	res, e := session(old{a}, d, upgrade, "", "SessionStart", payload{Cwd: r}, r)
-	if len(res.Files) != 1 || len(res.Dropped) != 1 || !strings.Contains(agent.Summary(res), "run ctxtra setup") ||
-		!slices.Contains(e.Problems, upgrade) {
+	res, e := session(old{a}, d, upgrade, "", "", "SessionStart", payload{Cwd: r}, r)
+	if len(res.Files) != 1 || len(res.Dropped) != 1 || !strings.Contains(agent.Summary(res), "\n  run `ctxtra setup` to update it.") ||
+		!slices.Contains(e.Problems, strings.ReplaceAll(upgrade, "\n", "; ")) {
 		t.Errorf("files %v, dropped %v, summary %q, log %+v", res.Files, res.Dropped, agent.Summary(res), e)
 	}
 	if d, upgrade, err := delivery(old{a}, "SessionStart", agent.Input{Slot: 0, Slots: 40}); err != nil || upgrade != "" || d != a.Delivery() {
@@ -295,5 +297,40 @@ func TestHermesSlots(t *testing.T) {
 		if e := logEntries(t, h); !strings.HasPrefix(e[len(e)-1].Error, "bad hook input: ") {
 			t.Errorf("%s: log %+v", extra, e[len(e)-1])
 		}
+	}
+}
+
+// A newer release that an earlier check found reaches the user, not the
+// model, and the session claims the next check without waiting for it.
+func TestReleaseNotice(t *testing.T) {
+	h := testenv.Home(t)
+	t.Setenv(update.EnvOff, "")
+	testenv.Write(t, filepath.Join(h, "a.md"), "Rule A")
+	testenv.Config(t, h, "schema: ctxtra/v1\nbindings:\n  - {name: a, match: {global: true}, instructions: [~/a.md]}\n")
+	if err := state.UpdateRelease(func(r *state.Release) { r.Latest = "v9.9.9" }); err != nil {
+		t.Fatal(err)
+	}
+	run := func(version string) map[string]any {
+		t.Helper()
+		var out bytes.Buffer
+		RunArgs("devin", "SessionStart", Args{Slot: -1, Version: version}, strings.NewReader(`{"cwd": "`+h+`"}`), &out, io.Discard)
+		var m map[string]any
+		if err := json.Unmarshal(out.Bytes(), &m); err != nil {
+			t.Fatalf("bad JSON %q", out.String())
+		}
+		return m
+	}
+	m := run("v0.2.3")
+	if msg, _ := m["systemMessage"].(string); !strings.Contains(msg, "\n\nℹ ctxtra update v9.9.9 is available - https://github.com/atelpis/ctxtra/releases") {
+		t.Errorf("summary %q", msg)
+	}
+	if ctx := m["hookSpecificOutput"].(map[string]any)["additionalContext"].(string); strings.Contains(ctx, "v9.9.9") {
+		t.Errorf("the notice reached the model: %q", ctx)
+	}
+	if st := state.Load(); st.Ctxtra.Attempt.IsZero() {
+		t.Error("the session didn't claim a release check")
+	}
+	if msg, _ := run("v9.9.9")["systemMessage"].(string); strings.Contains(msg, "notices") {
+		t.Errorf("the latest release: %q", msg)
 	}
 }

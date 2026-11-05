@@ -84,9 +84,9 @@ type seat struct {
 	first bool
 }
 
-func runSlot(a agent.Agent, sl agent.Slotted, d agent.Delivery, upgrade string, slot int, ts, event string, p payload, in agent.Input, dir string, out, errOut io.Writer) {
+func runSlot(a agent.Agent, sl agent.Slotted, d agent.Delivery, upgrade, version string, slot int, ts, event string, p payload, in agent.Input, dir string, out, errOut io.Writer) {
 	resolveNow := func() (snapshot, Entry) {
-		res, e := session(a, d, upgrade, ts, event, p, dir)
+		res, e := session(a, d, upgrade, version, ts, event, p, dir)
 		return snapshot{Parts: d.Chunks(res), Summary: agent.Summary(res), Missing: res.Missing}, e
 	}
 	var snap snapshot

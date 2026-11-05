@@ -6,7 +6,6 @@ import (
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/atelpis/ctxtra/internal/config"
 	"github.com/atelpis/ctxtra/internal/fsutil"
@@ -282,7 +281,10 @@ func TestNotices(t *testing.T) {
 	testenv.Write(t, filepath.Join(h, "n", "me.md"), "me")
 	testenv.Write(t, filepath.Join(h, ".config", "ctxtra", "b.yaml"),
 		head+"  - {name: team, match: {dirs: [~/work]}, instructions: [ctxtra://team/a.md]}\n  - {name: me, match: {global: true}, instructions: [~/n/me.md]}\n")
-	cfgPath := testenv.Config(t, h, "schema: ctxtra/v1\nsources:\n  team: {git: '"+url+"', branch: main, commit: '"+commit+"'}\ninclude: [b.yaml]\n")
+	config := func(check string) string {
+		return testenv.Config(t, h, "schema: ctxtra/v1\nsources:\n  team: {git: '"+url+"', branch: main, commit: '"+commit+"'"+check+"}\ninclude: [b.yaml]\n")
+	}
+	cfgPath := config(", check-updates: true")
 	notices := func(dir string) []string {
 		t.Helper()
 		res, _ := Session(dir, cfgPath)
@@ -294,28 +296,37 @@ func TestNotices(t *testing.T) {
 	work := filepath.Join(h, "work")
 	os.MkdirAll(work, 0o755)
 
-	if got := notices(work); !slices.Equal(got, []string{"team not checked for new commits on this machine yet; run ctxtra source update"}) {
+	if got := notices(work); len(got) != 0 {
 		t.Errorf("never checked: %v", got)
+	}
+	id := source.ID(url)
+	state.Update(id, url, "main", func(e *state.Source) { e.Head = commit })
+	if got := notices(work); len(got) != 0 {
+		t.Errorf("up to date: %v", got)
+	}
+	newCommits := "team has new commits on main\nrun `ctxtra source update team` to review them."
+	state.Update(id, url, "main", func(e *state.Source) { e.Head = strings.Repeat("c", 40) })
+	if got := notices(work); !slices.Equal(got, []string{newCommits}) {
+		t.Errorf("new commits: %v", got)
 	}
 	if got := notices(h); len(got) != 0 {
 		t.Errorf("a session that doesn't use the source: %v", got)
 	}
-	id := source.ID(url)
-	state.Update(id, url, "main", func(e *state.Source) { e.LastCheck = time.Now().Add(-3 * 24 * time.Hour) })
-	if got := notices(work); len(got) != 0 {
-		t.Errorf("checked 3 days ago: %v", got)
-	}
-	state.Update(id, url, "main", func(e *state.Source) {
-		e.LastCheck = time.Now().Add(-12*24*time.Hour - time.Hour)
-		e.Dismissed = strings.Repeat("b", 40)
-	})
-	want := []string{"team last checked 12 days ago; run ctxtra source update to check for changes", "team bbbbbbb not accepted (dismissed); you have aaaaaaa"}
+	state.Update(id, url, "main", func(e *state.Source) { e.Head = strings.Repeat("b", 40); e.Dismissed = strings.Repeat("b", 40) })
+	want := []string{"team has a newer commit that you didn't accept\nrun `ctxtra source update team` to review it again."}
 	if got := notices(work); !slices.Equal(got, want) {
-		t.Errorf("old check and dismissed: %v", got)
+		t.Errorf("dismissed: %v", got)
 	}
 	// State about another branch of the repository is kept apart.
-	state.Update(id, url, "other", func(e *state.Source) { e.LastCheck = time.Now(); e.Dismissed = "" })
+	state.Update(id, url, "other", func(e *state.Source) { e.Head = strings.Repeat("d", 40); e.Dismissed = "" })
 	if got := notices(work); !slices.Equal(got, want) {
 		t.Errorf("state of another branch: %v", got)
+	}
+	// Without check-updates, a commit that an earlier check or fetch found
+	// is no notice.
+	state.Update(id, url, "main", func(e *state.Source) { e.Head = strings.Repeat("c", 40); e.Dismissed = "" })
+	cfgPath = config("")
+	if got := notices(work); len(got) != 0 {
+		t.Errorf("checks off: %v", got)
 	}
 }

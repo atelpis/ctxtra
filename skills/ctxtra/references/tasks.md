@@ -82,14 +82,13 @@ so that every agent gets them. Do every step; don't skip the files of an agent.
 ## Add a source repository
 
 1. Give the warning from "Remote repositories" in `SKILL.md`, and offer to read the repository first.
-2. With the user's OK, `ctxtra source add git URL --include PATH`. Without `--include`, it adds the source
-   and lists the binding files in it; nothing reaches sessions until one is included
-   (`ctxtra binding-file add ctxtra://SOURCE/PATH`), or the user's own bindings reference its files as
-   `ctxtra://SOURCE/PATH`.
+2. Tell the user that sessions can tell them about new commits, off by default (`references/updates.md`).
+   With their OK, `ctxtra source add git URL --include PATH`, and `--check-updates` if they want it.
+   Without `--include`, it lists the source's binding files; nothing reaches sessions until one is
+   included (`ctxtra binding-file add ctxtra://SOURCE/PATH`) or the user's own bindings reference its files.
 3. If the user doesn't want all of the maintainer's binding (a `match` that is too wide, a skill they don't
    want), they can bind only some files themselves. See case 4 in `ctxtra help scenarios`.
-4. Tell the user to run `ctxtra source update` in their terminal from time to time: ctxtra never checks
-   for new commits by itself. `ctxtra source update --check` shows what changed without accepting it.
+4. Without `--check-updates`, tell the user to run `ctxtra source update` in their terminal now and then.
 
 ## A session didn't get a file, or got the wrong one
 

@@ -33,6 +33,7 @@ sources:
     git: git@github.com:acme/team-ctx.git
     branch: main                      # where source update looks for new commits
     commit: '9f8e7d6c5b4a39281706f5e4d3c2b1a098765432'   # the accepted version; source update changes it
+    check-updates: true               # optional; sessions tell you about new commits (default: false)
 
 bindings:                             # your own bindings, see Binding file below
   - name: me
@@ -48,6 +49,8 @@ include:                              # binding files, applied after the binding
 
 budget:
   max-chars: 40000                    # optional; 0 or missing = no limit
+
+check-updates: false                  # optional; check for new ctxtra releases (default: true)
 ```
 
 Every key except `schema` is optional. A config with only `schema` and `bindings` is enough for your own
@@ -135,7 +138,8 @@ included ctxtra://team-ctx/bindings/billing.yaml
   declare sources or include other files: only your config does.
 - Files are read from ctxtra's store (below), never from a clone. Symlinks and submodules in the
   repository are left out.
-- ctxtra doesn't check for new commits by itself: sessions never fetch. Run `ctxtra source update` regularly.
+- Sessions never fetch. With `check-updates: true`, they tell you when the branch has new commits (see
+  [Update checks](#update-checks)); without it, run `ctxtra source update` regularly.
 
 ### Commands
 
@@ -155,7 +159,9 @@ included ctxtra://team-ctx/bindings/billing.yaml
 
 Every `source add` takes `--name NAME` (default: the repository or folder name), `--include PATH` to add
 binding files of the source to `include` in the same edit (repeatable), and `--dry-run`, which checks and
-fetches nothing. Without `--include`, it lists the binding files in the source.
+fetches nothing. Without `--include`, it lists the binding files in the source. `source add git` and
+`source add local-git` also take `--check-updates`, which writes `check-updates: true` for the new source;
+without it, they say how to turn the checks on.
 
 ### A clone you already have
 
@@ -295,9 +301,9 @@ Accept? [y/N]
 goes to stderr. Without a terminal, or with `--no-input`, it fails before it fetches, and `--check` does
 the fetch and the review without asking. There is no option that accepts without asking.
 
-When you answer `N`, ctxtra remembers the commit as dismissed. Sessions that use the source,
-`context files` and `doctor` say `def5678 not accepted (dismissed)`. The next `source update` shows the
-review again. Input that ends without an answer decides nothing: no commit is accepted or dismissed.
+When you answer `N`, ctxtra remembers the commit as dismissed. Sessions that use the source and
+`context files` say that the source has a newer commit you didn't accept, and `doctor` says
+`def5678 not accepted (dismissed)`. The next `source update` shows the review again. Input that ends without an answer decides nothing: no commit is accepted or dismissed.
 
 ### Content warnings
 
@@ -337,11 +343,20 @@ that these patterns weren't found. Read what you accept.
 
 ### Notices
 
-Sessions never fetch, so they can't know about new commits. When a session uses a pinned source that
-wasn't checked for 7 days, it says `team-ctx last checked 12 days ago; run ctxtra source update to check
-for changes` (Claude Code, Codex, Muse and Pi show it at session start, and `context files` and `doctor`
-show it too). A check is a fetch of the branch that worked, by `source add` or `source update`. A source
-that was never checked on this machine, for example after `source restore` on a new laptop, says so.
+A session that uses a pinned source with `check-updates: true` says when the last
+[update check](#update-checks) found new commits. It also says when you dismissed a commit:
+
+```text
+ℹ team-ctx has new commits on main
+  run `ctxtra source update team-ctx` to review them.
+ℹ team-ctx has a newer commit that you didn't accept
+  run `ctxtra source update team-ctx` to review it again.
+```
+
+Claude Code, Codex, Muse and Pi show these notices at session start, after an empty line, each with `ℹ` and
+the command to run on its own line. Notices name no commit IDs; `doctor` does. `context files` and
+`doctor` show the notices too, with the command on the same line. Without `check-updates`, there is no notice about new
+commits: run `ctxtra source update` when you want to look.
 
 When a new commit doesn't continue the accepted one, `source update` warns: the branch was force-pushed.
 Accepting it is still your choice.
@@ -377,14 +392,17 @@ waited for your answer, nothing is accepted.
   list, can't be read, nothing is deleted. A session marks a commit as used before it reads from it; while
   cleaning decides about that commit, the session waits up to a second, and else skips the source's files
   for this session. A session that runs longer than 30 days on an old commit can lose its skill files.
-- `~/.ctxtra/state.json`: per source, the last check and the dismissed commit. Losing it loses the notices.
+- `~/.ctxtra/state.json`: per source, the last fetch, the dismissed commit and what the update checks found;
+  what the release check found. Losing it loses the notices.
 - `~/.ctxtra/mappings.json`: the folders of clones added as git sources (above). `~/.ctxtra/configs.json`:
   the config files that ctxtra commands changed.
 
 ### How ctxtra runs git
 
 - It runs your `git`, so ssh keys, the ssh agent and credential helpers work. Only `source add`,
-  `source update` and `source restore` run git, and git may prompt. Sessions never fetch.
+  `source update` and `source restore` fetch, and git may prompt there. Sessions never fetch. The
+  [update checks](#update-checks) run `git ls-remote`, which reads only the branch's commit ID, and git may
+  not prompt.
 - Only the https and ssh transports, and the file transport only to fetch from a clone you named (an
   clone added as a git source, a `local-git` source). No hooks, no submodules, no automatic maintenance. Nothing is checked
   out, so `.gitattributes` filters (git-lfs, smudge) never run. Diffs use no external diff and no textconv.
@@ -395,6 +413,57 @@ waited for your answer, nothing is accepted.
   repository larger than 1 GiB with its history is refused too, and git's output is limited.
 - Control characters in diffs, paths and messages are shown as escapes, so they can't hide lines in your
   terminal.
+
+## Update checks
+
+ctxtra can tell you about a new ctxtra release, and about new commits of a pinned source. A check reads
+only a version number or a commit ID. It fetches no files, changes nothing in the config, and accepts
+nothing: you still upgrade ctxtra and review commits yourself.
+
+| Check | Default | Turn it on or off | What it asks |
+|---|---|---|---|
+| New ctxtra release | on | `check-updates: false` at the top of the config | GitHub's API, for the latest release (prereleases left out) |
+| New commits of a source | off | `check-updates: true` on the source | the source's remote, with `git ls-remote` of its branch; a `local-git` source, the clone's `HEAD` |
+
+Sessions never wait for a check. At session start, the hook shows what earlier checks found, and starts a
+check in the background when the last one is older than 4 hours. The background check runs as a separate
+process, `ctxtra check-updates`, which checks only what was due, and the next session shows its result.
+Parallel sessions start one check: the first one records the attempt. A failed check also waits 4 hours
+before the next try.
+
+The notices go only to you, never to the model, in the agents that show a message at session start (see
+[Notices](#notices)):
+
+```text
+ℹ ctxtra update v0.3.0 is available - https://github.com/atelpis/ctxtra/releases
+  run `brew upgrade atelpis/tap/ctxtra` to update.
+ℹ team-ctx has new commits on main
+  run `ctxtra source update team-ctx` to review them.
+```
+
+- The release notice comes first. It compares with the version of the ctxtra that runs, so it goes away
+  after an upgrade. Its second line, the upgrade command, is there only when ctxtra was installed with
+  Homebrew or `go install`. Development builds (`dev`, or a version from a commit) aren't checked at session start.
+- The source notice compares with the accepted commit. A commit you dismissed is no new notice.
+- A failed check adds no notice and never counts as up to date: the notice from the last check that worked
+  stays. `doctor` shows why the check failed, or couldn't start, and when the last one that worked ran and
+  what it found. For a pinned source without `check-updates`, `doctor` says that its update checks
+  are off.
+- `ctxtra check-updates` runs the checks now and shows their results. It exits with 1 when a check fails,
+  or when it can't save the results for sessions.
+- `CTXTRA_NO_UPDATE_CHECK=1` stops the checks that sessions start, for CI and restricted networks.
+  Notices from earlier checks still show.
+- Only the config can turn checks on or off: a binding file can't have `check-updates`. A config that is
+  ignored as a whole (see [Validation](#validation)) runs no checks, because its `check-updates: false`
+  may be what failed.
+
+What a check sends:
+
+- The release check sends your IP address and ctxtra version (in the User-Agent) to GitHub.
+- A source check connects to the source's remote with your git credentials, like `source update`. git
+  may not prompt there: a key with a passphrase that isn't in your ssh agent fails the check. But an ssh
+  agent that asks for approval (for example 1Password) or a hardware key can still ask you to approve or
+  touch it when a session starts. Leave `check-updates` off for such a source.
 
 ## Binding file
 
@@ -602,7 +671,7 @@ non-interactive and prints pending commands plus a pointer to guided onboarding.
 
 ### Setup notices
 
-After every command that runs, but `hook`, `setup`, `onboard`, `doctor`, `help`, `version` and `completion`, ctxtra
+After every command that runs, but `hook`, `setup`, `onboard`, `doctor`, `source check`, `check-updates`, `help`, `version` and `completion`, ctxtra
 prints a line on stderr for each setup that needs you, with the command that repairs it. `--help` and usage
 errors print none. The lines never change the exit code; `doctor`
 shows the same lines under each agent instead:
@@ -637,8 +706,8 @@ setup can't write it, setup fails with exit code 1, and the config changes it ma
 
 Problems never make ctxtra add more than the config says:
 
-- A config with a wrong `schema`, an invalid `budget`, source or `include`, or broken YAML, is ignored as a
-  whole.
+- A config with a wrong `schema`, an invalid `budget`, `check-updates`, source or `include`, or broken YAML,
+  is ignored as a whole.
 - A broken binding is skipped, in the config or in a binding file. The other bindings in the same file
   still apply.
 - A binding file that can't be read as a whole is skipped as a whole: a wrong `schema`, a key other than
@@ -658,7 +727,7 @@ with its flags and examples. The commands that change the config are grouped by 
 
 - Exit codes: 0 when the command did what it was asked; 1 when it failed, or when `doctor` or a `context`
   command found that a session wouldn't get everything it should (for `doctor`, a session in any folder),
-  or `source check` found an error; 2 for a usage error (an unknown command
+  `source check` found an error, or a check of `check-updates` failed; 2 for a usage error (an unknown command
   or flag, a missing argument), with the command's usage hint on stderr.
 - Results go to stdout; problems, warnings, notices and questions go to stderr. In a report (`doctor`,
   `context explain`, the review of `source update`, `source check`), its problems and warnings are part of the result, on
@@ -697,9 +766,11 @@ with its flags and examples. The commands that change the config are grouped by 
 | `sources.<name>.branch` | with `git` | The branch `source update` follows. |
 | `sources.<name>.local-git` | no | Your clone, pinned to its committed `HEAD`. Absolute or starts with `~`. |
 | `sources.<name>.commit` | no | With `git` or `local-git`: the accepted commit, a full ID in quotes. |
+| `sources.<name>.check-updates` | no | With `git` or `local-git`: `true` to have sessions tell you about new commits. Default `false`. |
 | `bindings[]` | no | Your own bindings, see **Binding** below. Paths are relative to the config's folder. |
 | `include[]` | no | Binding files. Relative to the config's folder; `~` and `ctxtra://` work. |
 | `budget.max-chars` | no | Integer ≥ 0, in characters. 0 or missing: no limit. |
+| `check-updates` | no | `false` to stop checking for new ctxtra releases. Default `true`. |
 
 **Binding file**
 

@@ -55,7 +55,8 @@ func TestScript(t *testing.T) {
 // setupEnv makes the script's work folder its HOME, by its path without
 // symlinks (macOS temp folders are under a symlink, and git reports real
 // paths), so the files in the script are relative to HOME. Git
-// reads no user or system config. $BIN is the binary the hooks run.
+// reads no user or system config, and sessions start no update checks. $BIN
+// is the binary the hooks run.
 func setupEnv(e *testscript.Env) error {
 	work, err := filepath.EvalSymlinks(e.WorkDir)
 	if err != nil {
@@ -84,6 +85,8 @@ func setupEnv(e *testscript.Env) error {
 		"GIT_CONFIG_GLOBAL": os.DevNull, "GIT_CONFIG_NOSYSTEM": "1",
 		"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
 		"GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com",
+		// Hooks start no background checks, which would outlive the script.
+		"CTXTRA_NO_UPDATE_CHECK": "1",
 	} {
 		e.Setenv(k, v)
 	}

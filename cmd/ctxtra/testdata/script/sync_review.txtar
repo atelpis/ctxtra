@@ -26,9 +26,10 @@ stdout 'not accepted; you keep [0-9a-f]{7}'
 
 # The dismissed commit shows in doctor and at session start.
 exec ctxtra doctor dev/billing
-stdout 'source team-ctx: .*, last checked \d{4}-\d\d-\d\d \d\d:\d\d, [0-9a-f]{7} not accepted \(dismissed\)'
+stdout 'source team-ctx: .*, last fetched \d{4}-\d\d-\d\d \d\d:\d\d, [0-9a-f]{7} not accepted \(dismissed\)'
 runhook claude SessionStart dev/billing
-stdout 'ctxtra: team-ctx [0-9a-f]{7} not accepted \(dismissed\); you have [0-9a-f]{7}'
+stdout '\\n\\nℹ team-ctx has a newer commit that you didn''t accept\\n  run `ctxtra source update team-ctx` to review it again.'
+! stdout 'ℹ.*[0-9a-f]{7}'
 
 # --full shows every changed file.
 stdin no.txt

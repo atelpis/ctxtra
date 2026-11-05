@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- Sessions tell you about a new ctxtra release, with the command that upgrades it. Every 4 hours at most, a
+  session asks GitHub for the latest release in the background, and the next session shows the result; it
+  never waits for the check. This sends your IP address and ctxtra version to GitHub. `check-updates: false`
+  in the config turns it off, and `CTXTRA_NO_UPDATE_CHECK=1` stops it in one environment, such as CI.
+
+- A pinned source with `check-updates: true` (or added with `source add --check-updates`) gets the same
+  check: `git ls-remote` of its branch, which reads only the commit ID and fetches no files. Sessions
+  then say when the branch has new commits, with the `source update` command that reviews them. The check
+  uses your git credentials, so leave it off for a source whose ssh key needs a touch or an approval.
+  `ctxtra check-updates` runs the checks now, and `doctor` shows what they found or why they failed.
+
+- The "last checked N days ago" and "not checked for new commits on this machine yet" notices are gone.
+  Turn on `check-updates` for a source to hear about its new commits. `doctor` says "last fetched"
+  instead of "last checked".
+
+- Session notices come after an empty line, each marked with `ℹ`, so they no longer look like part of the
+  skills list. The command to run is on its own line, and notices no longer show commit IDs (`doctor`
+  still does).
+
 - `source add` and `source update` show content warnings: hidden characters, HTML comments, long encoded
   blocks, `curl | sh` and similar commands, secret paths like `~/.ssh` and `.env`, new URLs, and new
   executable files. `source update` checks only the added lines of the files it shows in full, and shows

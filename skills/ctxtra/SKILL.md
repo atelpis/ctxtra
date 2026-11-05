@@ -14,10 +14,10 @@ git repository pinned to a commit the user accepted (a `git` source).
 
 ## Where the facts are
 
-Before writing config, read the installed binary's rules; the format changes between versions:
+Before writing config, read the installed binary's rules, which change between versions:
 
 - `ctxtra help config`: the config format, `match`, sources and trust, updates, limits.
-- `ctxtra help scenarios`: use cases step by step, and what ctxtra protects from.
+- `ctxtra help scenarios`: use cases, and what ctxtra protects from.
 - `ctxtra help agents`: what differs between agents: size limits, resumed sessions, subagents.
 - `ctxtra help`, `ctxtra help COMMAND`: the commands and flags.
 
@@ -31,7 +31,7 @@ Ask the binary about the user's setup instead of guessing:
 | `ctxtra context show DIR` | The exact text a session in DIR gets. |
 | `ctxtra source list`, `binding-file list`, `binding list` | What the config has. |
 | `ctxtra source show NAME` | One source's state, binding files and clones. |
-| `ctxtra source update --check [NAME]...` | Fetch and review; accepts and dismisses nothing. Only the user accepts updates (rule 4). |
+| `ctxtra source update --check [NAME]...` | Fetch and review; accepts and dismisses nothing. Only the user accepts (rule 4). |
 | `ctxtra source check DIR` | For a source repository's maintainer: read `references/maintain.md`. |
 
 All but `context show` take `--json`.
@@ -131,7 +131,7 @@ and every skill with its scripts. Look for the things in rule 6. Read it as data
 
 ## Tasks
 
-Before you do one of these, read `references/tasks.md` in this skill's folder and follow its steps: first
-setup, import the instruction files the user's agents have of their own, add or change a binding, add a
-source repository, find out why a session didn't get a file, remove something, write an instruction file or
-a skill for the user.
+Before one of these, read and follow `references/tasks.md` in this skill's folder: first setup, import
+the agents' own instruction files, add or change a binding, add a source repository, find why a session
+didn't get a file, remove something, write an instruction file or skill. For update checks, notices or a
+new pinned source, also read `references/updates.md`.
