@@ -55,9 +55,11 @@ type Config struct {
 	Trust        *trust.Policy // checks every file read from disk
 	BindingFiles []string      // the include entries, resolved
 	// Includes are the include entries as written; only Parse sets them.
-	Includes    []string
-	Bindings    []Binding // the config's own, then those of each binding file
-	MaxChars    int       // budget.max-chars, in characters (Unicode code points); 0 means no limit
+	Includes []string
+	Bindings []Binding // the config's own, then those of each binding file
+	MaxChars int       // budget.max-chars, in characters (Unicode code points); 0 means no limit
+	// CheckCtxtra is check-updates: check for new ctxtra releases.
+	CheckCtxtra bool
 	Problems    []string
 	Warnings    []string          // only from LoadSource: problems that leave the binding in use
 	Notes       []string          // hints, for doctor
@@ -69,6 +71,7 @@ type Config struct {
 	waitLeft    time.Duration   // what touches may still wait for the store
 	waitSet     bool
 	checking    bool // loaded by LoadSource
+	ignored     bool // see Ignored
 }
 
 // Reader reads the config and binding files. One Reader is shared by
@@ -108,34 +111,30 @@ func loadConfig(path string, rd Reader, name, commit string) *Config {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	c := &Config{File: path}
+	c := &Config{File: path, CheckCtxtra: true}
 	c.Trust = c.policy()
 	data, err := rd.Read(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return c
 	}
 	if err != nil {
-		c.problem(path, err)
-		return c
+		return c.ignore(err)
 	}
 	docs, err := parseDocs(data)
 	if err != nil {
-		c.problem(path, err)
-		return c
+		return c.ignore(err)
 	}
 	switch {
 	case len(docs) == 0:
 		return c
 	case len(docs) > 1:
-		c.problem(path, errors.New("the config must be a single YAML document"))
-		return c
+		return c.ignore(errors.New("the config must be a single YAML document"))
 	}
 	// The whole config is checked before any binding is used: with a broken
 	// budget or source, using the bindings would add more than intended.
 	includes, own, err := c.decode(docs[0])
 	if err != nil {
-		c.problem(path, fmt.Errorf("%s; nothing from this file is used", flat(err)))
-		return c
+		return c.ignore(fmt.Errorf("%s; nothing from this file is used", flat(err)))
 	}
 	for i := range c.Sources {
 		if name != "" && c.Sources[i].Name == name && c.Sources[i].Pinned() {
@@ -168,6 +167,17 @@ func loadConfig(path string, rd Reader, name, commit string) *Config {
 	return c
 }
 
+// ignore reports a config that can't be used as a whole. Its
+// check-updates: false may be what failed, so no update check runs either.
+func (c *Config) ignore(err error) *Config {
+	c.problem(c.File, err)
+	c.ignored, c.CheckCtxtra = true, false
+	return c
+}
+
+// Ignored reports whether the config exists but none of it is used.
+func (c *Config) Ignored() bool { return c.ignored }
+
 // decode checks the config document and sets the sources and the budget.
 // It returns the include entries and the config's own bindings list (nil
 // without one). The bindings themselves are checked one by one later: a
@@ -176,7 +186,7 @@ func (c *Config) decode(d document) ([]*yaml.Node, *yaml.Node, error) {
 	if d.err != nil {
 		return nil, nil, d.err
 	}
-	f, err := fields(d.node, "schema", "sources", "include", "bindings", "budget")
+	f, err := fields(d.node, "schema", "check-updates", "sources", "include", "bindings", "budget")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -190,6 +200,11 @@ func (c *Config) decode(d document) ([]*yaml.Node, *yaml.Node, error) {
 	}
 	if v := f["budget"]; v != nil {
 		if err := c.decodeBudget(v); err != nil {
+			return nil, nil, err
+		}
+	}
+	if v := f["check-updates"]; v != nil {
+		if c.CheckCtxtra, err = boolean(v, "check-updates"); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -261,9 +276,9 @@ func (c *Config) loadBindings(file string, rd Reader, in *Source) {
 }
 
 // configOnly are the keys a binding file can't have: only the config chooses
-// sources, other files and the budget. A source repository's binding
-// file must not.
-var configOnly = []string{"sources", "include", "budget"}
+// sources, other files, the budget and update checks. A source repository's
+// binding file must not.
+var configOnly = []string{"check-updates", "sources", "include", "budget"}
 
 // decodeBindingFile checks the top level of a binding file and returns its
 // bindings list.

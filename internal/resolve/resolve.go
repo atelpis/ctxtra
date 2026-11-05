@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
 	"unicode/utf8"
 
 	"github.com/atelpis/ctxtra/internal/config"
@@ -58,7 +57,9 @@ type Result struct {
 	Known    []Hit
 	Missing  []string
 	Problems []string
-	Notices  []string // about the pinned sources the session uses
+	// Notices are for the user, not the model: about the pinned sources the
+	// session uses. A notice's command to run, if any, is on its second line.
+	Notices  []string
 	Trace    []Trace
 	MaxChars int
 }
@@ -123,16 +124,9 @@ func CheckBinding(cfg *config.Config, b config.Binding) []string {
 	return append(out, c.Problems...)
 }
 
-// checkAge is how old the last check for new commits may be before the
-// session says so. now is a variable for tests.
-var (
-	checkAge = 7 * 24 * time.Hour
-	now      = time.Now
-)
-
-// addNotices tells about the pinned sources the session uses: not checked
-// for new commits for a while (the hook never fetches, so this is all it
-// can know), or a newer commit the user didn't accept.
+// addNotices tells about the pinned sources the session uses: new commits
+// that the last check found, for a source with check-updates on, and a
+// commit the user didn't accept.
 func (r *Result) addNotices(cfg *config.Config) {
 	var st *state.State
 	for _, src := range cfg.Sources {
@@ -144,14 +138,15 @@ func (r *Result) addNotices(cfg *config.Config) {
 			st = &s
 		}
 		e := st.Get(source.ID(src.Remote()), src.Remote(), src.Branch)
-		switch age := now().Sub(e.LastCheck); {
-		case e.LastCheck.IsZero():
-			r.Notices = append(r.Notices, src.Name+" not checked for new commits on this machine yet; run ctxtra source update")
-		case age > checkAge:
-			r.Notices = append(r.Notices, fmt.Sprintf("%s last checked %d days ago; run ctxtra source update to check for changes", src.Name, int(age.Hours()/24)))
+		if src.CheckUpdates && e.Head != "" && e.Head != src.Commit && e.Head != e.Dismissed {
+			on := "on " + src.Branch
+			if src.LocalGit != "" {
+				on = "in " + paths.Tilde(src.LocalGit)
+			}
+			r.Notices = append(r.Notices, fmt.Sprintf("%s has new commits %s\nrun `ctxtra source update %s` to review them.", src.Name, on, src.Name))
 		}
 		if e.Dismissed != "" && e.Dismissed != src.Commit {
-			r.Notices = append(r.Notices, fmt.Sprintf("%s %s not accepted (dismissed); you have %s", src.Name, source.Short(e.Dismissed), source.Short(src.Commit)))
+			r.Notices = append(r.Notices, fmt.Sprintf("%s has a newer commit that you didn't accept\nrun `ctxtra source update %s` to review it again.", src.Name, src.Name))
 		}
 	}
 }

@@ -22,6 +22,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/state"
 	"github.com/atelpis/ctxtra/internal/term"
 	"github.com/atelpis/ctxtra/internal/trust"
+	"github.com/atelpis/ctxtra/internal/update"
 )
 
 // sources implements the source and binding-file commands: the ones that
@@ -117,6 +118,26 @@ type addOptions struct {
 	name, branch, remote string
 	includes             []string // binding files of the source to include, slash-separated
 	dryRun               bool
+	checkUpdates         bool // --check-updates
+}
+
+// checkKV is the check-updates entry of a new pinned source, if o asks for
+// it.
+func (o addOptions) checkKV() [][2]string {
+	if !o.checkUpdates {
+		return nil
+	}
+	return [][2]string{{"check-updates", "true"}}
+}
+
+// checkHint says how sessions learn about new commits of the pinned source
+// name.
+func (s *sources) checkHint(name string, o addOptions) {
+	if o.checkUpdates {
+		fmt.Fprintf(s.Out, "sessions check %s for new commits every 4 hours and tell you when there are some (check-updates: true)\n", name)
+		return
+	}
+	fmt.Fprintf(s.Out, "to have sessions tell you about new commits, add check-updates: true to the source %s in the config (ctxtra help config)\n", name)
 }
 
 // cleanIncludes checks the --include paths and cleans them, without
@@ -287,6 +308,7 @@ func (s *sources) addGitURL(url string, o addOptions) error {
 			return err
 		}
 	}
+	started := time.Now()
 	commit, err := r.FetchBranch(s.ctx, branch)
 	if err != nil {
 		return err
@@ -299,14 +321,15 @@ func (s *sources) addGitURL(url string, o addOptions) error {
 	if err := checkFiles(gen, o.includes, url, os.Lstat); err != nil {
 		return err
 	}
-	if err := s.addSource(name, [][2]string{{"git", url}, {"branch", branch}, {"commit", commit}}, o.includes); err != nil {
+	if err := s.addSource(name, append([][2]string{{"git", url}, {"branch", branch}, {"commit", commit}}, o.checkKV()...), o.includes); err != nil {
 		return err
 	}
-	s.checked(config.Source{Name: name, Git: url, Branch: branch})
+	s.checked(config.Source{Name: name, Git: url, Branch: branch}, commit, started)
 	fmt.Fprintf(s.Out, "added source %s (pinned: new commits apply after you accept them in ctxtra source update)\n", name)
 	s.added(name, gen, o.includes)
 	s.showExecutables(r, commit)
 	s.checkAdded(name, commit, gen)
+	s.checkHint(name, o)
 	return nil
 }
 
@@ -405,7 +428,7 @@ func (s *sources) addGitClone(dir string, o addOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := s.addSource(name, [][2]string{{"git", url}, {"branch", branch}, {"commit", commit}}, o.includes); err != nil {
+	if err := s.addSource(name, append([][2]string{{"git", url}, {"branch", branch}, {"commit", commit}}, o.checkKV()...), o.includes); err != nil {
 		if mapped {
 			_ = state.Unmap(c.Top)
 		}
@@ -416,6 +439,7 @@ func (s *sources) addGitClone(dir string, o addOptions) error {
 	s.added(name, gen, o.includes)
 	s.showExecutables(r, commit)
 	s.checkAdded(name, commit, gen)
+	s.checkHint(name, o)
 	fmt.Fprintf(s.Out, "if the repository is yours, read it from disk instead: ctxtra source trust %s\n", name)
 	return nil
 }
@@ -449,6 +473,9 @@ func (s *sources) mapToSource(same []config.Source, top, url string, o addOption
 		return err
 	}
 	fmt.Fprintf(s.Out, "%s is a clone of %s, the source %s: its paths are read from the source's commit\n", paths.Tilde(top), url, src.Name)
+	if o.checkUpdates && !src.CheckUpdates {
+		fmt.Fprintf(s.Out, "--check-updates doesn't change the source %s, which exists; to turn its checks on, add check-updates: true to it in the config\n", src.Name)
+	}
 	if len(o.includes) > 0 {
 		if err := s.includeFrom(src, o.includes, false); err != nil {
 			if mapped {
@@ -490,6 +517,7 @@ func (s *sources) addLocalGit(dir string, o addOptions) error {
 		return nil
 	}
 	r := source.Open(c.Top)
+	started := time.Now()
 	commit, err := r.FetchHead(s.ctx, c.Top)
 	if err != nil {
 		return err
@@ -501,15 +529,16 @@ func (s *sources) addLocalGit(dir string, o addOptions) error {
 	if err := checkFiles(gen, o.includes, "the committed files of "+paths.Tilde(c.Top), os.Lstat); err != nil {
 		return err
 	}
-	if err := s.addSource(name, [][2]string{{"local-git", paths.Tilde(c.Top)}, {"commit", commit}}, o.includes); err != nil {
+	if err := s.addSource(name, append([][2]string{{"local-git", paths.Tilde(c.Top)}, {"commit", commit}}, o.checkKV()...), o.includes); err != nil {
 		return err
 	}
-	s.checked(config.Source{Name: name, LocalGit: c.Top})
+	s.checked(config.Source{Name: name, LocalGit: c.Top}, commit, started)
 	fmt.Fprintf(s.Out, "added source %s (local-git: %s at %s); updates follow the clone's committed HEAD\n",
 		name, paths.Tilde(c.Top), source.Short(commit))
 	s.added(name, gen, o.includes)
 	s.showExecutables(r, commit)
 	s.checkAdded(name, commit, gen)
+	s.checkHint(name, o)
 	return nil
 }
 
@@ -958,11 +987,12 @@ func (s *sources) sync(src config.Source, mode syncMode) (string, error) {
 	if mode == restore {
 		return src.Commit, nil
 	}
+	started := time.Now()
 	commit, err := s.latest(r, src)
 	if err != nil {
 		return "", err
 	}
-	s.checked(src)
+	s.checked(src, commit, started)
 	if commit == src.Commit {
 		if mode == accept {
 			// The branch is back at the accepted commit: nothing is dismissed.
@@ -1051,20 +1081,28 @@ func (s *sources) record(src config.Source, change func(*state.Source)) {
 	}
 }
 
-// checked records a fetch of the branch that worked.
-func (s *sources) checked(src config.Source) {
-	s.record(src, func(e *state.Source) { e.LastCheck = time.Now() })
+// checked records a fetch of the branch that worked, and the commit it
+// found. A fetch that started at started counts as an update check too: the
+// next one waits, and an update check that started later keeps its result.
+func (s *sources) checked(src config.Source, head string, started time.Time) {
+	s.record(src, func(e *state.Source) {
+		e.LastCheck = time.Now()
+		if update.Record(&e.Check, started, nil) {
+			e.Head = head
+		}
+	})
 }
 
 // first offers the first commit of a source written by hand without one,
 // reviewed as a change from nothing: the files the config would use from it
 // in full, its bindings' match blocks, and its problems.
 func (s *sources) first(src config.Source, r *source.Repo, mode syncMode) (string, error) {
+	started := time.Now()
 	commit, err := s.latest(r, src)
 	if err != nil {
 		return "", err
 	}
-	s.checked(src)
+	s.checked(src, commit, started)
 	if _, err := r.Materialize(s.ctx, commit); err != nil {
 		return "", err
 	}

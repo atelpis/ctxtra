@@ -27,7 +27,7 @@ runhook claude SessionStart notes
 stdout 'Contents of .*/.ctxtra/store/.*/jira-ticket.md'
 stdout 'LOCAL-COMMIT'
 ! stdout 'UNCOMMITTED'
-stdout 'ctxtra: team-ctx not checked for new commits on this machine yet; run ctxtra source update'
+! stdout 'ctxtra notices'
 exec ctxtra doctor notes
 stdout 'NOTE: ~/dev/team-ctx/jira-ticket.md is served from team-ctx; you can write it as ctxtra://team-ctx/jira-ticket.md'
 
@@ -66,7 +66,7 @@ exec ctxtra-tty source update team-ctx-dev
 stdout '^team-ctx-dev: [0-9a-f]{7} -> [0-9a-f]{7} \(local HEAD, ~/dev/team-ctx\)$'
 stdout 'accepted team-ctx-dev'
 exec ctxtra doctor notes
-stdout 'source team-ctx-dev: local-git ~/dev/team-ctx, follows its committed HEAD, pinned to [0-9a-f]{7} \(new commits apply after you accept them in ctxtra source update\), last checked'
+stdout 'source team-ctx-dev: local-git ~/dev/team-ctx, follows its committed HEAD, pinned to [0-9a-f]{7} \(new commits apply after you accept them in ctxtra source update\), last fetched'
 
 # Removing the source: its binding files go, your own references are
 # listed, and the clone's old paths are skipped, not read from disk.

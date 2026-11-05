@@ -254,3 +254,21 @@ budget:
 		t.Error("removing a missing binding")
 	}
 }
+
+// check-updates is written as a boolean, which the config reads back.
+func TestAddSourceCheckUpdates(t *testing.T) {
+	for _, before := range []string{"schema: ctxtra/v1\n", "schema: ctxtra/v1\nsources:\n  a: {trusted-path: /a}\n", "schema: ctxtra/v1\nsources: {a: {trusted-path: /a}}\n"} {
+		out, err := AddSource([]byte(before), "team", [][2]string{{"git", "https://h/team"}, {"branch", "main"}, {"check-updates", "true"}})
+		if err != nil {
+			t.Fatalf("%q: %v", before, err)
+		}
+		cfg, err := Parse(out)
+		if err != nil {
+			t.Fatalf("%q: %v\n%s", before, err, out)
+		}
+		src, ok := cfg.Source("team")
+		if !ok || !src.CheckUpdates || strings.Contains(string(out), "'true'") {
+			t.Errorf("%q: %+v\n%s", before, src, out)
+		}
+	}
+}

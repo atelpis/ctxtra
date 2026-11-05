@@ -39,8 +39,13 @@ func TestSummary(t *testing.T) {
 			Files: files("a.md"), Dropped: append(over(files("b.md", "c.md", "d.md", "e.md"), "Claude Code's limit of 360,000 characters"),
 				over(files("z.md"), "budget.max-chars")...)},
 		"ctxtra added nothing; 2 problems (run ctxtra doctor)": {Problems: []string{"p", "q"}},
-		"✓ ctxtra added 1 instruction\nInstructions:\n- a.md\nctxtra: team last checked 9 days ago\nctxtra: n2": {
-			Files: files("a.md"), Notices: []string{"team last checked 9 days ago", "n2"}},
+		"✓ ctxtra added 1 instruction\nInstructions:\n- a.md\n\nℹ team has new commits on main\nℹ n2": {
+			Files: files("a.md"), Notices: []string{"team has new commits on main", "n2"}},
+		// A notice after the skills list doesn't read as one of the skills.
+		// The command on a notice's second line is indented under it.
+		"✓ ctxtra added 2 skills\nSkills:\n- deploy\n- review\n\nℹ team has new commits on main\n  run `ctxtra source update team` to review them.": {
+			Skills: skills, Notices: []string{"team has new commits on main\nrun `ctxtra source update team` to review them."}},
+		"ctxtra added nothing\n\nℹ n": {Notices: []string{"n"}},
 	} {
 		if got := agent.Summary(res); got != want {
 			t.Errorf("got  %q\nwant %q", got, want)
@@ -184,9 +189,9 @@ bindings:
 	if len(res.Problems) > 0 {
 		t.Fatalf("problems %v", res.Problems)
 	}
-	want := "✓ ctxtra added 4 instructions\nInstructions:\n- ~/ctx/style.md\n- ctxtra://a/go/style.md\n- ctxtra://a/style.md\n- ctxtra://b/style.md\n"
-	if got := agent.Summary(res); !strings.HasPrefix(got, want) {
-		t.Errorf("got  %q\nwant %q...", got, want)
+	want := "✓ ctxtra added 4 instructions\nInstructions:\n- ~/ctx/style.md\n- ctxtra://a/go/style.md\n- ctxtra://a/style.md\n- ctxtra://b/style.md"
+	if got := agent.Summary(res); got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
 	}
 }
 

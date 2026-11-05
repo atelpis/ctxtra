@@ -11,6 +11,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/atelpis/ctxtra/internal/agent"
@@ -20,6 +21,8 @@ import (
 	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 	"github.com/atelpis/ctxtra/internal/skill"
+	"github.com/atelpis/ctxtra/internal/state"
+	"github.com/atelpis/ctxtra/internal/update"
 )
 
 const maxInput = 10 << 20
@@ -40,9 +43,10 @@ type payload struct {
 
 // Args are the hook's options on its command line.
 type Args struct {
-	Slot  int   // --slot, or -1 without one
-	Slots int   // --of, or 0 without one
-	Err   error // the options can't be read: the hook adds nothing
+	Slot    int    // --slot, or -1 without one
+	Slots   int    // --of, or 0 without one
+	Err     error  // the options can't be read: the hook adds nothing
+	Version string // of this ctxtra, for the release check; "" for none
 }
 
 // Run reads the hook input from in and writes the agent's answer to out. It
@@ -154,10 +158,10 @@ func RunArgs(harness, event string, args Args, in io.Reader, out, errOut io.Writ
 			fmt.Fprintln(out, empty)
 			return 0
 		}
-		runSlot(a, sl, d, upgrade, slot, ts, event, p, input, dir, out, errOut)
+		runSlot(a, sl, d, upgrade, args.Version, slot, ts, event, p, input, dir, out, errOut)
 		return 0
 	}
-	res, e := session(a, d, upgrade, ts, event, p, dir)
+	res, e := session(a, d, upgrade, args.Version, ts, event, p, dir)
 	logEntry(e)
 	for _, m := range res.Missing {
 		fmt.Fprintf(errOut, "ctxtra: bound file not found: %s\n", m)
@@ -174,7 +178,7 @@ func RunArgs(harness, event string, args Args, in io.Reader, out, errOut io.Writ
 func delivery(a agent.Agent, event string, in agent.Input) (d agent.Delivery, upgrade string, err error) {
 	if u, ok := a.(agent.Upgrader); ok {
 		if old, ok := u.Legacy(event, in); ok {
-			return old, fmt.Sprintf("the hook is from an older version of ctxtra, with %s; run ctxtra setup", old.Over()), nil
+			return old, fmt.Sprintf("the hook is from an older version of ctxtra, with %s\nrun `ctxtra setup` to update it.", old.Over()), nil
 		}
 	}
 	d = a.Delivery()
@@ -193,21 +197,30 @@ func delivery(a agent.Agent, event string, in agent.Input) (d agent.Delivery, up
 
 // session resolves what a session in dir gets, with the files that d
 // doesn't get in full dropped, and its log entry. The user and the log get
-// the notice upgrade.
-func session(a agent.Agent, d agent.Delivery, upgrade, ts, event string, p payload, dir string) (*resolve.Result, Entry) {
+// the notice upgrade. The user also gets a notice about a newer release of
+// ctxtra (at version) that an earlier check found, and a due check starts in
+// the background.
+func session(a agent.Agent, d agent.Delivery, upgrade, version, ts, event string, p payload, dir string) (*resolve.Result, Entry) {
 	// Before resolving: the session lists the skills as they are on disk.
 	skillErr := skill.Refresh()
-	res, _ := resolve.Session(dir, paths.ConfigPath())
+	res, cfg := resolve.Session(dir, paths.ConfigPath())
 	if upgrade != "" {
 		res.Notices = append(slices.Clip(res.Notices), upgrade)
 	}
+	if n := update.ReleaseNotice(cfg, state.Load(), version); n != "" {
+		res.Notices = append([]string{n}, res.Notices...)
+	}
+	checkErr := update.StartDue(cfg, version)
 	d.Fit(res)
 	e := newEntry(ts, a.Name(), event, p, res, resolve.Chars(res.Render()))
 	if upgrade != "" {
-		e.Problems = append(slices.Clip(e.Problems), upgrade)
+		e.Problems = append(slices.Clip(e.Problems), strings.ReplaceAll(upgrade, "\n", "; "))
 	}
 	if skillErr != nil {
 		e.Problems = append(slices.Clip(e.Problems), "can't update ctxtra's skills: "+skillErr.Error())
+	}
+	if checkErr != nil {
+		e.Problems = append(slices.Clip(e.Problems), "can't start the update check: "+checkErr.Error())
 	}
 	return res, e
 }

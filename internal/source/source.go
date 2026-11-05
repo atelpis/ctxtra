@@ -274,6 +274,33 @@ func (r *Repo) DefaultBranch(ctx context.Context) (string, error) {
 	return "", fmt.Errorf("%s has no default branch; choose one with --branch", r.URL)
 }
 
+// Head is the commit that branch points to on the remote, or, for a
+// local-git source, the commit HEAD points to in the clone. It reads only
+// refs: nothing is fetched or stored.
+func (r *Repo) Head(ctx context.Context, branch string) (string, error) {
+	ref := "HEAD"
+	if !r.local() {
+		if err := CheckBranch(branch); err != nil {
+			return "", err
+		}
+		ref = "refs/heads/" + branch
+	}
+	out, err := r.git(ctx, false, nil, "ls-remote", "--", r.URL, ref)
+	if err != nil {
+		return "", err
+	}
+	for line := range strings.SplitSeq(string(out), "\n") {
+		id, name, _ := strings.Cut(line, "\t")
+		if name == ref && ValidCommit(id) {
+			return id, nil
+		}
+	}
+	if r.local() {
+		return "", fmt.Errorf("%s has no commit at HEAD", r.URL)
+	}
+	return "", fmt.Errorf("the branch %s is not on the remote", branch)
+}
+
 // ensure creates the bare repository with the object format of from, the
 // remote or a clone. The format is read from the length of the IDs it lists.
 func (r *Repo) ensure(ctx context.Context, from string) error {

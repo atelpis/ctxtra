@@ -31,7 +31,7 @@ func TestLongSummaryLists(t *testing.T) {
 	for _, answer := range []any{a.Answer("SessionStart", res), a.SlotAnswer("SessionStart", "context", agent.Summary(res))} {
 		got := answer.(map[string]any)["systemMessage"].(string)
 		b, _ := jsonorder.Marshal(got)
-		if len(b)-2 > maxSummary || !strings.Contains(got, "Skills:\n- deploy") || !strings.Contains(got, "ctxtra: source needs checking") || !strings.Contains(got, " more\nSkills:") || strings.HasSuffix(got, "…") {
+		if len(b)-2 > maxSummary || !strings.Contains(got, "Skills:\n- deploy") || !strings.Contains(got, "\n\nℹ source needs checking") || !strings.Contains(got, " more\nSkills:") || strings.HasSuffix(got, "…") {
 			t.Fatalf("lost summary information (%d JSON bytes): %q", len(b)-2, got)
 		}
 	}
@@ -49,7 +49,7 @@ func TestLongPathsKeepProblems(t *testing.T) {
 		h.Over = ""
 		res.Files = append(res.Files, h)
 	}
-	if got := clip(agent.Summary(res)); !strings.Contains(got, "1 problem (run ctxtra doctor)") || !strings.Contains(got, "ctxtra: source needs checking") {
+	if got := clip(agent.Summary(res)); !strings.Contains(got, "1 problem (run ctxtra doctor)") || !strings.Contains(got, "\n\nℹ source needs checking") {
 		t.Errorf("long list: %q", got)
 	}
 	res.Dropped = []resolve.Hit{long(20), long(21), long(22)}

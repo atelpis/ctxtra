@@ -333,8 +333,13 @@ func Summary(res *resolve.Result) string {
 	for _, list := range lists {
 		s += "\n" + list
 	}
-	for _, n := range res.Notices {
-		s += "\nctxtra: " + n
+	// After an empty line, each with its own marker: agents indent the lines
+	// after the first, so a notice right after a list reads as part of it.
+	if len(res.Notices) > 0 {
+		s += "\n"
+		for _, n := range res.Notices {
+			s += "\nℹ " + strings.ReplaceAll(n, "\n", "\n  ")
+		}
 	}
 	return s
 }

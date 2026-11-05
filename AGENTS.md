@@ -27,7 +27,9 @@ cd e2e && go test -count=1 ./...      # agent contract tests, a separate module:
 - What `ctxtra setup` writes is a contract with released setups (docs/spec.md, Setup compatibility).
   `internal/setup/testdata/contract` holds it. A diff there is a contract change: check it against those
   rules before `go test ./internal/setup -update`.
-- The hook never uses the network and never fails a session: on any error it adds nothing.
+- The hook never loads content from the network, never waits on it, and never fails a session: on any error
+  it adds nothing. Update checks run in a detached process and only record what they find (docs/spec.md,
+  Update checks).
 - Update the docs in the same change as the behavior. Write them in short, plain sentences.
 - Comments describe what the code does and why, not how it got there. No comment is better than one that
   restates the code or will go stale.

@@ -160,9 +160,9 @@ func TestStrictBindingFile(t *testing.T) {
 		}
 	}
 	// The keys of the config are refused by name, also in front of good
-	// bindings: a binding file can't choose sources, other files or the
-	// budget.
-	for _, k := range []string{"sources: {a: {trusted-path: /a}}", "include: [x.yaml]", "budget: {max-chars: 5}"} {
+	// bindings: a binding file can't choose sources, other files, the budget
+	// or update checks.
+	for _, k := range []string{"sources: {a: {trusted-path: /a}}", "include: [x.yaml]", "budget: {max-chars: 5}", "check-updates: false"} {
 		cfg := setup(t, h, head+ok+k+"\n")
 		if len(cfg.Bindings) != 0 || len(cfg.Problems) != 1 ||
 			!strings.Contains(cfg.Problems[0], " works only in the config (~/.config/ctxtra/config.yaml); nothing from this file is used") {
@@ -208,6 +208,41 @@ func TestStrictConfig(t *testing.T) {
 	}
 	if cfg := load(filepath.Join(h, "nope.yaml")); len(cfg.Problems) != 0 || len(cfg.Bindings) != 0 {
 		t.Errorf("a missing config is not a problem: %v", cfg.Problems)
+	}
+}
+
+// check-updates is on for ctxtra releases unless the config turns it off,
+// and off for each source unless the source turns it on.
+func TestCheckUpdates(t *testing.T) {
+	h := testenv.Home(t)
+	if cfg := load(filepath.Join(h, "nope.yaml")); !cfg.CheckCtxtra {
+		t.Error("no config: the release check is off")
+	}
+	cfg := load(testenv.Config(t, h, `schema: ctxtra/v1
+check-updates: false
+sources:
+  a: {git: 'https://h/a', branch: main}
+  b: {git: 'https://h/b', branch: main, check-updates: true}
+  c: {local-git: ~/c, check-updates: false}
+  d: {git: 'https://h/d', branch: main, check-updates: TRUE}
+`))
+	if len(cfg.Problems) > 0 || cfg.CheckCtxtra || cfg.Sources[0].CheckUpdates || !cfg.Sources[1].CheckUpdates || cfg.Sources[2].CheckUpdates || !cfg.Sources[3].CheckUpdates {
+		t.Errorf("problems %v, release %v, sources %+v", cfg.Problems, cfg.CheckCtxtra, cfg.Sources)
+	}
+	for _, v := range []string{"'false'", "no-thanks", "{ctxtra: false}"} {
+		if cfg := load(testenv.Config(t, h, "schema: ctxtra/v1\ncheck-updates: "+v+"\n")); len(cfg.Problems) != 1 ||
+			!strings.Contains(cfg.Problems[0], "check-updates must be true or false") || !cfg.Ignored() || cfg.CheckCtxtra {
+			t.Errorf("check-updates: %s: %v", v, cfg.Problems)
+		}
+	}
+	// A config ignored for another reason may have meant check-updates: false.
+	for _, y := range []string{"schema: ctxtra/v1\ncheck-updates: false\nbudget: {max-chars: -1}\n", "schema: [", "schema: ctxtra/v1\n---\nschema: ctxtra/v1\n"} {
+		if cfg := load(testenv.Config(t, h, y)); !cfg.Ignored() || cfg.CheckCtxtra {
+			t.Errorf("%q: ignored %v, release check %v", y, cfg.Ignored(), cfg.CheckCtxtra)
+		}
+	}
+	if cfg := load(testenv.Config(t, h, "schema: ctxtra/v1\n")); cfg.Ignored() {
+		t.Error("a good config is ignored")
 	}
 }
 
@@ -309,6 +344,8 @@ func TestBadSources(t *testing.T) {
 		"bad name":         cfgHead + "sources: {a/b: {trusted-path: /x}}\n",
 		"null path":        cfgHead + "sources: {a: {trusted-path: ~}}\n",
 		"duplicate source": cfgHead + "sources:\n  a: {trusted-path: /x}\n  a: {trusted-path: /y}\n",
+		"check trusted":    cfgHead + "sources: {a: {trusted-path: /x, check-updates: true}}\n",
+		"check a string":   cfgHead + "sources: {a: {git: 'https://h/a', branch: main, check-updates: 'true'}}\n",
 	}
 	for name, y := range cases {
 		cfg := load(testenv.Config(t, h, y))

@@ -73,7 +73,7 @@ stdout '^\+CTXMARK-NEW$'
 stdout 'not accepted; you keep [0-9a-f]{7}$'
 ! stdout 'warning:'
 exec ctxtra source list
-stdout '^team-ctx: git https://.*, [0-9a-f]{7} not accepted \(dismissed\)$'
+stdout '^team-ctx: git https://.*, [0-9a-f]{7} not accepted \(dismissed\); update checks off \(check-updates: true turns them on\)$'
 stdin yes.txt
 exec ctxtra-tty source update team-ctx
 stdout 'accepted team-ctx [0-9a-f]{7} \(commit: updated in config.yaml\)$'

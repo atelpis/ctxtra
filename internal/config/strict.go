@@ -108,6 +108,15 @@ func str(n *yaml.Node, what string) (string, error) {
 	return n.Value, nil
 }
 
+// boolean accepts true or false.
+func boolean(n *yaml.Node, what string) (bool, error) {
+	var b bool
+	if n.Kind != yaml.ScalarNode || n.ShortTag() != "!!bool" || n.Decode(&b) != nil {
+		return false, fmt.Errorf("line %d: %s must be true or false", n.Line, what)
+	}
+	return b, nil
+}
+
 // strList accepts a non-empty list of non-empty strings.
 func strList(n *yaml.Node, what string) ([]string, error) {
 	if n.Kind != yaml.SequenceNode {

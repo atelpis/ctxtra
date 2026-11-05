@@ -30,6 +30,9 @@ type Source struct {
 	// follows the clone's committed HEAD.
 	LocalGit string // absolute, ~ expanded
 	Commit   string
+	// CheckUpdates is check-updates: sessions check the remote for new
+	// commits, git and local-git only.
+	CheckUpdates bool
 	// dir is set only by LoadSource: a folder that stands for the accepted
 	// commit, for source check.
 	dir string
@@ -131,7 +134,7 @@ func (c *Config) decodeSources(n *yaml.Node) error {
 }
 
 func decodeSource(n *yaml.Node) (Source, error) {
-	f, err := fields(n, "trusted-path", "git", "local-git", "branch", "commit")
+	f, err := fields(n, "trusted-path", "git", "local-git", "branch", "commit", "check-updates")
 	if err != nil {
 		return Source{}, err
 	}
@@ -149,6 +152,8 @@ func decodeSource(n *yaml.Node) (Source, error) {
 		return Source{}, fmt.Errorf("line %d: branch is only for git sources", f["branch"].Line)
 	case f["commit"] != nil && f["trusted-path"] != nil:
 		return Source{}, fmt.Errorf("line %d: commit is only for git and local-git sources", f["commit"].Line)
+	case f["check-updates"] != nil && f["trusted-path"] != nil:
+		return Source{}, fmt.Errorf("line %d: check-updates is only for git and local-git sources: a trusted-path source is read from disk", f["check-updates"].Line)
 	case f["trusted-path"] != nil:
 		if s.TrustedPath, err = folder(f["trusted-path"], "trusted-path"); err != nil {
 			return Source{}, err
@@ -181,6 +186,11 @@ func decodeSource(n *yaml.Node) (Source, error) {
 		s.Commit, _ = str(v, "commit")
 		if !source.ValidCommit(s.Commit) {
 			return Source{}, fmt.Errorf("line %d: commit must be a full commit ID in quotes: 40 or 64 lower-case hex digits", v.Line)
+		}
+	}
+	if v := f["check-updates"]; v != nil {
+		if s.CheckUpdates, err = boolean(v, "check-updates"); err != nil {
+			return Source{}, err
 		}
 	}
 	return s, nil
