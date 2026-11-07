@@ -108,13 +108,17 @@ Where the agent can show a message, the session starts with a summary. With the 
 $ cd ~/dev/acme/billing && claude
 ✓ ctxtra added 3 instructions and 2 skills
 Instructions:
-- preferences.md
-- instructions.md
-- go-style.md
+  local
+  - ~/dotfiles/agents/preferences.md
+  - ~/.config/ctxtra/work/instructions.md
+  - ~/docs/team/go-style.md
 Skills:
-- review
-- deploy
+  local
+  - review
+  - deploy
 ```
+
+Files and skills from a source are grouped under its name.
 
 Only what you bind gets in. `ctxtra context show DIR` prints the exact text a session in `DIR` gets, and
 `ctxtra context explain DIR` shows why each binding matched or didn't.

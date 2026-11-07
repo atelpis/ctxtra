@@ -53,7 +53,8 @@ bindings:
 $ cd ~/dev/anything && claude
 ✓ ctxtra added 1 instruction
 Instructions:
-- me.md
+  local
+  - ~/agent-context/me.md
 ```
 
 Edit your file, and the next session gets the new text. There is no ctxtra command to run.
@@ -89,8 +90,10 @@ $ git -C ~/dev/dotfiles pull
 $ cd ~/dev/acme/billing && claude
 ✓ ctxtra added 2 instructions
 Instructions:
-- me.md
-- work.md
+  local
+  - ~/agent-context/me.md
+  dotfiles
+  - agents/work.md
 ```
 
 The new text is used right away. Trusted sources need no `ctxtra source update`.
@@ -155,9 +158,11 @@ ctxtra's store.
 $ cd ~/dev/acme/billing && claude
 ✓ ctxtra added 3 instructions
 Instructions:
-- work.md
-- services-overview.md
-- jira-ticket.md
+  local
+  - ~/agent-context/work.md
+  team-ctx
+  - jira-ticket.md
+  - services-overview.md
 ```
 
 **Two weeks later** the maintainer changed `services-overview.md`. Sessions keep the accepted commit, but a
@@ -167,9 +172,11 @@ background check found the new one, and the next session says so:
 $ claude
 ✓ ctxtra added 3 instructions
 Instructions:
-- work.md
-- services-overview.md
-- jira-ticket.md
+  local
+  - ~/agent-context/work.md
+  team-ctx
+  - jira-ticket.md
+  - services-overview.md
 
 ℹ team-ctx has new commits on main
   run `ctxtra source update team-ctx` to review them.
@@ -334,9 +341,11 @@ $ mv ~/dev/team-ctx ~/src/team-ctx
 $ claude
 ✓ ctxtra added 3 instructions
 Instructions:
-- work.md
-- services-overview.md
-- jira-ticket.md
+  local
+  - ~/agent-context/work.md
+  team-ctx
+  - jira-ticket.md
+  - services-overview.md
 ```
 
 Nothing changes: the files come from ctxtra's store, and `~/dev/team-ctx/jira-ticket.md` in your binding

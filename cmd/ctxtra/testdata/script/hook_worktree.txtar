@@ -12,7 +12,7 @@ stdout 'CTXMARK-WORK.*CTXMARK-SVC.*CTXMARK-PERSONAL'
 ! stdout 'CTXMARK-OTHER'
 stdout 'for this repository, ~/dev/svc, and all its worktrees'
 stdout '<name>deploy</name>'
-stdout '"systemMessage":"✓ ctxtra added 3 instructions and 1 skill\\nInstructions:\\n- work.md\\n- svc.md\\n- me.md\\nSkills:\\n- deploy"'
+stdout '"systemMessage":"✓ ctxtra added 3 instructions and 1 skill\\nInstructions:\\n  local\\n  - ~/ctx/work.md\\n  - ~/ctx/svc.md\\n  - ~/ctx/me.md\\nSkills:\\n  local\\n  - deploy"'
 
 runhook claude SubagentStart elsewhere/svc-feature
 stdout '"hookEventName":"SubagentStart"'

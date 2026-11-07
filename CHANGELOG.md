@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- The session summary groups instructions and skills by source. A file from a source is shown by its path
+  in the source, such as `global/style.md`; a file in no source is in the `local` group, by its full path.
+  The skills that `ctxtra skill install` adds are in the `ctxtra` group.
+
+- Each group shows up to 30 entries, then `+N more` and a line that points to `ctxtra context files`.
+  Before, the limit was 15 for each whole list. The new `summary-message` section of the config hides a
+  list (`show-instructions`, `show-skills`) or changes its limit (`max-instructions`, `max-skills`); a limit
+  of `0` shows only the number of entries of each source.
+
 ## v0.3.0
 
 - Sessions tell you about a new ctxtra release, with the command that upgrades it. Every 4 hours at most, a

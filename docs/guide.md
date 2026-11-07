@@ -26,28 +26,64 @@ loads it to `~/.dsh/cordis.patch.yml`, which applies to every profile.
 At session start, Claude Code, Codex, Muse and Pi also show you a summary, for example:
 
 ```text
-✓ ctxtra added 2 instructions and 1 skill
+✓ ctxtra added 3 instructions and 3 skills
 Instructions:
-- english.md
-- go-style.md
+  dotfiles
+  - global/english.md
+  - go/style.md
+  local
+  - ~/work/AGENTS.md
 Skills:
-- deploy
+  ctxtra
+  - ctxtra
+  team-ctx
+  - deploy
+  - review
 ```
 
-Each list shows up to 15 names, followed by `+N more` when needed. Muse may show fewer names to fit its message size limit.
+The lists are grouped by source, in the order the session gets them. A file from a source is shown by its
+path in the source; when one source's folder is inside another's, its files are in the inner source. A file that is in no source is in the `local` group, by its full path, from `~` when it
+is under your home folder. Skills are shown by name. The skills that `ctxtra skill install` adds are in the
+`ctxtra` group.
 
-Files with the same name are shown by full path, so that you can tell them apart. A file under your home folder is
-shown from `~`, and a file from a pinned source as `ctxtra://<source>/<path>`:
+Each group shows up to 30 entries, followed by `+N more`. `summary-message` in the config changes what the
+lists show:
+
+```yaml
+summary-message:
+  show-instructions: true   # false: no Instructions list
+  show-skills: true         # false: no Skills list
+  max-instructions: 30      # entries of each source; 0: only the number of entries
+  max-skills: 30
+```
+
+These are the defaults, and each key is optional. With `max-skills: 2`:
 
 ```text
-Instructions:
-- engineering.md
-- ~/dev/aictx/global/style.md
-- ctxtra://team-ctx/style.md
+Skills:
+  openspec
+  - openspec-apply-change
+  - openspec-archive-change
+  - +10 more
+Full list: ctxtra context files
 ```
 
-The summary also reports problems found, if any, and names the files that were dropped, in the same way. The
-session-start hooks of Cursor, Copilot and Antigravity, and OpenCode, Hermes and DSH plugins, can't show a message.
+With `max-skills: 0`:
+
+```text
+Skills:
+  openspec (12)
+  ctxtra (1)
+Full list: ctxtra context files
+```
+
+The last line tells where to see every entry. The first line of the summary counts the instructions and
+skills also when their list is hidden. A wrong value in `summary-message` is a problem, and the default
+applies to that key. Muse may show fewer entries to fit its message size limit.
+
+The summary also reports problems found, if any, and names the files that were dropped. A dropped file is
+shown by its name, or by its full path when two have the same name. The session-start hooks of Cursor, Copilot
+and Antigravity, and OpenCode, Hermes and DSH plugins, can't show a message.
 
 ## Install
 

@@ -96,6 +96,29 @@ func (c *Config) Ref(path string) string {
 	return ""
 }
 
+// SourceOf is the source that raw, a resolved path of a binding, is in, and
+// raw's slash-separated path in it. Both are "" for a path in no source. Of
+// trusted-path sources inside each other, the innermost has the path.
+func (c *Config) SourceOf(raw string) (name, rel string) {
+	if r := c.Ref(raw); r != "" {
+		name, rel, _ = strings.Cut(strings.TrimPrefix(r, Scheme), "/")
+		return name, rel
+	}
+	for _, s := range c.Sources {
+		if s.TrustedPath == "" {
+			continue
+		}
+		r, ok := paths.Rel(s.TrustedPath, raw)
+		if !ok {
+			r, ok = paths.Rel(paths.Real(s.TrustedPath), paths.Real(raw))
+		}
+		if ok && (name == "" || len(r) < len(rel)) {
+			name, rel = s.Name, r
+		}
+	}
+	return name, rel
+}
+
 func (c *Config) roots() []trust.Root {
 	var roots []trust.Root
 	for _, s := range c.Sources {

@@ -24,7 +24,10 @@ type Hit struct {
 	Ref     string // a file of a pinned source: ctxtra://<source>/<path>
 	Content string // a file's text; a skill's SKILL.md text after the frontmatter
 	Origin  string // the binding that added it
-	Global  bool   // from a binding with `global: true`
+	// Source is the source the file or SKILL.md is in, and SourcePath its
+	// slash-separated path in it; both "" outside sources.
+	Source, SourcePath string
+	Global             bool // from a binding with `global: true`
 	// Skills only.
 	Name, Description string
 	// Dropped files only: the limit the text was over, for example
@@ -62,6 +65,7 @@ type Result struct {
 	Notices  []string
 	Trace    []Trace
 	MaxChars int
+	Summary  config.SummaryMessage
 }
 
 // Session loads the config at configPath and resolves it for a session in
@@ -77,7 +81,7 @@ func Session(dir, configPath string) (*Result, *config.Config) {
 // added once, at its first position, and the same for skills.
 func Resolve(dir string, cfg *config.Config, rd config.Reader) *Result {
 	dir = paths.Real(dir)
-	res := &Result{Dir: dir, Repo: gitrepo.Identify(dir), MaxChars: cfg.MaxChars}
+	res := &Result{Dir: dir, Repo: gitrepo.Identify(dir), MaxChars: cfg.MaxChars, Summary: cfg.Summary}
 	res.Problems = append(res.Problems, cfg.Problems...)
 	l := &loader{rd: rd, cfg: cfg, files: map[string]bool{}, skills: map[string]bool{}}
 	for _, b := range cfg.Bindings {
@@ -169,7 +173,9 @@ func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
 		f := paths.Real(raw)
 		t.Files = append(t.Files, f)
 		if content, ok := l.load(t, raw, f, l.files); ok {
-			r.Files = append(r.Files, Hit{Path: f, Ref: l.cfg.Ref(raw), Content: content, Origin: t.Origin, Global: b.Selector.Global})
+			src, rel := l.cfg.SourceOf(raw)
+			r.Files = append(r.Files, Hit{Path: f, Ref: l.cfg.Ref(raw), Content: content, Origin: t.Origin, Global: b.Selector.Global,
+				Source: src, SourcePath: rel})
 		}
 	}
 	for _, dir := range b.Skills {
@@ -188,8 +194,9 @@ func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
 		if name == "" {
 			name = filepath.Base(filepath.Dir(f))
 		}
+		src, rel := l.cfg.SourceOf(raw)
 		r.Skills = append(r.Skills, Hit{Path: f, Origin: t.Origin, Global: b.Selector.Global, Name: name, Description: desc,
-			Content: body})
+			Content: body, Source: src, SourcePath: rel})
 	}
 	for _, f := range b.ExcludedInstructions {
 		t.ExcludedFiles = append(t.ExcludedFiles, paths.Real(f))

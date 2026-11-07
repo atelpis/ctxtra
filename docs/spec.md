@@ -51,6 +51,9 @@ budget:
   max-chars: 40000                    # optional; 0 or missing = no limit
 
 check-updates: false                  # optional; check for new ctxtra releases (default: true)
+summary-message:                      # optional; what the session summary lists
+  show-skills: false                  # default: true; also show-instructions
+  max-instructions: 10                # entries of each source (default: 30, 0 = only their number); also max-skills
 ```
 
 Every key except `schema` is optional. A config with only `schema` and `bindings` is enough for your own
@@ -708,6 +711,9 @@ Problems never make ctxtra add more than the config says:
 
 - A config with a wrong `schema`, an invalid `budget`, `check-updates`, source or `include`, or broken YAML,
   is ignored as a whole.
+- An invalid key or value in `summary-message` is a problem, and the default applies to that key; the other
+  keys still apply. It changes only what the summary shows. A key with no value is invalid; a missing key
+  gets the default.
 - A broken binding is skipped, in the config or in a binding file. The other bindings in the same file
   still apply.
 - A binding file that can't be read as a whole is skipped as a whole: a wrong `schema`, a key other than
@@ -771,6 +777,10 @@ with its flags and examples. The commands that change the config are grouped by 
 | `include[]` | no | Binding files. Relative to the config's folder; `~` and `ctxtra://` work. |
 | `budget.max-chars` | no | Integer ≥ 0, in characters. 0 or missing: no limit. |
 | `check-updates` | no | `false` to stop checking for new ctxtra releases. Default `true`. |
+| `summary-message.show-instructions` | no | `false` leaves the Instructions list out of the session summary. Default `true`. |
+| `summary-message.show-skills` | no | `false` leaves the Skills list out of the session summary. Default `true`. |
+| `summary-message.max-instructions` | no | Integer ≥ 0: how many files of each source the summary lists, then `+N more`. 0: each source with its number of files only. Default 30. |
+| `summary-message.max-skills` | no | The same for skills. Default 30. |
 
 **Binding file**
 

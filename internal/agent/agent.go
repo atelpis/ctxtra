@@ -17,6 +17,7 @@ import (
 	"github.com/atelpis/ctxtra/internal/chunk"
 	"github.com/atelpis/ctxtra/internal/config"
 	"github.com/atelpis/ctxtra/internal/fsutil"
+	"github.com/atelpis/ctxtra/internal/paths"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
 
@@ -287,29 +288,32 @@ func SystemMessage(event, msg string) string {
 // summaryNames limits inline name lists in diagnostics.
 const summaryNames = 3
 
-// Summary lists the instructions and skills the session got, followed by notices. It is ""
-// when ctxtra added nothing and has nothing to say.
+// Summary lists the instructions and skills the session got, by source, as
+// res.Summary chooses, followed by notices. It is "" when ctxtra added nothing and has nothing to
+// say.
 func Summary(res *resolve.Result) string {
 	if res == nil {
 		return ""
 	}
 	var added, issues, lists []string
-	name := res.Namer()
+	cut := false
 	if n := len(res.Files); n > 0 {
-		names := make([]string, n)
-		for i, h := range res.Files {
-			names[i] = name(h)
-		}
 		added = append(added, plural(n, "instruction"))
-		lists = append(lists, summaryList("Instructions", names))
+		if res.Summary.ShowInstructions {
+			list, c := summaryList("Instructions", res.Files, fileEntry, "", res.Summary.MaxInstructions)
+			lists, cut = append(lists, list), cut || c
+		}
 	}
 	if n := len(res.Skills); n > 0 {
-		names := make([]string, n)
-		for i, h := range res.Skills {
-			names[i] = h.Name
-		}
 		added = append(added, plural(n, "skill"))
-		lists = append(lists, summaryList("Skills", names))
+		if res.Summary.ShowSkills {
+			skills := paths.Real(filepath.Join(paths.StateDir(), "skills"))
+			list, c := summaryList("Skills", res.Skills, func(h resolve.Hit) string { return h.Name }, skills, res.Summary.MaxSkills)
+			lists, cut = append(lists, list), cut || c
+		}
+	}
+	if cut {
+		lists = append(lists, FullList)
 	}
 	if n := len(res.Missing); n > 0 {
 		issues = append(issues, fmt.Sprintf("%d not found", n))
@@ -319,7 +323,7 @@ func Summary(res *resolve.Result) string {
 	if n := len(res.Problems); n > 0 {
 		issues = append(issues, plural(n, "problem"))
 	}
-	issues = append(issues, dropped(res.Dropped, name)...)
+	issues = append(issues, dropped(res.Dropped, res.Namer())...)
 	if len(added) == 0 && len(issues) == 0 && len(res.Notices) == 0 {
 		return ""
 	}
@@ -344,6 +348,74 @@ func Summary(res *resolve.Result) string {
 	return s
 }
 
+// Summary lines: a group per source under each list title, its entries
+// after it, or its number of entries in parentheses when the list shows
+// none. FullList follows the lists when entries were left out.
+const (
+	GroupIndent = "  "
+	EntryPrefix = "  - "
+	FullList    = "Full list: ctxtra context files"
+)
+
+// fileEntry is a file by its path in its source; outside sources, by its
+// full path, which no other file has.
+func fileEntry(h resolve.Hit) string {
+	if h.Source != "" {
+		return h.SourcePath
+	}
+	return paths.TildeReal(h.Path)
+}
+
+// group is the title of h's group: its source, "ctxtra" for a skill in
+// ctxtra's skills folder (skills, "" for files), or "local".
+func group(h resolve.Hit, skills string) (key, title string) {
+	if h.Source != "" {
+		return "source:" + h.Source, h.Source
+	}
+	if _, ok := paths.Rel(skills, h.Path); ok && skills != "" {
+		return "ctxtra", "ctxtra"
+	}
+	return "local", "local"
+}
+
+// summaryList shows hits by group, in the order of each group's first hit,
+// at most max of a group followed by "+N more". With max 0, a group is its
+// title and its number of hits. It reports whether it left any out.
+func summaryList(title string, hits []resolve.Hit, entry func(resolve.Hit) string, skills string, max int) (string, bool) {
+	var keys []string
+	titles, entries := map[string]string{}, map[string][]string{}
+	for _, h := range hits {
+		k, t := group(h, skills)
+		if _, ok := titles[k]; !ok {
+			keys, titles[k] = append(keys, k), t
+		}
+		entries[k] = append(entries[k], entry(h))
+	}
+	var b strings.Builder
+	b.WriteString(title + ":")
+	cut := false
+	for _, k := range keys {
+		b.WriteString("\n" + GroupIndent + titles[k])
+		list := entries[k]
+		if max == 0 {
+			fmt.Fprintf(&b, " (%d)", len(list))
+			cut = true
+			continue
+		}
+		more := 0
+		if len(list) > max {
+			list, more, cut = list[:max], len(list)-max, true
+		}
+		for _, e := range list {
+			b.WriteString("\n" + EntryPrefix + plain(e))
+		}
+		if more > 0 {
+			fmt.Fprintf(&b, "\n%s+%d more", EntryPrefix, more)
+		}
+	}
+	return b.String(), cut
+}
+
 // dropped is a line per limit that files were dropped for: "dropped a.md,
 // b.md (over budget.max-chars)".
 func dropped(hits []resolve.Hit, name func(resolve.Hit) string) []string {
@@ -359,19 +431,6 @@ func dropped(hits []resolve.Hit, name func(resolve.Hit) string) []string {
 		out = append(out, fmt.Sprintf("dropped %s (over %s)", Names(names[o]), o))
 	}
 	return out
-}
-
-// summaryList shows at most 15 names, one per line.
-func summaryList(title string, names []string) string {
-	const limit = 15
-	listed := make([]string, len(names))
-	for i, name := range names {
-		listed[i] = plain(name)
-	}
-	if len(names) > limit {
-		listed = append(listed[:limit:limit], fmt.Sprintf("+%d more", len(names)-limit))
-	}
-	return title + ":\n- " + strings.Join(listed, "\n- ")
 }
 
 // plain is name, quoted when it would read as more than one name: a file name
