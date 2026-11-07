@@ -288,8 +288,8 @@ func SystemMessage(event, msg string) string {
 // summaryNames limits inline name lists in diagnostics.
 const summaryNames = 3
 
-// Summary lists the instructions and skills the session got, by source,
-// followed by notices. It is "" when ctxtra added nothing and has nothing to
+// Summary lists the instructions and skills the session got, by source, as
+// res.Summary chooses, followed by notices. It is "" when ctxtra added nothing and has nothing to
 // say.
 func Summary(res *resolve.Result) string {
 	if res == nil {
@@ -299,14 +299,18 @@ func Summary(res *resolve.Result) string {
 	cut := false
 	if n := len(res.Files); n > 0 {
 		added = append(added, plural(n, "instruction"))
-		list, c := summaryList("Instructions", res.Files, fileEntry, "", res.SummaryMaxItems)
-		lists, cut = append(lists, list), cut || c
+		if res.Summary.ShowInstructions {
+			list, c := summaryList("Instructions", res.Files, fileEntry, "", res.Summary.MaxInstructions)
+			lists, cut = append(lists, list), cut || c
+		}
 	}
 	if n := len(res.Skills); n > 0 {
 		added = append(added, plural(n, "skill"))
-		skills := paths.Real(filepath.Join(paths.StateDir(), "skills"))
-		list, c := summaryList("Skills", res.Skills, func(h resolve.Hit) string { return h.Name }, skills, res.SummaryMaxItems)
-		lists, cut = append(lists, list), cut || c
+		if res.Summary.ShowSkills {
+			skills := paths.Real(filepath.Join(paths.StateDir(), "skills"))
+			list, c := summaryList("Skills", res.Skills, func(h resolve.Hit) string { return h.Name }, skills, res.Summary.MaxSkills)
+			lists, cut = append(lists, list), cut || c
+		}
 	}
 	if cut {
 		lists = append(lists, FullList)
@@ -345,7 +349,8 @@ func Summary(res *resolve.Result) string {
 }
 
 // Summary lines: a group per source under each list title, its entries
-// after it. FullList follows the lists when entries were left out.
+// after it, or its number of entries in parentheses when the list shows
+// none. FullList follows the lists when entries were left out.
 const (
 	GroupIndent = "  "
 	EntryPrefix = "  - "
@@ -374,8 +379,8 @@ func group(h resolve.Hit, skills string) (key, title string) {
 }
 
 // summaryList shows hits by group, in the order of each group's first hit,
-// at most max of a group (0: all) followed by "+N more". It reports whether
-// it left any out.
+// at most max of a group followed by "+N more". With max 0, a group is its
+// title and its number of hits. It reports whether it left any out.
 func summaryList(title string, hits []resolve.Hit, entry func(resolve.Hit) string, skills string, max int) (string, bool) {
 	var keys []string
 	titles, entries := map[string]string{}, map[string][]string{}
@@ -392,8 +397,13 @@ func summaryList(title string, hits []resolve.Hit, entry func(resolve.Hit) strin
 	for _, k := range keys {
 		b.WriteString("\n" + GroupIndent + titles[k])
 		list := entries[k]
+		if max == 0 {
+			fmt.Fprintf(&b, " (%d)", len(list))
+			cut = true
+			continue
+		}
 		more := 0
-		if max > 0 && len(list) > max {
+		if len(list) > max {
 			list, more, cut = list[:max], len(list)-max, true
 		}
 		for _, e := range list {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/atelpis/ctxtra/internal/agent"
+	"github.com/atelpis/ctxtra/internal/config"
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/resolve"
 )
@@ -23,7 +24,7 @@ func TestClip(t *testing.T) {
 }
 
 func TestLongSummaryLists(t *testing.T) {
-	res := &resolve.Result{Notices: []string{"source needs checking"}, Skills: []resolve.Hit{{Name: "deploy", Source: "team"}}}
+	res := &resolve.Result{Notices: []string{"source needs checking"}, Skills: []resolve.Hit{{Name: "deploy", Source: "team"}}, Summary: config.DefaultSummaryMessage}
 	for i := 0; i < 16; i++ {
 		res.Files = append(res.Files, resolve.Hit{Path: "/notes/" + strings.Repeat("a", 140) + ".md"})
 	}
@@ -45,7 +46,7 @@ func TestLongPathsKeepProblems(t *testing.T) {
 	long := func(i int) resolve.Hit {
 		return resolve.Hit{Path: fmt.Sprintf("/%d/%s/style.md", i, strings.Repeat("é", 400)), Over: "budget.max-chars"}
 	}
-	res := &resolve.Result{Problems: []string{"p"}, Notices: []string{"source needs checking"}}
+	res := &resolve.Result{Problems: []string{"p"}, Notices: []string{"source needs checking"}, Summary: config.DefaultSummaryMessage}
 	for i := range 15 {
 		h := long(i)
 		h.Over = ""
@@ -62,7 +63,7 @@ func TestLongPathsKeepProblems(t *testing.T) {
 }
 
 func TestLiteralOverflowName(t *testing.T) {
-	res := &resolve.Result{}
+	res := &resolve.Result{Summary: config.DefaultSummaryMessage}
 	for i := 0; i < 14; i++ {
 		res.Files = append(res.Files, resolve.Hit{Source: "notes", SourcePath: strings.Repeat("a", 140) + ".md"})
 	}
@@ -85,41 +86,48 @@ func TestLiteralOverflowName(t *testing.T) {
 }
 
 // Many groups with long names: whole groups are omitted, counted in one line
-// per list, before the end is cut, so the notices stay.
+// per list, before the end is cut, so the notices stay. Also when the lists
+// show only the number of entries of each group.
 func TestManyLongGroups(t *testing.T) {
-	res := &resolve.Result{Problems: []string{"p"}, Notices: []string{"team has new commits on main"}}
-	for i := range 20 {
-		src := fmt.Sprintf("%02d-%s", i, strings.Repeat("s", 100))
-		res.Files = append(res.Files, resolve.Hit{Source: src, SourcePath: "a.md"}, resolve.Hit{Source: src, SourcePath: "b.md"})
-		res.Skills = append(res.Skills, resolve.Hit{Source: src, Name: "deploy"})
-	}
-	got := clip(agent.Summary(res))
-	b, _ := jsonorder.Marshal(got)
-	if len(b)-2 > maxSummary || strings.HasSuffix(got, "…") || !strings.Contains(got, "; 1 problem (run ctxtra doctor)\n") ||
-		!strings.HasSuffix(got, "\n"+agent.FullList+"\n\nℹ team has new commits on main") {
-		t.Fatalf("lost summary information (%d JSON bytes): %q", len(b)-2, got)
-	}
-	// Every entry is still counted, in its list.
-	counts := map[string]int{}
-	section := ""
-	for _, line := range strings.Split(got, "\n") {
-		switch {
-		case line == "Instructions:" || line == "Skills:":
-			section = line
-		case strings.HasPrefix(line, agent.EntryPrefix):
-			n, ok := omitted(line)
-			if !ok {
-				n = 1
-			}
-			counts[section] += n
-		default:
-			if n, _, ok := omittedGroups(line); ok {
-				counts[section] += n
+	counts := config.DefaultSummaryMessage
+	counts.MaxInstructions, counts.MaxSkills = 0, 0
+	for _, s := range []config.SummaryMessage{config.DefaultSummaryMessage, counts} {
+		res := &resolve.Result{Problems: []string{"p"}, Notices: []string{"team has new commits on main"}, Summary: s}
+		for i := range 20 {
+			src := fmt.Sprintf("%02d-%s", i, strings.Repeat("s", 100))
+			res.Files = append(res.Files, resolve.Hit{Source: src, SourcePath: "a.md"}, resolve.Hit{Source: src, SourcePath: "b.md"})
+			res.Skills = append(res.Skills, resolve.Hit{Source: src, Name: "deploy"})
+		}
+		got := clip(agent.Summary(res))
+		b, _ := jsonorder.Marshal(got)
+		if len(b)-2 > maxSummary || strings.HasSuffix(got, "…") || !strings.Contains(got, "; 1 problem (run ctxtra doctor)\n") ||
+			!strings.HasSuffix(got, "\n"+agent.FullList+"\n\nℹ team has new commits on main") {
+			t.Fatalf("%+v: lost summary information (%d JSON bytes): %q", s, len(b)-2, got)
+		}
+		// Every entry is still counted, in its list.
+		total := map[string]int{}
+		section := ""
+		for _, line := range strings.Split(got, "\n") {
+			switch {
+			case line == "Instructions:" || line == "Skills:":
+				section = line
+			case strings.HasPrefix(line, agent.EntryPrefix):
+				n, ok := omitted(line)
+				if !ok {
+					n = 1
+				}
+				total[section] += n
+			default:
+				if n, _, ok := omittedGroups(line); ok {
+					total[section] += n
+				} else if strings.HasPrefix(line, agent.GroupIndent) {
+					total[section] += counted(line)
+				}
 			}
 		}
-	}
-	if counts["Instructions:"] != 40 || counts["Skills:"] != 20 || !strings.Contains(got, " more from ") {
-		t.Errorf("counts %v: %q", counts, got)
+		if total["Instructions:"] != 40 || total["Skills:"] != 20 || !strings.Contains(got, " more from ") {
+			t.Errorf("%+v: counts %v: %q", s, total, got)
+		}
 	}
 }
 
@@ -133,5 +141,19 @@ func TestOmitGroup(t *testing.T) {
 	got, _ = omitGroup(got)
 	if want := "✓ x\nInstructions:\n  +4 more from 2 sources\nSkills:\n  c\n  - c\n\nℹ n"; strings.Join(got, "\n") != want {
 		t.Fatalf("second: %q", strings.Join(got, "\n"))
+	}
+	// A group of a list that shows only numbers.
+	lines = strings.Split("✓ x\nInstructions:\n  aa (3)\n  b (1)\n\nℹ n", "\n")
+	got, _ = omitGroup(lines)
+	if want := "✓ x\nInstructions:\n  b (1)\n  +3 more from 1 source\n\nℹ n"; strings.Join(got, "\n") != want {
+		t.Fatalf("numbers: %q", strings.Join(got, "\n"))
+	}
+}
+
+func TestCounted(t *testing.T) {
+	for line, want := range map[string]int{"  a (3)": 3, "  a-b.c (12)": 12, "  a": 0, "  a ()": 0, "  a (x)": 0, "  a (-1)": 0, "  +3 more from 1 source": 0} {
+		if got := counted(line); got != want {
+			t.Errorf("%q: %d", line, got)
+		}
 	}
 }

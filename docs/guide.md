@@ -46,8 +46,18 @@ path in the source; when one source's folder is inside another's, its files are 
 is under your home folder. Skills are shown by name. The skills that `ctxtra skill install` adds are in the
 `ctxtra` group.
 
-Each group shows up to 15 entries, followed by `+N more`. `summary-max-items` at the top of the config changes
-the limit; `0` shows every entry. With `summary-max-items: 2`:
+Each group shows up to 30 entries, followed by `+N more`. `summary-message` in the config changes what the
+lists show:
+
+```yaml
+summary-message:
+  show-instructions: true   # false: no Instructions list
+  show-skills: true         # false: no Skills list
+  max-instructions: 30      # entries of each source; 0: only the number of entries
+  max-skills: 30
+```
+
+These are the defaults, and each key is optional. With `max-skills: 2`:
 
 ```text
 Skills:
@@ -58,7 +68,18 @@ Skills:
 Full list: ctxtra context files
 ```
 
-The last line tells where to see every entry. Muse may show fewer entries to fit its message size limit.
+With `max-skills: 0`:
+
+```text
+Skills:
+  openspec (12)
+  ctxtra (1)
+Full list: ctxtra context files
+```
+
+The last line tells where to see every entry. The first line of the summary counts the instructions and
+skills also when their list is hidden. A wrong value in `summary-message` is a problem, and the default
+applies to that key. Muse may show fewer entries to fit its message size limit.
 
 The summary also reports problems found, if any, and names the files that were dropped. A dropped file is
 shown by its name, or by its full path when two have the same name. The session-start hooks of Cursor, Copilot

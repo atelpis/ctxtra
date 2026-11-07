@@ -162,7 +162,7 @@ func TestStrictBindingFile(t *testing.T) {
 	// The keys of the config are refused by name, also in front of good
 	// bindings: a binding file can't choose sources, other files, the budget
 	// or update checks.
-	for _, k := range []string{"sources: {a: {trusted-path: /a}}", "include: [x.yaml]", "budget: {max-chars: 5}", "check-updates: false", "summary-max-items: 3"} {
+	for _, k := range []string{"sources: {a: {trusted-path: /a}}", "include: [x.yaml]", "budget: {max-chars: 5}", "check-updates: false", "summary-message: {max-skills: 3}"} {
 		cfg := setup(t, h, head+ok+k+"\n")
 		if len(cfg.Bindings) != 0 || len(cfg.Problems) != 1 ||
 			!strings.Contains(cfg.Problems[0], " works only in the config (~/.config/ctxtra/config.yaml); nothing from this file is used") {
@@ -246,26 +246,84 @@ sources:
 	}
 }
 
-// summary-max-items defaults to 15. A wrong value is a problem, and the
-// default applies; the bindings still do.
-func TestSummaryMaxItems(t *testing.T) {
+// Each key of summary-message has its own default. A wrong key or value is
+// a problem, and the default applies to that key alone: the other keys and
+// the bindings still do.
+func TestSummaryMessage(t *testing.T) {
 	h := testenv.Home(t)
-	if cfg := load(filepath.Join(h, "nope.yaml")); cfg.SummaryMaxItems != DefaultSummaryMaxItems {
-		t.Errorf("no config: %d", cfg.SummaryMaxItems)
+	def := DefaultSummaryMessage
+	if def != (SummaryMessage{ShowInstructions: true, ShowSkills: true, MaxInstructions: 30, MaxSkills: 30}) {
+		t.Errorf("defaults %+v", def)
+	}
+	if cfg := load(filepath.Join(h, "nope.yaml")); cfg.Summary != def {
+		t.Errorf("no config: %+v", cfg.Summary)
 	}
 	own := "bindings: [{name: own, match: {global: true}, instructions: [x.md]}]\n"
-	for v, want := range map[string]int{"0": 0, "3": 3} {
-		if cfg := load(testenv.Config(t, h, "schema: ctxtra/v1\n"+own+"summary-max-items: "+v+"\n")); len(cfg.Problems) > 0 || cfg.SummaryMaxItems != want {
-			t.Errorf("%s: %d, problems %v", v, cfg.SummaryMaxItems, cfg.Problems)
+	with := func(section string) *Config {
+		return load(testenv.Config(t, h, "schema: ctxtra/v1\n"+own+section))
+	}
+	for section, want := range map[string]SummaryMessage{
+		"":                                   def,
+		"summary-message: {}\n":              def,
+		"summary-message: {max-skills: 5}\n": {ShowInstructions: true, ShowSkills: true, MaxInstructions: 30, MaxSkills: 5},
+		"summary-message: {show-skills: false}\n": {ShowInstructions: true, MaxInstructions: 30, MaxSkills: 30},
+		"summary-message:\n  show-instructions: false\n  show-skills: true\n  max-instructions: 0\n  max-skills: 100\n": {
+			ShowSkills: true, MaxSkills: 100},
+	} {
+		if cfg := with(section); len(cfg.Problems) > 0 || cfg.Summary != want {
+			t.Errorf("%q: %+v, problems %v", section, cfg.Summary, cfg.Problems)
 		}
 	}
-	for v, msg := range map[string]string{"-1": "must be a whole number, 0 or more", "'5'": "must be a whole number, 0 or more",
-		"2.5": "must be a whole number, 0 or more", "{a: 1}": "must be a whole number, 0 or more", "": "has no value", "~": "has no value"} {
-		cfg := load(testenv.Config(t, h, "schema: ctxtra/v1\n"+own+"summary-max-items: "+v+"\n"))
-		if len(cfg.Problems) != 1 || !strings.Contains(cfg.Problems[0], "summary-max-items "+msg+"; the default, 15, applies") ||
-			cfg.Ignored() || len(cfg.Bindings) != 1 || cfg.SummaryMaxItems != DefaultSummaryMaxItems {
-			t.Errorf("%s: %d, bindings %d, problems %v", v, cfg.SummaryMaxItems, len(cfg.Bindings), cfg.Problems)
+	// A wrong value of one key; max-instructions: 7 still applies.
+	for _, c := range []struct{ key, value, problem string }{
+		{"show-skills", "'false'", "summary-message.show-skills must be true or false; the default, true, applies"},
+		{"show-skills", "no", "summary-message.show-skills must be true or false; the default, true, applies"},
+		{"show-skills", "0", "summary-message.show-skills must be true or false; the default, true, applies"},
+		{"show-skills", "~", "summary-message.show-skills has no value; the default, true, applies"},
+		{"show-skills", "", "summary-message.show-skills has no value; the default, true, applies"},
+		{"max-skills", "-1", "summary-message.max-skills must be a whole number, 0 or more; the default, 30, applies"},
+		{"max-skills", "'5'", "summary-message.max-skills must be a whole number, 0 or more; the default, 30, applies"},
+		{"max-skills", "2.5", "summary-message.max-skills must be a whole number, 0 or more; the default, 30, applies"},
+		{"max-skills", "{a: 1}", "summary-message.max-skills must be a whole number, 0 or more; the default, 30, applies"},
+		{"max-skills", "true", "summary-message.max-skills must be a whole number, 0 or more; the default, 30, applies"},
+		{"max-skills", "~", "summary-message.max-skills has no value; the default, 30, applies"},
+		{"max-skills", "", "summary-message.max-skills has no value; the default, 30, applies"},
+		{"max-skils", "5", `unknown key "max-skils" in summary-message (allowed: show-instructions, show-skills, max-instructions, max-skills); it is ignored`},
+	} {
+		want := def
+		want.MaxInstructions = 7
+		cfg := with("summary-message:\n  max-instructions: 7\n  " + c.key + ": " + c.value + "\n")
+		if len(cfg.Problems) != 1 || !strings.Contains(cfg.Problems[0], c.problem) || cfg.Ignored() || len(cfg.Bindings) != 1 || cfg.Summary != want {
+			t.Errorf("%s: %s: %+v, bindings %d, problems %v", c.key, c.value, cfg.Summary, len(cfg.Bindings), cfg.Problems)
 		}
+	}
+	// A key that is there twice gets the default; the other keys still apply.
+	for section, problem := range map[string]string{
+		"summary-message:\n  max-instructions: 7\n  max-skills: 3\n  max-skills: 4\n":           `line 6: duplicate key "max-skills" in summary-message; the default, 30, applies`,
+		"summary-message:\n  max-instructions: 7\n  show-skills: false\n  show-skills: false\n": `line 6: duplicate key "show-skills" in summary-message; the default, true, applies`,
+	} {
+		want := def
+		want.MaxInstructions = 7
+		if cfg := with(section); len(cfg.Problems) != 1 || !strings.Contains(cfg.Problems[0], problem) || cfg.Summary != want {
+			t.Errorf("duplicate: %+v, problems %v", cfg.Summary, cfg.Problems)
+		}
+	}
+	// Not a map: all the defaults apply.
+	for v, problem := range map[string]string{
+		"5":   "line 3: summary-message must be a map; the defaults apply",
+		"[a]": "line 3: summary-message must be a map; the defaults apply",
+		"''":  "line 3: summary-message must be a map; the defaults apply",
+		"~":   "line 3: summary-message has no value; the defaults apply",
+		"":    "line 3: summary-message has no value; the defaults apply",
+	} {
+		cfg := with("summary-message: " + v + "\n")
+		if len(cfg.Problems) != 1 || !strings.Contains(cfg.Problems[0], problem) || cfg.Ignored() || len(cfg.Bindings) != 1 || cfg.Summary != def {
+			t.Errorf("%q: %+v, bindings %d, problems %v", v, cfg.Summary, len(cfg.Bindings), cfg.Problems)
+		}
+	}
+	// Nothing of an ignored config is used.
+	if cfg := with("summary-message: {max-skills: 2}\nbudget: {max-chars: -1}\n"); !cfg.Ignored() || cfg.Summary != def {
+		t.Errorf("ignored: %+v", cfg.Summary)
 	}
 }
 

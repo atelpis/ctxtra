@@ -65,8 +65,7 @@ type Result struct {
 	Notices  []string
 	Trace    []Trace
 	MaxChars int
-	// SummaryMaxItems is the config's summary-max-items; 0 means no limit.
-	SummaryMaxItems int
+	Summary  config.SummaryMessage
 }
 
 // Session loads the config at configPath and resolves it for a session in
@@ -82,7 +81,7 @@ func Session(dir, configPath string) (*Result, *config.Config) {
 // added once, at its first position, and the same for skills.
 func Resolve(dir string, cfg *config.Config, rd config.Reader) *Result {
 	dir = paths.Real(dir)
-	res := &Result{Dir: dir, Repo: gitrepo.Identify(dir), MaxChars: cfg.MaxChars, SummaryMaxItems: cfg.SummaryMaxItems}
+	res := &Result{Dir: dir, Repo: gitrepo.Identify(dir), MaxChars: cfg.MaxChars, Summary: cfg.Summary}
 	res.Problems = append(res.Problems, cfg.Problems...)
 	l := &loader{rd: rd, cfg: cfg, files: map[string]bool{}, skills: map[string]bool{}}
 	for _, b := range cfg.Bindings {

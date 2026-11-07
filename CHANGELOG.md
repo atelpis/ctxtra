@@ -6,9 +6,10 @@
   in the source, such as `global/style.md`; a file in no source is in the `local` group, by its full path.
   The skills that `ctxtra skill install` adds are in the `ctxtra` group.
 
-- Each group shows up to 15 entries, then `+N more` and a line that points to `ctxtra context files`.
-  `summary-max-items` at the top of the config changes the limit, and `0` shows every entry. Before, the
-  limit was 15 for each whole list.
+- Each group shows up to 30 entries, then `+N more` and a line that points to `ctxtra context files`.
+  Before, the limit was 15 for each whole list. The new `summary-message` section of the config hides a
+  list (`show-instructions`, `show-skills`) or changes its limit (`max-instructions`, `max-skills`); a limit
+  of `0` shows only the number of entries of each source.
 
 ## v0.3.0
 

@@ -200,7 +200,7 @@ func omitGroup(lines []string) ([]string, bool) {
 	if i < 0 {
 		return nil, false
 	}
-	end, count := i+1, 0
+	end, count := i+1, counted(lines[i])
 	for end < len(lines) && strings.HasPrefix(lines[end], agent.EntryPrefix) {
 		n, ok := omitted(lines[end])
 		if !ok {
@@ -222,6 +222,20 @@ func omitGroup(lines []string) ([]string, bool) {
 		end--
 	}
 	return slices.Insert(lines, end, fmt.Sprintf("%s+%d more from %s", agent.GroupIndent, count, plural(groups, "source"))), true
+}
+
+// counted is the number of entries on a group's line, "  name (N)", or 0.
+func counted(header string) int {
+	rest, ok := strings.CutSuffix(header, ")")
+	if !ok {
+		return 0
+	}
+	_, num, ok := strings.Cut(rest, " (")
+	n, err := strconv.Atoi(num)
+	if !ok || err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 func omitted(line string) (int, bool) {

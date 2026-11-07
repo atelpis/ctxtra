@@ -8,6 +8,7 @@ import (
 
 	"github.com/atelpis/ctxtra/internal/agent"
 	"github.com/atelpis/ctxtra/internal/chunk"
+	"github.com/atelpis/ctxtra/internal/config"
 	"github.com/atelpis/ctxtra/internal/jsonorder"
 	"github.com/atelpis/ctxtra/internal/resolve"
 	"github.com/atelpis/ctxtra/internal/source"
@@ -48,11 +49,12 @@ func TestSummary(t *testing.T) {
 			Skills: skills, Notices: []string{"team has new commits on main\nrun `ctxtra source update team` to review them."}},
 		"ctxtra added nothing\n\nℹ n": {Notices: []string{"n"}},
 	} {
+		res.Summary = config.DefaultSummaryMessage
 		if got := agent.Summary(res); got != want {
 			t.Errorf("got  %q\nwant %q", got, want)
 		}
 	}
-	if agent.Summary(nil) != "" || agent.Summary(&resolve.Result{}) != "" {
+	if agent.Summary(nil) != "" || agent.Summary(&resolve.Result{Summary: config.DefaultSummaryMessage}) != "" {
 		t.Error("summary when nothing was added")
 	}
 }
@@ -76,6 +78,7 @@ func TestSummaryGroups(t *testing.T) {
 			skill(local("skills/deploy/SKILL.md"), "deploy"), skill(src("openspec", "skills/propose/SKILL.md"), "propose"),
 			// A source named like a group of its own is not that group.
 			skill(src("local", "skills/x/SKILL.md"), "x")},
+		Summary: config.DefaultSummaryMessage,
 	}
 	want := `✓ ctxtra added 6 instructions and 5 skills
 Instructions:
@@ -122,6 +125,7 @@ func TestSummarySameNames(t *testing.T) {
 			Dropped: []resolve.Hit{dropped(local("a\nb/style.md")), dropped(local("b/style.md"))}},
 		"✓ ctxtra added 1 instruction\nInstructions:\n  local\n  - \"~/a\\nb/style.md\"": {Files: []resolve.Hit{local("a\nb/style.md")}},
 	} {
+		res.Summary = config.DefaultSummaryMessage
 		if got := agent.Summary(res); got != want {
 			t.Errorf("got  %q\nwant %q", got, want)
 		}
@@ -142,7 +146,6 @@ func TestSummarySources(t *testing.T) {
 	testenv.Write(t, filepath.Join(b, "skills", "deploy", "SKILL.md"), "---\nname: deploy\ndescription: d\n---\nbody")
 	testenv.Write(t, filepath.Join(h, "dots", "skills", "review", "SKILL.md"), "---\nname: review\ndescription: d\n---\nbody")
 	cfg := testenv.Config(t, h, `schema: ctxtra/v1
-summary-max-items: 0
 sources:
   a: {git: 'https://h/a', branch: main, commit: '`+commit+`'}
   b: {git: 'https://h/b', branch: main, commit: '`+commit+`'}
@@ -177,17 +180,26 @@ Skills:
 	}
 }
 
-// summary-max-items limits each group, not each list; the line after the
-// lists tells where to see them all.
-func TestSummaryMaxItems(t *testing.T) {
+// The limits are per group, not per list; the line after the lists tells
+// where to see them all. A limit of 0 shows each group's number of entries.
+// A hidden list is still counted on the first line.
+func TestSummaryMessage(t *testing.T) {
 	res := &resolve.Result{Notices: []string{"n"}}
 	for i := 1; i <= 4; i++ {
 		res.Files = append(res.Files, resolve.Hit{Source: "a", SourcePath: fmt.Sprintf("a%d.md", i)})
 		res.Skills = append(res.Skills, resolve.Hit{Source: "a", Name: fmt.Sprintf("s%d", i)})
 	}
 	res.Files = append(res.Files, resolve.Hit{Source: "b", SourcePath: "b1.md"})
-	for max, want := range map[int]string{
-		2: `✓ ctxtra added 5 instructions and 4 skills
+	res.Skills = append(res.Skills, resolve.Hit{Source: "b", Name: "t1"})
+	show := func(instructions, skills bool, maxInstructions, maxSkills int) config.SummaryMessage {
+		return config.SummaryMessage{ShowInstructions: instructions, ShowSkills: skills, MaxInstructions: maxInstructions, MaxSkills: maxSkills}
+	}
+	for _, c := range []struct {
+		name string
+		s    config.SummaryMessage
+		want string
+	}{
+		{"cut", show(true, true, 2, 3), `✓ ctxtra added 5 instructions and 5 skills
 Instructions:
   a
   - a1.md
@@ -199,11 +211,14 @@ Skills:
   a
   - s1
   - s2
-  - +2 more
+  - s3
+  - +1 more
+  b
+  - t1
 Full list: ctxtra context files
 
-ℹ n`,
-		4: `✓ ctxtra added 5 instructions and 4 skills
+ℹ n`},
+		{"all fit", show(true, true, 4, 4), `✓ ctxtra added 5 instructions and 5 skills
 Instructions:
   a
   - a1.md
@@ -218,17 +233,80 @@ Skills:
   - s2
   - s3
   - s4
+  b
+  - t1
 
-ℹ n`,
+ℹ n`},
+		{"counts", show(true, true, 0, 1), `✓ ctxtra added 5 instructions and 5 skills
+Instructions:
+  a (4)
+  b (1)
+Skills:
+  a
+  - s1
+  - +3 more
+  b
+  - t1
+Full list: ctxtra context files
+
+ℹ n`},
+		{"no instructions", show(false, true, 0, 4), `✓ ctxtra added 5 instructions and 5 skills
+Skills:
+  a
+  - s1
+  - s2
+  - s3
+  - s4
+  b
+  - t1
+
+ℹ n`},
+		{"no skills", show(true, false, 4, 0), `✓ ctxtra added 5 instructions and 5 skills
+Instructions:
+  a
+  - a1.md
+  - a2.md
+  - a3.md
+  - a4.md
+  b
+  - b1.md
+
+ℹ n`},
+		{"no lists", show(false, false, 0, 0), "✓ ctxtra added 5 instructions and 5 skills\n\nℹ n"},
 	} {
-		res.SummaryMaxItems = max
-		if got := agent.Summary(res); got != want {
-			t.Errorf("%d: got\n%s\nwant\n%s", max, got, want)
+		res.Summary = c.s
+		if got := agent.Summary(res); got != c.want {
+			t.Errorf("%s: got\n%s\nwant\n%s", c.name, got, c.want)
 		}
 	}
-	res.SummaryMaxItems = 0
-	if got := agent.Summary(res); strings.Contains(got, "more") || !strings.Contains(got, "a4.md") {
-		t.Errorf("no limit: %s", got)
+	// Hidden lists still leave the problems and dropped files.
+	hidden := &resolve.Result{Files: res.Files[:1], Skills: res.Skills[:1], Problems: []string{"p"},
+		Dropped: []resolve.Hit{{Path: "/x/big.md", Over: "budget.max-chars"}}, Summary: show(false, false, 30, 30)}
+	if got, want := agent.Summary(hidden), "✓ ctxtra added 1 instruction and 1 skill; 1 problem, dropped big.md (over budget.max-chars) (run ctxtra doctor)"; got != want {
+		t.Errorf("hidden: got %q\nwant %q", got, want)
+	}
+}
+
+// From a config: the defaults list 30 entries of a group; summary-message
+// changes each list on its own.
+func TestSummaryMessageConfig(t *testing.T) {
+	h := testenv.Home(t)
+	for i := range 31 {
+		testenv.Write(t, filepath.Join(h, "ctx", fmt.Sprintf("f%02d.md", i)), "text")
+	}
+	testenv.Write(t, filepath.Join(h, "ctx", "skills", "deploy", "SKILL.md"), "---\nname: deploy\ndescription: d\n---\nbody")
+	const bindings = `sources:
+  ctx: {trusted-path: ~/ctx}
+bindings:
+  - {name: all, match: {global: true}, instructions: ['ctxtra://ctx/*.md'], skills: [ctxtra://ctx/skills/deploy]}
+`
+	res, _ := resolve.Session(h, testenv.Config(t, h, "schema: ctxtra/v1\n"+bindings))
+	if got := agent.Summary(res); !strings.Contains(got, "  - f29.md\n  - +1 more\nSkills:\n  ctx\n  - deploy\nFull list") || strings.Contains(got, "f30.md") {
+		t.Errorf("defaults:\n%s", got)
+	}
+	res, _ = resolve.Session(h, testenv.Config(t, h, "schema: ctxtra/v1\nsummary-message: {show-skills: false, max-instructions: 0}\n"+bindings))
+	if got, want := agent.Summary(res), "✓ ctxtra added 31 instructions and 1 skill\nInstructions:\n  ctx (31)\nFull list: ctxtra context files"; got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
 }
 

@@ -60,21 +60,19 @@ type Config struct {
 	MaxChars int       // budget.max-chars, in characters (Unicode code points); 0 means no limit
 	// CheckCtxtra is check-updates: check for new ctxtra releases.
 	CheckCtxtra bool
-	// SummaryMaxItems is summary-max-items: the most entries the session
-	// summary lists for each source; 0 means no limit.
-	SummaryMaxItems int
-	Problems        []string
-	Warnings        []string          // only from LoadSource: problems that leave the binding in use
-	Notes           []string          // hints, for doctor
-	pinned          map[string]string // paths resolved into the store, and their references
-	mappings        *state.Mappings   // of imported clones; read when needed
-	mappingsErr     error
-	touched         map[string]bool // generations touched for this load
-	storeBusy       error           // a touch failed: don't wait again
-	waitLeft        time.Duration   // what touches may still wait for the store
-	waitSet         bool
-	checking        bool // loaded by LoadSource
-	ignored         bool // see Ignored
+	Summary     SummaryMessage
+	Problems    []string
+	Warnings    []string          // only from LoadSource: problems that leave the binding in use
+	Notes       []string          // hints, for doctor
+	pinned      map[string]string // paths resolved into the store, and their references
+	mappings    *state.Mappings   // of imported clones; read when needed
+	mappingsErr error
+	touched     map[string]bool // generations touched for this load
+	storeBusy   error           // a touch failed: don't wait again
+	waitLeft    time.Duration   // what touches may still wait for the store
+	waitSet     bool
+	checking    bool // loaded by LoadSource
+	ignored     bool // see Ignored
 }
 
 // Reader reads the config and binding files. One Reader is shared by
@@ -114,7 +112,7 @@ func loadConfig(path string, rd Reader, name, commit string) *Config {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	c := &Config{File: path, CheckCtxtra: true, SummaryMaxItems: DefaultSummaryMaxItems}
+	c := &Config{File: path, CheckCtxtra: true, Summary: DefaultSummaryMessage}
 	c.Trust = c.policy()
 	data, err := rd.Read(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -174,7 +172,7 @@ func loadConfig(path string, rd Reader, name, commit string) *Config {
 // check-updates: false may be what failed, so no update check runs either.
 func (c *Config) ignore(err error) *Config {
 	c.problem(c.File, err)
-	c.ignored, c.CheckCtxtra = true, false
+	c.ignored, c.CheckCtxtra, c.Summary = true, false, DefaultSummaryMessage
 	return c
 }
 
@@ -189,7 +187,7 @@ func (c *Config) decode(d document) ([]*yaml.Node, *yaml.Node, error) {
 	if d.err != nil {
 		return nil, nil, d.err
 	}
-	f, err := fields(c.withoutNullSummary(d.node), "schema", "check-updates", "summary-max-items", "sources", "include", "bindings", "budget")
+	f, err := fields(c.withoutNullSummary(d.node), "schema", "check-updates", "summary-message", "sources", "include", "bindings", "budget")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -211,14 +209,8 @@ func (c *Config) decode(d document) ([]*yaml.Node, *yaml.Node, error) {
 			return nil, nil, err
 		}
 	}
-	// Only the summary depends on it: a wrong value is a problem, not a
-	// reason to leave out the bindings.
-	if v := f["summary-max-items"]; v != nil {
-		if n, err := count(v, "summary-max-items"); err != nil {
-			c.problem(c.File, fmt.Errorf("%w; the default, %d, applies", err, DefaultSummaryMaxItems))
-		} else {
-			c.SummaryMaxItems = n
-		}
+	if v := f["summary-message"]; v != nil {
+		c.decodeSummary(v)
 	}
 	own := f["bindings"]
 	if own != nil && (own.Kind != yaml.SequenceNode || len(own.Content) == 0) {
@@ -245,7 +237,7 @@ func (c *Config) decodeBudget(n *yaml.Node) error {
 	return err
 }
 
-// withoutNullSummary is n without a summary-max-items that has no value,
+// withoutNullSummary is n without a summary-message that has no value,
 // which it reports as a problem: fields would refuse the whole config.
 func (c *Config) withoutNullSummary(n *yaml.Node) *yaml.Node {
 	if n.Kind != yaml.MappingNode {
@@ -253,8 +245,8 @@ func (c *Config) withoutNullSummary(n *yaml.Node) *yaml.Node {
 	}
 	for i := 0; i+1 < len(n.Content); i += 2 {
 		k, v := n.Content[i], n.Content[i+1]
-		if k.Value == "summary-max-items" && v.Kind == yaml.ScalarNode && v.ShortTag() == "!!null" {
-			c.problem(c.File, fmt.Errorf("line %d: summary-max-items has no value; the default, %d, applies", k.Line, DefaultSummaryMaxItems))
+		if k.Value == "summary-message" && isNull(v) {
+			c.problem(c.File, fmt.Errorf("line %d: summary-message has no value; the defaults apply", k.Line))
 			out := *n
 			out.Content = slices.Delete(slices.Clone(n.Content), i, i+2)
 			return &out
@@ -263,8 +255,77 @@ func (c *Config) withoutNullSummary(n *yaml.Node) *yaml.Node {
 	return n
 }
 
-// DefaultSummaryMaxItems is summary-max-items when the config doesn't set it.
-const DefaultSummaryMaxItems = 15
+// SummaryMessage is summary-message: what the session summary lists.
+type SummaryMessage struct {
+	ShowInstructions, ShowSkills bool
+	// MaxInstructions and MaxSkills are the most entries listed for each
+	// source; 0 lists only the number of entries.
+	MaxInstructions, MaxSkills int
+}
+
+// DefaultSummaryMessage applies to each key of summary-message that the
+// config doesn't set. The limits keep a broken setup, one that adds
+// hundreds of files, from filling the screen.
+var DefaultSummaryMessage = SummaryMessage{ShowInstructions: true, ShowSkills: true, MaxInstructions: 30, MaxSkills: 30}
+
+// decodeSummary sets c.Summary. Only the summary depends on it: a wrong key
+// or value is a problem, and the default applies to that key alone; the
+// rest of the config is still used.
+func (c *Config) decodeSummary(n *yaml.Node) {
+	if n.Kind != yaml.MappingNode {
+		c.problem(c.File, fmt.Errorf("line %d: summary-message must be a map; the defaults apply", n.Line))
+		return
+	}
+	s, d, seen := &c.Summary, DefaultSummaryMessage, map[string]bool{}
+	keys := map[string]func(k, v *yaml.Node) error{
+		"show-instructions": func(k, v *yaml.Node) error {
+			return summaryKey(&s.ShowInstructions, d.ShowInstructions, k, v, seen, boolean)
+		},
+		"show-skills": func(k, v *yaml.Node) error { return summaryKey(&s.ShowSkills, d.ShowSkills, k, v, seen, boolean) },
+		"max-instructions": func(k, v *yaml.Node) error {
+			return summaryKey(&s.MaxInstructions, d.MaxInstructions, k, v, seen, count)
+		},
+		"max-skills": func(k, v *yaml.Node) error { return summaryKey(&s.MaxSkills, d.MaxSkills, k, v, seen, count) },
+	}
+	allowed := []string{"show-instructions", "show-skills", "max-instructions", "max-skills"}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		k, v := n.Content[i], n.Content[i+1]
+		var err error
+		if set := keys[k.Value]; set != nil {
+			err = set(k, v)
+		} else {
+			err = fmt.Errorf("line %d: unknown key %q in summary-message (allowed: %s); it is ignored", k.Line, k.Value, strings.Join(allowed, ", "))
+		}
+		if err != nil {
+			c.problem(c.File, err)
+		}
+	}
+}
+
+// summaryKey sets *p to the value v of the key k of summary-message, or to
+// def when v is wrong or k is there twice.
+func summaryKey[T any](p *T, def T, k, v *yaml.Node, seen map[string]bool, read func(*yaml.Node, string) (T, error)) error {
+	what := "summary-message." + k.Value
+	var err error
+	switch x, rerr := read(v, what); {
+	case seen[k.Value]:
+		err = fmt.Errorf("line %d: duplicate key %q in summary-message", k.Line, k.Value)
+	case isNull(v):
+		err = fmt.Errorf("line %d: %s has no value", k.Line, what)
+	case rerr != nil:
+		err = rerr
+	default:
+		*p = x
+	}
+	seen[k.Value] = true
+	if err != nil {
+		*p = def
+		return fmt.Errorf("%w; the default, %v, applies", err, def)
+	}
+	return nil
+}
+
+func isNull(v *yaml.Node) bool { return v.Kind == yaml.ScalarNode && v.ShortTag() == "!!null" }
 
 // count reads a whole number, 0 or more.
 func count(v *yaml.Node, what string) (int, error) {
@@ -314,7 +375,7 @@ func (c *Config) loadBindings(file string, rd Reader, in *Source) {
 // configOnly are the keys a binding file can't have: only the config chooses
 // sources, other files, the budget, update checks and the summary. A source repository's
 // binding file must not.
-var configOnly = []string{"check-updates", "summary-max-items", "sources", "include", "budget"}
+var configOnly = []string{"check-updates", "summary-message", "sources", "include", "budget"}
 
 // decodeBindingFile checks the top level of a binding file and returns its
 // bindings list.
