@@ -16,7 +16,7 @@ stdout 'devin: set up for \[SessionStart\], runs .*/ctxtra \(ok\)'
 
 runhook devin SessionStart repo
 stdout '"additionalContext":"[^"]*CTXMARK-ME","hookEventName":"SessionStart"'
-stdout '"systemMessage":"✓ ctxtra added 1 instruction\\nInstructions:\\n- me.md"'
+stdout '"systemMessage":"✓ ctxtra added 1 instruction\\nInstructions:\\n  local\\n  - ~/me.md"'
 
 # Devin runs Claude's hook too, with DEVIN_PROJECT_DIR set: it adds nothing,
 # and doctor says why.
