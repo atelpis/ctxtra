@@ -60,18 +60,21 @@ type Config struct {
 	MaxChars int       // budget.max-chars, in characters (Unicode code points); 0 means no limit
 	// CheckCtxtra is check-updates: check for new ctxtra releases.
 	CheckCtxtra bool
-	Problems    []string
-	Warnings    []string          // only from LoadSource: problems that leave the binding in use
-	Notes       []string          // hints, for doctor
-	pinned      map[string]string // paths resolved into the store, and their references
-	mappings    *state.Mappings   // of imported clones; read when needed
-	mappingsErr error
-	touched     map[string]bool // generations touched for this load
-	storeBusy   error           // a touch failed: don't wait again
-	waitLeft    time.Duration   // what touches may still wait for the store
-	waitSet     bool
-	checking    bool // loaded by LoadSource
-	ignored     bool // see Ignored
+	// SummaryMaxItems is summary-max-items: the most entries the session
+	// summary lists for each source; 0 means no limit.
+	SummaryMaxItems int
+	Problems        []string
+	Warnings        []string          // only from LoadSource: problems that leave the binding in use
+	Notes           []string          // hints, for doctor
+	pinned          map[string]string // paths resolved into the store, and their references
+	mappings        *state.Mappings   // of imported clones; read when needed
+	mappingsErr     error
+	touched         map[string]bool // generations touched for this load
+	storeBusy       error           // a touch failed: don't wait again
+	waitLeft        time.Duration   // what touches may still wait for the store
+	waitSet         bool
+	checking        bool // loaded by LoadSource
+	ignored         bool // see Ignored
 }
 
 // Reader reads the config and binding files. One Reader is shared by
@@ -111,7 +114,7 @@ func loadConfig(path string, rd Reader, name, commit string) *Config {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	c := &Config{File: path, CheckCtxtra: true}
+	c := &Config{File: path, CheckCtxtra: true, SummaryMaxItems: DefaultSummaryMaxItems}
 	c.Trust = c.policy()
 	data, err := rd.Read(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -186,7 +189,7 @@ func (c *Config) decode(d document) ([]*yaml.Node, *yaml.Node, error) {
 	if d.err != nil {
 		return nil, nil, d.err
 	}
-	f, err := fields(d.node, "schema", "check-updates", "sources", "include", "bindings", "budget")
+	f, err := fields(c.withoutNullSummary(d.node), "schema", "check-updates", "summary-max-items", "sources", "include", "bindings", "budget")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -208,6 +211,15 @@ func (c *Config) decode(d document) ([]*yaml.Node, *yaml.Node, error) {
 			return nil, nil, err
 		}
 	}
+	// Only the summary depends on it: a wrong value is a problem, not a
+	// reason to leave out the bindings.
+	if v := f["summary-max-items"]; v != nil {
+		if n, err := count(v, "summary-max-items"); err != nil {
+			c.problem(c.File, fmt.Errorf("%w; the default, %d, applies", err, DefaultSummaryMaxItems))
+		} else {
+			c.SummaryMaxItems = n
+		}
+	}
 	own := f["bindings"]
 	if own != nil && (own.Kind != yaml.SequenceNode || len(own.Content) == 0) {
 		return nil, nil, fmt.Errorf("line %d: bindings must be a non-empty list", own.Line)
@@ -227,16 +239,40 @@ func (c *Config) decodeBudget(n *yaml.Node) error {
 	if err != nil {
 		return err
 	}
-	v := f["max-chars"]
-	if v == nil {
-		return nil
+	if v := f["max-chars"]; v != nil {
+		c.MaxChars, err = count(v, "budget.max-chars")
 	}
-	m, err := strconv.Atoi(v.Value)
-	if v.ShortTag() != "!!int" || err != nil || m < 0 {
-		return fmt.Errorf("line %d: budget.max-chars must be a whole number, 0 or more", v.Line)
+	return err
+}
+
+// withoutNullSummary is n without a summary-max-items that has no value,
+// which it reports as a problem: fields would refuse the whole config.
+func (c *Config) withoutNullSummary(n *yaml.Node) *yaml.Node {
+	if n.Kind != yaml.MappingNode {
+		return n
 	}
-	c.MaxChars = m
-	return nil
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		k, v := n.Content[i], n.Content[i+1]
+		if k.Value == "summary-max-items" && v.Kind == yaml.ScalarNode && v.ShortTag() == "!!null" {
+			c.problem(c.File, fmt.Errorf("line %d: summary-max-items has no value; the default, %d, applies", k.Line, DefaultSummaryMaxItems))
+			out := *n
+			out.Content = slices.Delete(slices.Clone(n.Content), i, i+2)
+			return &out
+		}
+	}
+	return n
+}
+
+// DefaultSummaryMaxItems is summary-max-items when the config doesn't set it.
+const DefaultSummaryMaxItems = 15
+
+// count reads a whole number, 0 or more.
+func count(v *yaml.Node, what string) (int, error) {
+	n, err := strconv.Atoi(v.Value)
+	if v.ShortTag() != "!!int" || err != nil || n < 0 {
+		return 0, fmt.Errorf("line %d: %s must be a whole number, 0 or more", v.Line, what)
+	}
+	return n, nil
 }
 
 // loadBindings adds the bindings of one binding file. A broken binding is
@@ -276,9 +312,9 @@ func (c *Config) loadBindings(file string, rd Reader, in *Source) {
 }
 
 // configOnly are the keys a binding file can't have: only the config chooses
-// sources, other files, the budget and update checks. A source repository's
+// sources, other files, the budget, update checks and the summary. A source repository's
 // binding file must not.
-var configOnly = []string{"check-updates", "sources", "include", "budget"}
+var configOnly = []string{"check-updates", "summary-max-items", "sources", "include", "budget"}
 
 // decodeBindingFile checks the top level of a binding file and returns its
 // bindings list.

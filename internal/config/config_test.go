@@ -162,7 +162,7 @@ func TestStrictBindingFile(t *testing.T) {
 	// The keys of the config are refused by name, also in front of good
 	// bindings: a binding file can't choose sources, other files, the budget
 	// or update checks.
-	for _, k := range []string{"sources: {a: {trusted-path: /a}}", "include: [x.yaml]", "budget: {max-chars: 5}", "check-updates: false"} {
+	for _, k := range []string{"sources: {a: {trusted-path: /a}}", "include: [x.yaml]", "budget: {max-chars: 5}", "check-updates: false", "summary-max-items: 3"} {
 		cfg := setup(t, h, head+ok+k+"\n")
 		if len(cfg.Bindings) != 0 || len(cfg.Problems) != 1 ||
 			!strings.Contains(cfg.Problems[0], " works only in the config (~/.config/ctxtra/config.yaml); nothing from this file is used") {
@@ -243,6 +243,29 @@ sources:
 	}
 	if cfg := load(testenv.Config(t, h, "schema: ctxtra/v1\n")); cfg.Ignored() {
 		t.Error("a good config is ignored")
+	}
+}
+
+// summary-max-items defaults to 15. A wrong value is a problem, and the
+// default applies; the bindings still do.
+func TestSummaryMaxItems(t *testing.T) {
+	h := testenv.Home(t)
+	if cfg := load(filepath.Join(h, "nope.yaml")); cfg.SummaryMaxItems != DefaultSummaryMaxItems {
+		t.Errorf("no config: %d", cfg.SummaryMaxItems)
+	}
+	own := "bindings: [{name: own, match: {global: true}, instructions: [x.md]}]\n"
+	for v, want := range map[string]int{"0": 0, "3": 3} {
+		if cfg := load(testenv.Config(t, h, "schema: ctxtra/v1\n"+own+"summary-max-items: "+v+"\n")); len(cfg.Problems) > 0 || cfg.SummaryMaxItems != want {
+			t.Errorf("%s: %d, problems %v", v, cfg.SummaryMaxItems, cfg.Problems)
+		}
+	}
+	for v, msg := range map[string]string{"-1": "must be a whole number, 0 or more", "'5'": "must be a whole number, 0 or more",
+		"2.5": "must be a whole number, 0 or more", "{a: 1}": "must be a whole number, 0 or more", "": "has no value", "~": "has no value"} {
+		cfg := load(testenv.Config(t, h, "schema: ctxtra/v1\n"+own+"summary-max-items: "+v+"\n"))
+		if len(cfg.Problems) != 1 || !strings.Contains(cfg.Problems[0], "summary-max-items "+msg+"; the default, 15, applies") ||
+			cfg.Ignored() || len(cfg.Bindings) != 1 || cfg.SummaryMaxItems != DefaultSummaryMaxItems {
+			t.Errorf("%s: %d, bindings %d, problems %v", v, cfg.SummaryMaxItems, len(cfg.Bindings), cfg.Problems)
+		}
 	}
 }
 

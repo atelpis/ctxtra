@@ -51,6 +51,7 @@ budget:
   max-chars: 40000                    # optional; 0 or missing = no limit
 
 check-updates: false                  # optional; check for new ctxtra releases (default: true)
+summary-max-items: 5                  # optional; entries per source in the session summary (default: 15, 0 = all)
 ```
 
 Every key except `schema` is optional. A config with only `schema` and `bindings` is enough for your own
@@ -708,6 +709,7 @@ Problems never make ctxtra add more than the config says:
 
 - A config with a wrong `schema`, an invalid `budget`, `check-updates`, source or `include`, or broken YAML,
   is ignored as a whole.
+- An invalid `summary-max-items` is a problem, and the default applies: it changes only what the summary shows.
 - A broken binding is skipped, in the config or in a binding file. The other bindings in the same file
   still apply.
 - A binding file that can't be read as a whole is skipped as a whole: a wrong `schema`, a key other than
@@ -771,6 +773,7 @@ with its flags and examples. The commands that change the config are grouped by 
 | `include[]` | no | Binding files. Relative to the config's folder; `~` and `ctxtra://` work. |
 | `budget.max-chars` | no | Integer ≥ 0, in characters. 0 or missing: no limit. |
 | `check-updates` | no | `false` to stop checking for new ctxtra releases. Default `true`. |
+| `summary-max-items` | no | Integer ≥ 0: how many entries of each source the session summary shows. 0: all. Default 15. |
 
 **Binding file**
 
