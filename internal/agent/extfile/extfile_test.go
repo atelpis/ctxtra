@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // The file says its protocol version on its third line.

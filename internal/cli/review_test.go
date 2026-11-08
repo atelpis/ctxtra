@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/config"
 )
 
 // Match blocks are compared as data, not by how they print: a remote pattern

@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // tree is the command tree, for tests that walk it.

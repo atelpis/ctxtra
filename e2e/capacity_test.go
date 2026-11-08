@@ -9,8 +9,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/atelpis/ctxtra/e2e/driver"
-	"github.com/atelpis/ctxtra/e2e/mock"
+	"github.com/ctxtra/ctxtra/e2e/driver"
+	"github.com/ctxtra/ctxtra/e2e/mock"
 )
 
 // capacity is how many characters of rendered ASCII text, headers

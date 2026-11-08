@@ -10,14 +10,18 @@ It attaches their signed attestation bundle as `ctxtra.sigstore.json` before pub
 To verify a downloaded archive with GitHub CLI:
 
 ```bash
-gh release download vX.Y.Z --repo atelpis/ctxtra --pattern 'ctxtra_*_linux_amd64.tar.gz' --pattern ctxtra.sigstore.json
-gh attestation verify ctxtra_X.Y.Z_linux_amd64.tar.gz --repo atelpis/ctxtra \
-  --signer-workflow atelpis/ctxtra/.github/workflows/release.yml \
+gh release download vX.Y.Z --repo ctxtra/ctxtra --pattern 'ctxtra_*_linux_amd64.tar.gz' --pattern ctxtra.sigstore.json
+gh attestation verify ctxtra_X.Y.Z_linux_amd64.tar.gz --repo ctxtra/ctxtra \
+  --signer-workflow ctxtra/ctxtra/.github/workflows/release.yml \
   --source-ref refs/tags/vX.Y.Z --bundle ctxtra.sigstore.json
 ```
 
-Choose the archive for your platform. Releases before this bundle was added can use
+Choose the archive for your platform. Releases through v0.4.0 were built under `atelpis/ctxtra`.
+For those releases, download from `ctxtra/ctxtra`, but use `atelpis/ctxtra` for both `--repo` and
+`--signer-workflow` when verifying the attached bundle: a transfer doesn't change the signed identity.
+For releases without an attached bundle, try
 `gh attestation verify ARCHIVE --repo atelpis/ctxtra` to fetch their attestations from GitHub.
+Availability after the transfer must be checked; a failed lookup is not successful verification.
 
 ## Each release
 
@@ -48,3 +52,7 @@ release.yml opens the PR in `atelpis/homebrew-tap` with the `HOMEBREW_TAP_TOKEN`
 token with Contents and Pull requests write access to the tap only. Without it, the release only warns, and
 the formula's `url` and `sha256` need the same change by hand. The formula never runs `ctxtra setup`: setup
 changes the agents' configs in your home folder, so it stays a command you run.
+
+The tap stays at `atelpis/homebrew-tap` even though ctxtra's source lives at `ctxtra/ctxtra`. When changing
+the source repository, update the formula's `homepage` and `head` too: the release workflow changes only
+`url` and `sha256`. Verify the source checksum and bottles before publishing the tap update.

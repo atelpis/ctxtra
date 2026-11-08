@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/resolve"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/resolve"
 )
 
 // maxLogBytes is when the log is rotated to log.jsonl.1.

@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"slices"
 
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 // Setups is setup.json: where setup set up each agent, and every agent it

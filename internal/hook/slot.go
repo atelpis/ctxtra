@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 // Claude Code and Muse run all hooks of an event at once, and ctxtra has a

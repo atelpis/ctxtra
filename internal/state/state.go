@@ -17,8 +17,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 const maxBytes = 1 << 20

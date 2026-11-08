@@ -12,10 +12,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/jsonorder"
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/jsonorder"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 // Timeout is the hook timeout in seconds written to every entry.

@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/agent/registry"
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/agent/registry"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // bigSession binds a file of about chars characters, of numbered lines.

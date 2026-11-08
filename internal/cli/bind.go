@@ -10,10 +10,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/atelpis/ctxtra/internal/config"
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/resolve"
+	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/resolve"
 )
 
 // bindingAdd adds a binding to the config. Only a binding that works is

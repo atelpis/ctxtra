@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 // MaxConfig bounds what Check and Status read of an agent's file, so a huge

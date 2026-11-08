@@ -12,12 +12,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/config"
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/source"
-	"github.com/atelpis/ctxtra/internal/state"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/source"
+	"github.com/ctxtra/ctxtra/internal/state"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 func load(t *testing.T, path string) *config.Config {
@@ -324,6 +324,13 @@ func TestReleaseNotice(t *testing.T) {
 	t.Cleanup(func() { executable = old })
 	if got := ReleaseNotice(on, st, "v0.2.3"); got != "ctxtra update v0.3.0 is available - "+Releases+"\nrun `brew upgrade atelpis/tap/ctxtra` to update." {
 		t.Errorf("Homebrew: %q", got)
+	}
+	gobin := filepath.Join(h, "gobin", "ctxtra")
+	testenv.Write(t, gobin, "")
+	t.Setenv("GOBIN", filepath.Dir(gobin))
+	executable = func() string { return gobin }
+	if got := ReleaseNotice(on, st, "v0.2.3"); got != "ctxtra update v0.3.0 is available - https://github.com/ctxtra/ctxtra/releases\nrun `go install github.com/ctxtra/ctxtra/cmd/ctxtra@latest` to update." {
+		t.Errorf("Go: %q", got)
 	}
 	off := load(t, testenv.Config(t, h, "schema: ctxtra/v1\ncheck-updates: false\n"))
 	if got := ReleaseNotice(off, st, "v0.2.3"); got != "" {

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/atelpis/ctxtra/e2e/driver"
-	"github.com/atelpis/ctxtra/e2e/mock"
+	"github.com/ctxtra/ctxtra/e2e/driver"
+	"github.com/ctxtra/ctxtra/e2e/mock"
 )
 
 // The agent gets ctxtra's message for the user at session

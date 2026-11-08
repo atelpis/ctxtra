@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- ctxtra's source repository is now `github.com/ctxtra/ctxtra`. The Homebrew tap stays at
+  `atelpis/tap/ctxtra`.
+
+**Upgrade:** If you installed with Go, run `go install github.com/ctxtra/ctxtra/cmd/ctxtra@latest`
+once to switch to the new module path. Older binaries may still suggest the old install command.
+Homebrew users can keep using `brew upgrade atelpis/tap/ctxtra`.
+
 ## v0.4.0
 
 - The session summary groups instructions and skills by source. A file from a source is shown by its path

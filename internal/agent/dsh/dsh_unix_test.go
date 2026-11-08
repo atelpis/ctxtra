@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // A FIFO in place of the patch file is refused, not waited on.

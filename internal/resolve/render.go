@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/atelpis/ctxtra/internal/chunk"
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/chunk"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 // Render is the text given to the agent: each file with a short header, then

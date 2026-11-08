@@ -12,11 +12,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/agent/hookjson"
-	"github.com/atelpis/ctxtra/internal/chunk"
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/resolve"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/agent/hookjson"
+	"github.com/ctxtra/ctxtra/internal/chunk"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/resolve"
 )
 
 // Agent is Muse Code.

@@ -7,12 +7,12 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/atelpis/ctxtra/internal/config"
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/source"
-	"github.com/atelpis/ctxtra/internal/state"
-	"github.com/atelpis/ctxtra/internal/update"
+	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/source"
+	"github.com/ctxtra/ctxtra/internal/state"
+	"github.com/ctxtra/ctxtra/internal/update"
 )
 
 // backgroundTimeout ends a check that a session started. Each request has a

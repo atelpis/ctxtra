@@ -1,7 +1,7 @@
 # Security
 
 Report a vulnerability privately, with GitHub's
-[private vulnerability reporting](https://github.com/atelpis/ctxtra/security/advisories/new), not in an
+[private vulnerability reporting](https://github.com/ctxtra/ctxtra/security/advisories/new), not in an
 issue. ctxtra is maintained by one person: I aim to answer within a week, and to fix confirmed problems
 in the next release.
 

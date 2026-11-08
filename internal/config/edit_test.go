@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 const commitA = "9f8e7d6c5b4a39281706f5e4d3c2b1a098765432"

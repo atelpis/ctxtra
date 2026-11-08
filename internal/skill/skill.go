@@ -11,9 +11,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/atelpis/ctxtra"
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 // Base is the ctxtra skill, which lets agents set up and change ctxtra.

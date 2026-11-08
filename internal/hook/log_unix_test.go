@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // A FIFO as the log must not block the hook: the agent waits for its answer.

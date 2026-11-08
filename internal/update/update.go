@@ -24,10 +24,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/config"
-	"github.com/atelpis/ctxtra/internal/source"
-	"github.com/atelpis/ctxtra/internal/state"
-	"github.com/atelpis/ctxtra/internal/term"
+	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/source"
+	"github.com/ctxtra/ctxtra/internal/state"
+	"github.com/ctxtra/ctxtra/internal/term"
 )
 
 const (
@@ -37,15 +37,15 @@ const (
 	// EnvOff set to anything but "" stops the checks that sessions start.
 	EnvOff = "CTXTRA_NO_UPDATE_CHECK"
 	// Releases is where users download ctxtra.
-	Releases = "https://github.com/atelpis/ctxtra/releases"
+	Releases = "https://github.com/ctxtra/ctxtra/releases"
 
 	brewUpgrade = "brew upgrade atelpis/tap/ctxtra"
-	goInstall   = "go install github.com/atelpis/ctxtra/cmd/ctxtra@latest"
+	goInstall   = "go install github.com/ctxtra/ctxtra/cmd/ctxtra@latest"
 )
 
 // Variables for tests.
 var (
-	releaseURL     = "https://api.github.com/repos/atelpis/ctxtra/releases/latest"
+	releaseURL     = "https://api.github.com/repos/ctxtra/ctxtra/releases/latest"
 	releaseTimeout = 10 * time.Second
 	sourceTimeout  = 30 * time.Second
 	claimWait      = 200 * time.Millisecond

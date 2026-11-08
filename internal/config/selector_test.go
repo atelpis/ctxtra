@@ -6,8 +6,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/gitrepo"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/gitrepo"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 func TestSelectorMatch(t *testing.T) {

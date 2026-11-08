@@ -1,4 +1,4 @@
-module github.com/atelpis/ctxtra
+module github.com/ctxtra/ctxtra
 
 go 1.27.3
 

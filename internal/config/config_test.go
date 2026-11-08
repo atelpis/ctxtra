@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/source"
-	"github.com/atelpis/ctxtra/internal/state"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/source"
+	"github.com/ctxtra/ctxtra/internal/state"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 func load(path string) *Config {

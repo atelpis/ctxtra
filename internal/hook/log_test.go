@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 func writeLog(t *testing.T, path string, lines ...any) {

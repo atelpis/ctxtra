@@ -27,9 +27,9 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v3"
 
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/state"
-	"github.com/atelpis/ctxtra/internal/trust"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/state"
+	"github.com/ctxtra/ctxtra/internal/trust"
 )
 
 const (

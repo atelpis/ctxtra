@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/source"
-	"github.com/atelpis/ctxtra/internal/state"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/source"
+	"github.com/ctxtra/ctxtra/internal/state"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 func TestExclusions(t *testing.T) {

@@ -14,10 +14,10 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/atelpis/ctxtra/internal/hook"
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/source"
-	"github.com/atelpis/ctxtra/internal/term"
+	"github.com/ctxtra/ctxtra/internal/hook"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/source"
+	"github.com/ctxtra/ctxtra/internal/term"
 )
 
 // IO is where commands read and write.

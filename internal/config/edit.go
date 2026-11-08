@@ -12,8 +12,8 @@ import (
 
 	"go.yaml.in/yaml/v3"
 
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 // The commands that change the config (add, sync) edit it as text where

@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/setup"
-	"github.com/atelpis/ctxtra/internal/skill"
-	"github.com/atelpis/ctxtra/internal/term"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/setup"
+	"github.com/ctxtra/ctxtra/internal/skill"
+	"github.com/ctxtra/ctxtra/internal/term"
 )
 
 func onboard(stdio IO, agents []string, prompts bool) int {

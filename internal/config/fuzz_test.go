@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 func FuzzConfig(f *testing.F) {

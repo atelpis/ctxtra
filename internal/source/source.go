@@ -33,10 +33,10 @@ import (
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/gitrepo"
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/term"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/gitrepo"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/term"
 )
 
 // Limits for one commit. Over any of them, the whole commit is refused.

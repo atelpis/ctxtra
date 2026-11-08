@@ -3,8 +3,8 @@ package e2e
 import (
 	"testing"
 
-	"github.com/atelpis/ctxtra/e2e/driver"
-	"github.com/atelpis/ctxtra/e2e/mock"
+	"github.com/ctxtra/ctxtra/e2e/driver"
+	"github.com/ctxtra/ctxtra/e2e/mock"
 )
 
 // A subagent gets the bound files too, and the main agent still has them

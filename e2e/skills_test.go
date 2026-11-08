@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/atelpis/ctxtra/e2e/driver"
-	"github.com/atelpis/ctxtra/e2e/mock"
+	"github.com/ctxtra/ctxtra/e2e/driver"
+	"github.com/ctxtra/ctxtra/e2e/mock"
 )
 
 // The model sees each bound skill's name and description, not its body;

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/e2e/driver"
-	"github.com/atelpis/ctxtra/e2e/mock"
+	"github.com/ctxtra/ctxtra/e2e/driver"
+	"github.com/ctxtra/ctxtra/e2e/mock"
 )
 
 // Codex's interactive TUI, driven through tmux: the user trusts ctxtra's

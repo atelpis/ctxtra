@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 // timeout is the time all git calls for one session may take together. It is

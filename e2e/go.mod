@@ -1,3 +1,3 @@
-module github.com/atelpis/ctxtra/e2e
+module github.com/ctxtra/ctxtra/e2e
 
 go 1.27.3

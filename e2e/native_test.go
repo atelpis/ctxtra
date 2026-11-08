@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/e2e/driver"
-	"github.com/atelpis/ctxtra/e2e/mock"
+	"github.com/ctxtra/ctxtra/e2e/driver"
+	"github.com/ctxtra/ctxtra/e2e/mock"
 )
 
 // nativeCandidates are user-level files, relative to the home folder, that

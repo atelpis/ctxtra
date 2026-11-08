@@ -11,10 +11,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/atelpis/ctxtra/internal/config"
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/resolve"
-	"github.com/atelpis/ctxtra/internal/source"
+	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/resolve"
+	"github.com/ctxtra/ctxtra/internal/source"
 )
 
 // checkResult is the data of source check --json.

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 func TestState(t *testing.T) {

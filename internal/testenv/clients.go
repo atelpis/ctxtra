@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/chunk"
+	"github.com/ctxtra/ctxtra/internal/chunk"
 	"go.yaml.in/yaml/v3"
 )
 

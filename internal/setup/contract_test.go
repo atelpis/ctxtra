@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/agent/registry"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/agent/registry"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 var update = flag.Bool("update", false, "rewrite testdata/contract with what setup writes")

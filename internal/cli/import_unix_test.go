@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/agent/claude"
-	"github.com/atelpis/ctxtra/internal/setup"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/agent/claude"
+	"github.com/ctxtra/ctxtra/internal/setup"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // A FIFO among the rules doesn't block the search for an agent's own
