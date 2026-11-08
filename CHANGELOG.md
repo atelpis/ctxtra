@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.1
+
 - ctxtra's source repository is now `github.com/ctxtra/ctxtra`. The Homebrew tap stays at
   `atelpis/tap/ctxtra`.
 
