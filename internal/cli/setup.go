@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/setup"
-	"github.com/atelpis/ctxtra/internal/skill"
-	"github.com/atelpis/ctxtra/internal/state"
-	"github.com/atelpis/ctxtra/internal/term"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/setup"
+	"github.com/ctxtra/ctxtra/internal/skill"
+	"github.com/ctxtra/ctxtra/internal/state"
+	"github.com/ctxtra/ctxtra/internal/term"
 )
 
 // binary finds the binary the hooks run; a variable so tests can replace it.

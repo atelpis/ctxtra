@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/setup"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/setup"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 func run(args ...string) (code int, out, errOut string) {

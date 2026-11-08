@@ -175,7 +175,7 @@ def social():
             f'<circle cx="2" cy="2" r="1" fill="{c["GRID"]}"/></pattern></defs>'
             f'<rect width="{w}" height="{h}" fill="url(#grid)"/>'
             + hero_body(c, w, h, top=96, animate=False, paths=False)
-            + f'<text x="64" y="{h-48}" font-family="{MONO}" font-size="20" fill="{c["MUTED"]}">github.com/atelpis/ctxtra</text>')
+            + f'<text x="64" y="{h-48}" font-family="{MONO}" font-size="20" fill="{c["MUTED"]}">github.com/ctxtra/ctxtra</text>')
     write("social-preview.svg", body, w, h, "ctxtra")
 
 

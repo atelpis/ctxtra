@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 func TestSetup(t *testing.T) {

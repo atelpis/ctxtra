@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // message is an agent whose hook answer shows the user a message.

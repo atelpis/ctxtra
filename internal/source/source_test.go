@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // team creates a repository served by a test git server and returns its

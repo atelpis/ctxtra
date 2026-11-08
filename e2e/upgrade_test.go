@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/e2e/driver"
-	"github.com/atelpis/ctxtra/e2e/fixture"
-	"github.com/atelpis/ctxtra/e2e/mock"
+	"github.com/ctxtra/ctxtra/e2e/driver"
+	"github.com/ctxtra/ctxtra/e2e/fixture"
+	"github.com/ctxtra/ctxtra/e2e/mock"
 )
 
 // clients is testdata/clients at the repository root: what each release

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/config"
-	"github.com/atelpis/ctxtra/internal/state"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/state"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // context files shows the release notice that sessions show, on one line.
@@ -23,7 +23,7 @@ func TestReportReleaseNotice(t *testing.T) {
 	if code := r.files(h, false); code != 0 {
 		t.Errorf("exit %d", code)
 	}
-	if got := errOut.String(); !strings.Contains(got, "notice: ctxtra update v9.9.9 is available - https://github.com/atelpis/ctxtra/releases\n") {
+	if got := errOut.String(); !strings.Contains(got, "notice: ctxtra update v9.9.9 is available - https://github.com/ctxtra/ctxtra/releases\n") {
 		t.Errorf("stderr %q", got)
 	}
 }

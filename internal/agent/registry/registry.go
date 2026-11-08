@@ -2,18 +2,18 @@
 package registry
 
 import (
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/agent/antigravity"
-	"github.com/atelpis/ctxtra/internal/agent/claude"
-	"github.com/atelpis/ctxtra/internal/agent/codex"
-	"github.com/atelpis/ctxtra/internal/agent/copilot"
-	"github.com/atelpis/ctxtra/internal/agent/cursor"
-	"github.com/atelpis/ctxtra/internal/agent/devin"
-	"github.com/atelpis/ctxtra/internal/agent/dsh"
-	"github.com/atelpis/ctxtra/internal/agent/hermes"
-	"github.com/atelpis/ctxtra/internal/agent/muse"
-	"github.com/atelpis/ctxtra/internal/agent/opencode"
-	"github.com/atelpis/ctxtra/internal/agent/pi"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/agent/antigravity"
+	"github.com/ctxtra/ctxtra/internal/agent/claude"
+	"github.com/ctxtra/ctxtra/internal/agent/codex"
+	"github.com/ctxtra/ctxtra/internal/agent/copilot"
+	"github.com/ctxtra/ctxtra/internal/agent/cursor"
+	"github.com/ctxtra/ctxtra/internal/agent/devin"
+	"github.com/ctxtra/ctxtra/internal/agent/dsh"
+	"github.com/ctxtra/ctxtra/internal/agent/hermes"
+	"github.com/ctxtra/ctxtra/internal/agent/muse"
+	"github.com/ctxtra/ctxtra/internal/agent/opencode"
+	"github.com/ctxtra/ctxtra/internal/agent/pi"
 )
 
 var all = []agent.Agent{claude.Agent{}, codex.Agent{}, pi.Agent{}, opencode.Agent{}, muse.Agent{}, hermes.Agent{}, dsh.Agent{}, cursor.Agent{},

@@ -266,7 +266,7 @@ steps:
   - uses: actions/setup-go@v5
     with:
       go-version: stable
-  - run: go install github.com/atelpis/ctxtra/cmd/ctxtra@latest   # or a fixed version
+  - run: go install github.com/ctxtra/ctxtra/cmd/ctxtra@latest   # or a fixed version
   - run: ctxtra source check . --name team-ctx                     # the name users give the source
 ```
 
@@ -438,7 +438,7 @@ The notices go only to you, never to the model, in the agents that show a messag
 [Notices](#notices)):
 
 ```text
-ℹ ctxtra update v0.3.0 is available - https://github.com/atelpis/ctxtra/releases
+ℹ ctxtra update v0.3.0 is available - https://github.com/ctxtra/ctxtra/releases
   run `brew upgrade atelpis/tap/ctxtra` to update.
 ℹ team-ctx has new commits on main
   run `ctxtra source update team-ctx` to review them.

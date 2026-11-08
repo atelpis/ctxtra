@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/setup"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/setup"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // fakeAgents replaces what import runs: the agents whose CLIs are in

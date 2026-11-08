@@ -168,7 +168,7 @@ brew install atelpis/tap/ctxtra
 Or with Go 1.27.3+ (installs into `~/go/bin`):
 
 ```bash
-go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
+go install github.com/ctxtra/ctxtra/cmd/ctxtra@latest
 ```
 
 Then run:
@@ -197,3 +197,5 @@ remote instead, use `--repo github.com/you/my-repo`.
 
 ctxtra is in preview, and the config format may still change. It runs on macOS and Linux. Changes are in
 the [changelog](CHANGELOG.md); to contribute, see [CONTRIBUTING.md](CONTRIBUTING.md). MIT license.
+
+Created and maintained by [Alex Telpis](https://github.com/atelpis).

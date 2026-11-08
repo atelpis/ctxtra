@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 // commandTemplate is the hook command: the binary path, the agent, the

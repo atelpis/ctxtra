@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // setup.json holds absolute config paths, once each, and the agents setup

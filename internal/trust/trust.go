@@ -23,9 +23,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/gitrepo"
-	"github.com/atelpis/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/gitrepo"
+	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
 // maxLinks is how many symlinks one path may pass, as in Linux.

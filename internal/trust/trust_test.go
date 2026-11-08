@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 func symlink(t *testing.T, target, link string) {

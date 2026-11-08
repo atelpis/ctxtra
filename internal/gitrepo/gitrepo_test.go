@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 func TestNormalizeRemote(t *testing.T) {

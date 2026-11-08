@@ -4,7 +4,7 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/atelpis/ctxtra/internal/cli"
+	"github.com/ctxtra/ctxtra/internal/cli"
 )
 
 // version can be set at build time with -ldflags "-X main.version=...".

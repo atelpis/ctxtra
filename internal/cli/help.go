@@ -11,12 +11,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/atelpis/ctxtra"
-	"github.com/atelpis/ctxtra/internal/config"
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/skill"
-	"github.com/atelpis/ctxtra/internal/term"
+	"github.com/ctxtra/ctxtra"
+	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/skill"
+	"github.com/ctxtra/ctxtra/internal/term"
 )
 
 // topic is a docs page that ctxtra help shows: a file, or one section of it.

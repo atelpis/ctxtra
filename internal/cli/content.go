@@ -10,10 +10,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/atelpis/ctxtra/internal/config"
-	"github.com/atelpis/ctxtra/internal/fsutil"
-	"github.com/atelpis/ctxtra/internal/risk"
-	"github.com/atelpis/ctxtra/internal/source"
+	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/risk"
+	"github.com/ctxtra/ctxtra/internal/source"
 )
 
 // Content warnings point out text that is easy to miss in a review (package

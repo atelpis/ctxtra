@@ -88,7 +88,7 @@ and Antigravity, and OpenCode, Hermes and DSH plugins, can't show a message.
 ## Install
 
 ```bash
-brew install atelpis/tap/ctxtra   # or: go install github.com/atelpis/ctxtra/cmd/ctxtra@latest
+brew install atelpis/tap/ctxtra   # or: go install github.com/ctxtra/ctxtra/cmd/ctxtra@latest
 ctxtra setup --dry-run            # show what would change
 ctxtra setup                      # every agent found on this machine, or --agent claude --agent codex
 ```

@@ -19,9 +19,9 @@ import (
 
 	"github.com/rogpeppe/go-internal/testscript"
 
-	"github.com/atelpis/ctxtra/internal/cli"
-	"github.com/atelpis/ctxtra/internal/jsonorder"
-	"github.com/atelpis/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/cli"
+	"github.com/ctxtra/ctxtra/internal/jsonorder"
+	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
 // ctxtra-tty is ctxtra as if stdin and stdout were a terminal, for the

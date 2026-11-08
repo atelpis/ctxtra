@@ -7,7 +7,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/atelpis/ctxtra/internal/jsonorder"
+	"github.com/ctxtra/ctxtra/internal/jsonorder"
 )
 
 // file is a block like resolve renders it, with n numbered lines of text.

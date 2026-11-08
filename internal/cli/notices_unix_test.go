@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/atelpis/ctxtra/internal/setup"
-	"github.com/atelpis/ctxtra/internal/state"
+	"github.com/ctxtra/ctxtra/internal/setup"
+	"github.com/ctxtra/ctxtra/internal/state"
 )
 
 // A FIFO in place of a config file, or of setup.json, doesn't block the

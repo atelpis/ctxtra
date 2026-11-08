@@ -11,12 +11,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/atelpis/ctxtra/internal/agent"
-	"github.com/atelpis/ctxtra/internal/agent/registry"
-	"github.com/atelpis/ctxtra/internal/paths"
-	"github.com/atelpis/ctxtra/internal/state"
-	"github.com/atelpis/ctxtra/internal/testenv"
-	"github.com/atelpis/ctxtra/internal/update"
+	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/agent/registry"
+	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/state"
+	"github.com/ctxtra/ctxtra/internal/testenv"
+	"github.com/ctxtra/ctxtra/internal/update"
 )
 
 func TestOutputPerAgent(t *testing.T) {
@@ -321,7 +321,7 @@ func TestReleaseNotice(t *testing.T) {
 		return m
 	}
 	m := run("v0.2.3")
-	if msg, _ := m["systemMessage"].(string); !strings.Contains(msg, "\n\nℹ ctxtra update v9.9.9 is available - https://github.com/atelpis/ctxtra/releases") {
+	if msg, _ := m["systemMessage"].(string); !strings.Contains(msg, "\n\nℹ ctxtra update v9.9.9 is available - https://github.com/ctxtra/ctxtra/releases") {
 		t.Errorf("summary %q", msg)
 	}
 	if ctx := m["hookSpecificOutput"].(map[string]any)["additionalContext"].(string); strings.Contains(ctx, "v9.9.9") {
