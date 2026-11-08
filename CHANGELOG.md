@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.4.0
+
 - The session summary groups instructions and skills by source. A file from a source is shown by its path
   in the source, such as `global/style.md`; a file in no source is in the `local` group, by its full path.
   The skills that `ctxtra skill install` adds are in the `ctxtra` group.
