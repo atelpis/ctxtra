@@ -33,7 +33,8 @@ Security problems go to [SECURITY.md](SECURITY.md), not to issues.
 
 The CodeQL workflow scans Go, JavaScript/TypeScript and GitHub Actions on PRs (including Dependabot),
 pushes to `main` and a weekly schedule. It uses advanced setup; keep GitHub's default setup disabled so
-it accepts the workflow's results. The dependency-audit workflow checks the
+it accepts the workflow's results. Dependabot groups CodeQL actions into one PR because its workflow
+steps must use the same version. The dependency-audit workflow checks the
 e2e agents' npm lockfile on PRs, pushes to `main` and a weekly schedule. The lint job runs `govulncheck`
 for both Go modules.
 
