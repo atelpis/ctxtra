@@ -251,11 +251,12 @@ func serverTools(s upstream.Server, dir string, stderr bool) ([]names.Name, erro
 		return nil, err
 	}
 	defer up.Close()
+	list, err := proxy.ListTools(ctx, up.Session)
+	if err != nil {
+		return nil, err
+	}
 	var tools []names.Tool
-	for t, err := range up.Session.Tools(ctx, nil) {
-		if err != nil {
-			return nil, err
-		}
+	for _, t := range list {
 		tools = append(tools, names.Tool{Server: s.Name, Name: t.Name})
 	}
 	named, _ := names.Assign(tools)

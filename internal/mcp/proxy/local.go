@@ -222,7 +222,7 @@ func errorKind(err error) string {
 		return "cancelled"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"
-	case errors.Is(err, ErrSecrets), errors.Is(err, ErrRemote):
+	case errors.Is(err, ErrSecrets), errors.Is(err, ErrRemote), errors.Is(err, ErrTooManyTools):
 		return err.Error()
 	case errors.Is(err, exec.ErrNotFound), errors.Is(err, os.ErrNotExist):
 		return "program not found"

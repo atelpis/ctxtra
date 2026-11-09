@@ -27,6 +27,9 @@ const MaxServerName = 20
 
 // MCPServer returns the valid server called name.
 func (c *Config) MCPServer(name string) (upstream.Server, bool) {
+	if c.mcpBroken[name] {
+		return upstream.Server{}, false
+	}
 	i := slices.IndexFunc(c.MCPServers, func(s upstream.Server) bool { return s.Name == name })
 	if i < 0 {
 		return upstream.Server{}, false
@@ -79,7 +82,9 @@ func (c *Config) decodeMCPServers(n *yaml.Node) {
 		name := k.Value
 		err := CheckServerName(name)
 		if err == nil && seen[name] {
+			// Neither declaration is used: which one is meant isn't clear.
 			err = fmt.Errorf("server %q is there twice", name)
+			c.MCPServers = slices.DeleteFunc(c.MCPServers, func(s upstream.Server) bool { return s.Name == name })
 		}
 		seen[name] = true
 		var s upstream.Server

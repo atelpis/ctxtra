@@ -242,3 +242,14 @@ func TestSourceCheckServerNames(t *testing.T) {
 		t.Errorf("bindings %+v", cfg.Bindings)
 	}
 }
+
+// A name declared twice: neither declaration is used.
+func TestDuplicateServer(t *testing.T) {
+	mcpOnForTest(t)
+	h := testenv.Home(t)
+	cfg := load(testenv.Config(t, h, "schema: ctxtra/v1\nmcp-servers:\n  a: {command: [first]}\n  b: {command: [b]}\n  a: {command: [second]}\n"))
+	if _, ok := cfg.MCPServer("a"); ok || !slices.Equal(serverNames(cfg), []string{"b"}) {
+		t.Errorf("%v", cfg.MCPServers)
+	}
+	problemsWith(t, cfg, `server "a" is there twice`)
+}

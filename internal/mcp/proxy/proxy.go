@@ -349,15 +349,45 @@ func (p *proxy) connect(ctx context.Context, s upstream.Server) (*Upstream, []*m
 	return up, tools, nil
 }
 
+// Limits of a server's tool list: a server that pages without end, or
+// lists far more tools than any agent can use, mustn't exhaust the proxy,
+// which serves the session's other servers too.
+const (
+	maxToolPages = 100
+	maxTools     = 2000
+)
+
+// ErrTooManyTools is the error of a tool list over the limits.
+var ErrTooManyTools = errors.New("the server lists too many tools, or pages without end")
+
 func listTools(ctx context.Context, cs *mcp.ClientSession) ([]*mcp.Tool, error) {
+	return ListTools(ctx, cs)
+}
+
+// ListTools is every tool of the server, page by page, within the limits.
+func ListTools(ctx context.Context, cs *mcp.ClientSession) ([]*mcp.Tool, error) {
 	var out []*mcp.Tool
-	for t, err := range cs.Tools(ctx, nil) {
+	seen := map[string]bool{}
+	cursor := ""
+	for range maxToolPages {
+		res, err := cs.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, t)
+		out = append(out, res.Tools...)
+		if len(out) > maxTools {
+			return nil, ErrTooManyTools
+		}
+		if res.NextCursor == "" {
+			return out, nil
+		}
+		if seen[res.NextCursor] {
+			return nil, ErrTooManyTools
+		}
+		seen[res.NextCursor] = true
+		cursor = res.NextCursor
 	}
-	return out, nil
+	return nil, ErrTooManyTools
 }
 
 // add records up, to stop it with the session; false when the session

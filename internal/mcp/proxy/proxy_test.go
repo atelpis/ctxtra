@@ -785,3 +785,38 @@ func TestTokenKey(t *testing.T) {
 		}
 	}
 }
+
+// A server that pages without end, or lists too many tools, is left out
+// instead of filling the proxy's memory.
+func TestToolListLimits(t *testing.T) {
+	for name, page := range map[string]func(n int) *mcp.ListToolsResult{
+		"repeated cursor": func(int) *mcp.ListToolsResult {
+			return &mcp.ListToolsResult{Tools: []*mcp.Tool{{Name: "t", InputSchema: map[string]any{"type": "object"}}}, NextCursor: "same"}
+		},
+		"endless pages": func(n int) *mcp.ListToolsResult {
+			return &mcp.ListToolsResult{Tools: []*mcp.Tool{{Name: "t", InputSchema: map[string]any{"type": "object"}}}, NextCursor: strconv.Itoa(n)}
+		},
+	} {
+		srv := mcp.NewServer(&mcp.Implementation{Name: "s"}, nil)
+		srv.AddTool(&mcp.Tool{Name: "t", InputSchema: map[string]any{"type": "object"}}, nil)
+		var n atomic.Int32
+		srv.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+			return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+				if method == "tools/list" {
+					return page(int(n.Add(1))), nil
+				}
+				return next(ctx, method, req)
+			}
+		})
+		ct, st := mcp.NewInMemoryTransports()
+		go func() { _ = srv.Run(context.Background(), st) }()
+		cs, err := mcp.NewClient(&mcp.Implementation{Name: "c"}, nil).Connect(context.Background(), ct, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := ListTools(context.Background(), cs); !errors.Is(err, ErrTooManyTools) || n.Load() > maxToolPages {
+			t.Errorf("%s: %v after %d pages", name, err, n.Load())
+		}
+		_ = cs.Close()
+	}
+}
