@@ -868,3 +868,64 @@ func TestToolListBytes(t *testing.T) {
 		t.Errorf("%v after %d pages", err, n.Load())
 	}
 }
+
+// Many list changes while a list is slow cost a few lists, not one each.
+func TestListChangesCoalesce(t *testing.T) {
+	up := mcp.NewServer(&mcp.Implementation{Name: "s"}, nil)
+	obj := map[string]any{"type": "object"}
+	noop := func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) { return &mcp.CallToolResult{}, nil }
+	up.AddTool(&mcp.Tool{Name: "t0", InputSchema: obj}, noop)
+	var lists atomic.Int32
+	up.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method == "tools/list" && lists.Add(1) > 1 {
+				time.Sleep(300 * time.Millisecond)
+			}
+			return next(ctx, method, req)
+		}
+	})
+	connect := func(ctx context.Context, s upstream.Server, _ string, c *mcp.Client) (*Upstream, error) {
+		ct, st := mcp.NewInMemoryTransports()
+		go func() { _ = up.Run(context.Background(), st) }()
+		cs, err := c.Connect(ctx, ct, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &Upstream{Server: s, Session: cs}, nil
+	}
+	ct, st := mcp.NewInMemoryTransports()
+	o := Options{Agent: "test", Dir: t.TempDir(), Deadline: 5 * time.Second, Connect: connect,
+		Servers: func(string) ([]upstream.Server, []string) { return []upstream.Server{{ID: "s", Name: "s", Command: []string{"x"}}}, nil }}
+	done := make(chan error, 1)
+	go func() { done <- Run(context.Background(), o, st) }()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, nil).Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cs.ListTools(context.Background(), nil); err != nil {
+		t.Fatal(err)
+	}
+	for i := 1; i <= 40; i++ {
+		up.AddTool(&mcp.Tool{Name: "t" + strconv.Itoa(i), InputSchema: obj}, noop)
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(time.Second)
+	if n := lists.Load(); n > 8 {
+		t.Errorf("%d lists for 40 changes", n)
+	}
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil || len(res.Tools) != 41 {
+		t.Errorf("%v: %d tools", err, len(res.Tools))
+	}
+	_ = cs.Close()
+	<-done
+}
+
+// A server that ends before the first list is answered isn't in it.
+func TestServerEndsBeforeFirstList(t *testing.T) {
+	s := start(t, t.TempDir(), 5*time.Second, testServer(t, "a", "-exit-after", "200ms"), testServer(t, "b", "-delay", "1500ms"))
+	got := toolNames(s.tools(t))
+	if slices.ContainsFunc(got, func(n string) bool { return strings.HasPrefix(n, "a__") }) || !slices.Contains(got, "b__echo") {
+		t.Errorf("tools %v", got)
+	}
+}

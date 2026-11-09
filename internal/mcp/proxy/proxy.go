@@ -15,7 +15,6 @@ import (
 	"io"
 	"slices"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -157,6 +156,7 @@ type proxy struct {
 	progress  map[string]*progressQueue // running calls, by their progress tokens
 	latest    map[string][]*mcp.Tool    // each server's last tool list before the first list was answered
 	stopping  bool                      // no more upstreams are added
+	ended     map[*Upstream]bool        // servers that ended during the session
 }
 
 // route is where a shown tool goes.
@@ -300,27 +300,17 @@ func (p *proxy) isOpen() bool {
 
 // connect starts a session with s and lists its tools.
 func (p *proxy) connect(ctx context.Context, s upstream.Server) (*Upstream, []*mcp.Tool, error) {
-	var cur atomic.Pointer[Upstream] // set once connected
+	// A list change only marks the list as changed: one worker lists the
+	// tools again, so a server that sends many changes, or doesn't answer
+	// the list, costs one pending list at most.
+	changed := make(chan struct{}, 1)
 	client := mcp.NewClient(&mcp.Implementation{Name: "ctxtra", Version: p.o.Version}, &mcp.ClientOptions{
 		// No roots: a server learns nothing about the session's folders.
 		Capabilities: &mcp.ClientCapabilities{},
-		ToolListChangedHandler: func(ctx context.Context, _ *mcp.ToolListChangedRequest) {
-			up := cur.Load()
-			if up == nil {
-				return
-			}
-			tools, err := listTools(ctx, up.Session)
-			if err != nil {
-				p.o.Log(Record{Event: "list", Server: s.Name, Error: errorKind(err)})
-				return
-			}
-			// Kept for when the server's tools are shown, or shown now
-			// when they are: one lock, so no list falls in between.
-			p.mu.Lock()
-			defer p.mu.Unlock()
-			p.latest[s.Name] = tools
-			if _, shown := p.listed[s.Name]; shown {
-				p.setToolsLocked(up, tools)
+		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
+			select {
+			case changed <- struct{}{}:
+			default:
 			}
 		},
 		ProgressNotificationHandler: func(ctx context.Context, req *mcp.ProgressNotificationClientRequest) {
@@ -340,7 +330,7 @@ func (p *proxy) connect(ctx context.Context, s upstream.Server) (*Upstream, []*m
 	if err != nil {
 		return nil, nil, err
 	}
-	cur.Store(up)
+	p.wg.Go(func() { p.relist(ctx, up, changed) })
 	tools, err := listTools(ctx, up.Session)
 	if err != nil {
 		up.Close()
@@ -450,6 +440,9 @@ func (p *proxy) setTools(up *Upstream, tools []*mcp.Tool) {
 func (p *proxy) setToolsLocked(up *Upstream, tools []*mcp.Tool) {
 	if !slices.Contains(p.upstreams, up) {
 		return
+	}
+	if p.ended[up] {
+		tools = nil
 	}
 	if p.listed == nil {
 		p.listed = map[string][]*mcp.Tool{}
@@ -606,6 +599,10 @@ func (p *proxy) watchExit(up *Upstream) {
 	p.o.Log(Record{Event: "server ended", Server: up.Server.Name, Error: st})
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.ended == nil {
+		p.ended = map[*Upstream]bool{}
+	}
+	p.ended[up] = true
 	delete(p.latest, up.Server.Name)
 	if _, shown := p.listed[up.Server.Name]; shown {
 		p.setToolsLocked(up, nil)
@@ -664,5 +661,35 @@ func (q *progressQueue) close() {
 	if !q.closed {
 		q.closed = true
 		close(q.ch)
+	}
+}
+
+// listTimeout bounds a list of a server's tools after a change.
+const listTimeout = 10 * time.Second
+
+// relist lists up's tools again after each change, until the session
+// ends. Changes that come while it lists are one more list.
+func (p *proxy) relist(ctx context.Context, up *Upstream, changed <-chan struct{}) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changed:
+		}
+		lctx, cancel := context.WithTimeout(ctx, listTimeout)
+		tools, err := listTools(lctx, up.Session)
+		cancel()
+		if err != nil {
+			p.o.Log(Record{Event: "list", Server: up.Server.Name, Error: errorKind(err)})
+			continue
+		}
+		// Kept for when the server's tools are shown, or shown now when
+		// they are: one lock, so no list falls in between.
+		p.mu.Lock()
+		p.latest[up.Server.Name] = tools
+		if _, shown := p.listed[up.Server.Name]; shown {
+			p.setToolsLocked(up, tools)
+		}
+		p.mu.Unlock()
 	}
 }
