@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
@@ -47,7 +46,7 @@ func (u *Upstream) Close() {
 			return
 		}
 		pgid := u.cmd.Process.Pid
-		_ = syscall.Kill(-pgid, syscall.SIGTERM)
+		signalGroup(pgid, false)
 		done := make(chan struct{})
 		go func() {
 			// Closes the server's stdin and waits for it to exit.
@@ -58,16 +57,16 @@ func (u *Upstream) Close() {
 		select {
 		case <-done:
 		case <-grace:
-			_ = syscall.Kill(-pgid, syscall.SIGKILL)
+			signalGroup(pgid, true)
 			<-done
 			return
 		}
 		// The server exited; processes it started may still run in its
 		// group.
-		for syscall.Kill(-pgid, 0) == nil {
+		for groupAlive(pgid) {
 			select {
 			case <-grace:
-				_ = syscall.Kill(-pgid, syscall.SIGKILL)
+				signalGroup(pgid, true)
 				return
 			case <-time.After(50 * time.Millisecond):
 			}
@@ -106,7 +105,7 @@ func DialStderr(ctx context.Context, s upstream.Server, dir string, c *mcp.Clien
 	t.release()
 	if err != nil {
 		if cmd.Process != nil {
-			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			signalGroup(cmd.Process.Pid, true)
 		}
 		return nil, err
 	}
@@ -131,8 +130,8 @@ func (t *startWatch) Connect(ctx context.Context) (mcp.Connection, error) {
 	pgid := t.Command.Process.Pid
 	t.mu.Lock()
 	t.stop = context.AfterFunc(t.ctx, func() {
-		_ = syscall.Kill(-pgid, syscall.SIGTERM)
-		time.AfterFunc(stopGrace, func() { _ = syscall.Kill(-pgid, syscall.SIGKILL) })
+		signalGroup(pgid, false)
+		time.AfterFunc(stopGrace, func() { signalGroup(pgid, true) })
 	})
 	t.mu.Unlock()
 	return conn, nil
@@ -181,7 +180,7 @@ func Command(s upstream.Server, dir string, lookup func(string) (string, bool), 
 	}
 	slices.Sort(cmd.Env)
 	cmd.Stderr = io.Discard
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	setGroup(cmd)
 	return cmd
 }
 

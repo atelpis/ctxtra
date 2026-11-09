@@ -74,6 +74,8 @@ type Client struct {
 		Value int
 		Unit  string
 	}
+	// MCP: the fixture is ctxtra's MCP entry, which has no hooks.
+	MCP bool
 }
 
 // Clients are the client fixtures in root, testdata/clients at the
