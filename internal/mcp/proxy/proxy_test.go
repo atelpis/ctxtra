@@ -873,7 +873,9 @@ func TestToolListBytes(t *testing.T) {
 func TestListChangesCoalesce(t *testing.T) {
 	up := mcp.NewServer(&mcp.Implementation{Name: "s"}, nil)
 	obj := map[string]any{"type": "object"}
-	noop := func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) { return &mcp.CallToolResult{}, nil }
+	noop := func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{}, nil
+	}
 	up.AddTool(&mcp.Tool{Name: "t0", InputSchema: obj}, noop)
 	var lists atomic.Int32
 	up.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
@@ -895,7 +897,9 @@ func TestListChangesCoalesce(t *testing.T) {
 	}
 	ct, st := mcp.NewInMemoryTransports()
 	o := Options{Agent: "test", Dir: t.TempDir(), Deadline: 5 * time.Second, Connect: connect,
-		Servers: func(string) ([]upstream.Server, []string) { return []upstream.Server{{ID: "s", Name: "s", Command: []string{"x"}}}, nil }}
+		Servers: func(string) ([]upstream.Server, []string) {
+			return []upstream.Server{{ID: "s", Name: "s", Command: []string{"x"}}}, nil
+		}}
 	done := make(chan error, 1)
 	go func() { done <- Run(context.Background(), o, st) }()
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, nil).Connect(context.Background(), ct, nil)
