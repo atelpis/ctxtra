@@ -635,6 +635,139 @@ that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent cl
 a word. `ctxtra doctor` and the [setup notices](#setup-notices) show the missing binary. Setup leaves a config
 alone that has a ctxtra hook changed by hand, and says so, instead of adding a second hook next to it.
 
+## Experimental: MCP servers
+
+> **Experimental, off by default.** ctxtra can give sessions MCP servers, scoped by folder like instructions and
+> skills. It is work in progress: it is on only when `CTXTRA_EXPERIMENTAL_MCP=1` is set, and how the config
+> declares servers and binds them is not decided. Without the variable, ctxtra ignores everything about MCP
+> servers, and a config that declares them is an error like any unknown key.
+
+`ctxtra setup` adds one MCP server named `ctxtra` to each agent. The agent starts it like any local MCP server.
+It gives the session the tools of the MCP servers bound to the session folder, and forwards each call.
+
+### The session's servers
+
+- The proxy's working directory when the agent starts it is the session folder. The proxy resolves bindings for
+  it with the same rules and the same config as the hook (`$CTXTRA_CONFIG` or the default file), so `dirs`,
+  `repos` with `subpath`, and worktrees work the same. It never asks the agent for roots.
+- The servers are fixed when the proxy starts, like the agents' own MCP servers. Changing directory, adding
+  folders during the session (for example `/add-dir`), ctxtra-follow and config changes add or remove none.
+- On resume, the agent starts the proxy in the folder of the resume command. Claude Code, Codex and Antigravity
+  don't run the hook on resume, so after a resume from another folder, the instructions come from the old
+  folder and the servers from the new one.
+- The proxy offers only tools. It forwards tool lists (titles, annotations and schemas unchanged), calls,
+  cancellation and progress, and a server's tool list changes. It doesn't forward a server's instructions,
+  prompts or resources, and offers servers no roots.
+- The proxy answers the agent's first tool list when every bound server has answered, or at the agent's
+  deadline, with the tools of the servers that answered. The deadline counts from the proxy's start and is
+  shorter than the agent waits for the list, because an agent that gives up first gets no tools of any server:
+  1.5 seconds in Claude Code, 8 in Pi, 10 in the others (Codex waits that long because its entry is
+  `required`). A server that answers later is added with a tool list change notification; agents that ignore
+  it (Codex, Muse) don't get its tools in that session.
+- A problem never breaks a session: with a broken config, a failing server or no bound server, the proxy starts
+  and serves the tools it can, or none, and logs the problem. A server whose tool list has more than 2,000 tools
+  or 8 MiB, or that pages without end, is left out. A server that ends during the session is stopped with the
+  processes it started, and its tools go.
+
+### Local servers
+
+A local server runs as the proxy's child, in the session folder, in a process group of its own. Its
+environment is only: its `env` values, its `env-pass` variables and secret values, and from the proxy's
+environment `PATH`, `HOME`, `USER`, `LANG`, `TMPDIR`, `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY`, `ALL_PROXY` (each
+also lower case), `SSL_CERT_FILE` and `SSL_CERT_DIR`. Its stderr is dropped: it can hold secrets, and agents show
+none of it.
+
+The program must be an absolute path or a name in `PATH`: a relative path could come from the session's
+repository. A tool like `npx` still prefers a project's own packages, so a repository can change what such a
+server runs.
+
+When the agent closes the proxy's input, or the proxy gets SIGTERM, running calls end, and each local server's
+process group gets SIGTERM, and SIGKILL after 2 seconds if any process of the group is still there, also a
+server that is still starting. When the proxy is killed, its servers get the end of their input, as when an agent is killed: a server
+that exits then stops.
+
+### Network and logs
+
+The hook never uses the network. The proxy connects only to the bound remote servers and their authorization
+servers. It logs to ctxtra's log (`$CTXTRA_LOG` or `~/.ctxtra/log.jsonl`) with the agent's name: its start,
+the session folder, the bound servers, the number of config problems (`ctxtra doctor` lists them), each
+server's connection, late servers, servers that end during the session and how each local server's process
+ended, and its own end. It never logs tool arguments, results, secrets or config
+problems as text; a failed call is logged by its kind or code only, because error messages can repeat the
+arguments. `doctor`'s last hook runs leave these lines out.
+
+### Setup
+
+With `CTXTRA_EXPERIMENTAL_MCP=1` and at least one MCP server in the config, `ctxtra setup` adds the entry to each
+agent it sets up. It never copies the user's servers into agent configs. Without servers, it adds no entry and
+keeps one that is there; `--remove` removes it.
+
+| Agent | File | Entry |
+|---|---|---|
+| Claude Code | `~/.claude.json` (`$CLAUDE_CONFIG_DIR/.claude.json`) | `mcpServers.ctxtra: {type: stdio, command, args}` |
+| Codex | `~/.codex/config.toml` (`$CODEX_HOME`) | `[mcp_servers.ctxtra]`: `command`, `args`, `env_vars`, `startup_timeout_sec`, `required`, between marker comments |
+| Cursor | `~/.cursor/mcp.json` | `mcpServers.ctxtra: {command, args}` |
+| OpenCode | `~/.config/opencode/opencode.json` | `mcp.servers.ctxtra: {type: local, command, pool: false}` |
+| Pi | `~/.pi/agent/mcp.json` | `mcpServers.ctxtra: {command, args}` |
+| Muse | `~/.config/muse/settings.json` | `mcpServers.ctxtra: {type: stdio, command, args, mode: optional}` |
+| Antigravity | `~/.gemini/config/mcp_config.json` | `mcpServers.ctxtra: {command, args}` |
+
+Agents write these files themselves too (Claude Code often writes `~/.claude.json`): when a file changes
+between setup's read and its write, setup makes its edit again on the new content, so the agent's change stays.
+
+The command is the ctxtra binary and its arguments are `mcp proxy AGENT`. Setup owns only the keys in the table
+and keeps every other key the user adds to the entry, such as an approval setting. An entry named `ctxtra` that
+doesn't run `ctxtra mcp proxy` is the user's: setup and `--remove` leave its file alone and say so.
+
+In Codex, the entry is a block between `# >>> ctxtra MCP server` and `# <<< ctxtra MCP server` lines. Setup
+rewrites only its own keys' lines in the block, and keeps the rest of the file byte for byte. `--remove` removes
+the block, keys you added to ctxtra's table after it, and `[mcp_servers.ctxtra.*]` tables. Before it writes,
+it checks that the new file is valid TOML and says the same as the old one but for those keys; otherwise it
+changes nothing, because Codex refuses an invalid config. Codex starts MCP servers with an allow-listed
+environment, so `env_vars` lists ctxtra's variables (`CTXTRA_CONFIG`, `CTXTRA_LOG`, `CTXTRA_EXPERIMENTAL_MCP`),
+the Secret Service's (`DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`), the proxy and certificate variables, and
+every local server's `env-pass` names. `startup_timeout_sec` is 30, and `required = true`: Codex waits about 1
+second for an optional server's tools, and for a required one up to `startup_timeout_sec`. A required server that
+can't start stops the Codex session, so a moved or deleted ctxtra binary does too, until `ctxtra setup` runs again;
+the setup notices report it.
+
+OpenCode's entry isn't pooled, so its shared service starts one proxy per session folder.
+
+The entries, the keys setup owns, and the arguments of `ctxtra mcp proxy` are part of the setup contract (see
+[Setup compatibility](#setup-compatibility)): every later version accepts them, and the proxy ignores arguments
+it doesn't know.
+
+The setup notices and `doctor` report the entry:
+
+| When | Notice |
+|---|---|
+| Servers were added after setup | `claude: the ctxtra MCP server is missing; run ctxtra setup --agent claude` |
+| The entry runs another binary | `claude: the ctxtra MCP server runs /usr/local/bin/ctxtra, not this ctxtra (/opt/homebrew/bin/ctxtra); to switch, run ctxtra setup --agent claude` |
+| The entry is gone from its file | `claude: the ctxtra MCP server is gone from ~/.claude.json; if that wasn't on purpose, run ctxtra setup --agent claude; ...` |
+| Codex's entry doesn't pass a local server's `env-pass` variable | `codex: the ctxtra MCP server doesn't pass DBHOST to local servers; run ctxtra setup --agent codex` |
+| An entry named ctxtra isn't setup's | `~/.claude.json: the ctxtra MCP server doesn't run ctxtra mcp proxy; rename or delete it, then run ctxtra setup --agent claude` |
+
+### Tool names
+
+A session sees each tool as `<server>__<tool>`. The name uses only `A-Z`, `a-z`, `0-9` and `_`, and is at most
+38 characters: Muse shortens longer tool names and then can't call them, and the strictest model APIs allow 64
+characters, of which Claude Code and Pi use 13 for `mcp__ctxtra__`.
+
+- A server name is 1 to 20 characters of `a-z`, `0-9` and `_`, starts with a letter, and has no `__` and no `_`
+  at the end.
+- A tool name that has other characters, or makes the whole name too long, is shortened: other characters become
+  `_`, the name is cut to fit, and `_` and 6 hex digits of a SHA-256 hash of the server and the tool name are
+  added. The cut never goes into `<server>__`.
+- The name depends only on the server and the tool, so it is the same in every session, agent and machine, and
+  the agents' permission rules keep working. Only when two names in one session would be equal, the shortened
+  ones get longer hashes: 10 digits, then up to 16.
+- A shortened tool's description starts with its server and its own name: `[gh: create-issue] Create an issue.`
+
+| Server | Tool | Session sees |
+|---|---|---|
+| `linear_work` | `list_issues` | `linear_work__list_issues` |
+| `gh` | `create-issue` | `gh__create_issue_ef677c` |
+
 ## Setup compatibility
 
 What `ctxtra setup` writes is a contract between the agents and the `ctxtra` binary: the hook entries
@@ -649,6 +782,9 @@ An upgrade keeps existing setups working with the same capacity. New features ma
 `ctxtra setup`; a capacity increase may need it too. In either case, the release notes explain when to
 run setup, and `ctxtra doctor` reports what the existing setup is missing. In Codex, changing the hooks
 also requires trusting them again.
+
+The experimental MCP entry (see [Experimental: MCP servers](#experimental-mcp-servers)) and the arguments of
+`ctxtra mcp proxy` are part of the contract too.
 
 Answers only grow: fields are added, never renamed or given a new meaning, and a field that a released setup
 reads is sent while that setup is supported. The hooks and plugins ignore fields they don't know. The

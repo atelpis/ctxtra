@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ctxtra": {
+      "command": "@@HOME@@/bin/ctxtra",
+      "args": [
+        "mcp",
+        "proxy",
+        "antigravity"
+      ]
+    }
+  }
+}

@@ -289,6 +289,27 @@ agent gets only your own bound files, read with the same trust rules as at sessi
 folder below the one the agent ran the command for doesn't reach it. That includes folders under the
 session folder: a binding for `~/dev/mono/billing/**` doesn't reach a session started in `~/dev/mono`.
 
+## Experimental: MCP servers
+
+ctxtra can give your sessions MCP servers by folder, like instructions and skills, through one MCP server named
+`ctxtra` that `ctxtra setup` adds to each agent. It is work in progress and off unless
+`CTXTRA_EXPERIMENTAL_MCP=1` is set in your environment, for setup and for your agents. How the config declares
+servers isn't decided yet; [spec.md](spec.md#experimental-mcp-servers) describes what works so far.
+
+Each agent asks before it runs an MCP tool, as for its own servers. Allowing `ctxtra` allows every server that
+ctxtra binds to that folder:
+
+- Claude Code: allow `mcp__ctxtra` in `permissions.allow`, or a pattern such as `mcp__ctxtra__linear_work__*`.
+- Codex: add `default_tools_approval_mode = "approve"` to the `[mcp_servers.ctxtra]` table; setup keeps it.
+- Antigravity: an allow rule `mcp(ctxtra/*)`.
+- Muse has no rules per server: approve the tools when it asks.
+
+A session's servers are fixed when it starts; their tools can still change. ctxtra waits for slow servers only as long as each agent
+waits for it: 1.5 seconds in Claude Code (later tools follow in its interactive mode), up to 10 in the others.
+A server that starts slower, such as one run with `npx`, can be missing from that session. In Codex, the
+`ctxtra` server is required: if the ctxtra binary moves, Codex doesn't start until you run `ctxtra setup` again.
+Logs are in `~/.ctxtra/log.jsonl`.
+
 ## Limits
 
 - Each agent gets a limited amount of text in full: 360,000 characters in Claude Code and Muse, 1,000,000

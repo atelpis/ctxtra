@@ -191,6 +191,12 @@ func backupNames(prefix, dir string) ([]string, error) {
 // replace writes data to a temporary file next to path and renames it, so a
 // reader never sees a half-written file. Missing folders get dirMode.
 func replace(path string, data []byte, mode, dirMode os.FileMode) error {
+	return replaceChecked(path, data, mode, dirMode, nil)
+}
+
+// replaceChecked is replace, with check run last, right before the
+// rename: an error from it leaves the file as it is.
+func replaceChecked(path string, data []byte, mode, dirMode os.FileMode, check func() error) error {
 	if err := os.MkdirAll(filepath.Dir(path), dirMode); err != nil {
 		return err
 	}
@@ -209,6 +215,11 @@ func replace(path string, data []byte, mode, dirMode os.FileMode) error {
 	if err := os.Chmod(tmp.Name(), mode); err != nil {
 		return err
 	}
+	if check != nil {
+		if err := check(); err != nil {
+			return err
+		}
+	}
 	return os.Rename(tmp.Name(), path)
 }
 
@@ -220,4 +231,63 @@ func WriteFile(path string, data []byte, mode os.FileMode) error {
 		dirMode = 0o700
 	}
 	return replace(path, data, mode, dirMode)
+}
+
+// ErrChanged is the error of WriteIfUnchanged when the file changed.
+var ErrChanged = errors.New("the file changed while it was edited")
+
+// WriteIfUnchanged is WriteAtomic for an edit of the content old, which is
+// nil for a missing file: when the file no longer has that content,
+// because its own program wrote it meanwhile, it writes nothing and
+// returns ErrChanged, so the caller can edit the new content. The content
+// is checked last, right before the rename; a write by the other program
+// in between those two steps can still be lost, as no file system
+// operation can rule that out.
+func WriteIfUnchanged(path string, old, data []byte, backupDir string, dryRun bool) (string, bool, error) {
+	if st, err := os.Lstat(path); err == nil && st.Mode()&os.ModeSymlink != 0 {
+		target, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return path, false, fmt.Errorf("%s is a symlink to a missing file; left alone", path)
+		}
+		path = target
+	}
+	same := func() error {
+		cur, err := os.ReadFile(path)
+		switch {
+		case errors.Is(err, os.ErrNotExist):
+			if old != nil {
+				return ErrChanged
+			}
+		case err != nil:
+			return err
+		case old == nil || !bytes.Equal(cur, old):
+			return ErrChanged
+		}
+		return nil
+	}
+	if err := same(); err != nil {
+		return path, false, err
+	}
+	if old != nil && bytes.Equal(old, data) {
+		return path, false, nil
+	}
+	if dryRun {
+		return path, true, nil
+	}
+	mode := os.FileMode(0o644)
+	if old != nil {
+		if st, err := os.Stat(path); err == nil {
+			mode = st.Mode().Perm()
+		}
+		if err := Backup(path, old, backupDir); err != nil {
+			return path, false, err
+		}
+	}
+	if err := replaceChecked(path, data, mode, 0o755, same); err != nil {
+		return path, !errors.Is(err, ErrChanged), err
+	}
+	if old != nil {
+		_ = PruneBackups(path, backupDir)
+	}
+	return path, true, nil
 }

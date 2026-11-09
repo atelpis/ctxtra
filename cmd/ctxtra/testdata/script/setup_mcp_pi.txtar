@@ -1,0 +1,57 @@
+# With MCP servers in the config (experimental), setup adds the ctxtra MCP
+# server to .pi/agent/mcp.json: dry run, add, idempotent, backups, remove.
+
+mkdir .config/ctxtra
+cp config.yaml .config/ctxtra/config.yaml
+mkdir .pi/agent
+cp original.json .pi/agent/mcp.json
+
+exec ctxtra setup --agent pi
+cmp .pi/agent/mcp.json original.json
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+exec ctxtra setup --dry-run --agent pi
+cmp .pi/agent/mcp.json original.json
+
+exec ctxtra setup --agent pi
+stdout '~/.pi/agent/mcp.json'
+cmpenv .pi/agent/mcp.json want.json
+exists .ctxtra/backups
+exec ctxtra setup --agent pi
+stdout 'is already set up for'
+
+exec ctxtra doctor
+stdout '    MCP: MCP entry runs .*/ctxtra \(ok\) \(~/.pi/agent/mcp.json\)'
+
+exec ctxtra setup --remove --agent pi
+! grep '"ctxtra":' .pi/agent/mcp.json
+grep '"other"' .pi/agent/mcp.json
+
+-- config.yaml --
+schema: ctxtra/v1
+mcp-servers:
+  pg: {command: [pg-mcp]}
+-- original.json --
+{
+  "mcpServers": {
+    "other": {
+      "command": "other-mcp"
+    }
+  }
+}
+-- want.json --
+{
+  "mcpServers": {
+    "other": {
+      "command": "other-mcp"
+    },
+    "ctxtra": {
+      "command": "$BIN",
+      "args": [
+        "mcp",
+        "proxy",
+        "pi"
+      ]
+    }
+  }
+}

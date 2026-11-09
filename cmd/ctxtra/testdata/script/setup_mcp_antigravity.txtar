@@ -1,0 +1,57 @@
+# With MCP servers in the config (experimental), setup adds the ctxtra MCP
+# server to .gemini/config/mcp_config.json: dry run, add, idempotent, backups, remove.
+
+mkdir .config/ctxtra
+cp config.yaml .config/ctxtra/config.yaml
+mkdir .gemini/config
+cp original.json .gemini/config/mcp_config.json
+
+exec ctxtra setup --agent antigravity
+cmp .gemini/config/mcp_config.json original.json
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+exec ctxtra setup --dry-run --agent antigravity
+cmp .gemini/config/mcp_config.json original.json
+
+exec ctxtra setup --agent antigravity
+stdout '~/.gemini/config/mcp_config.json'
+cmpenv .gemini/config/mcp_config.json want.json
+exists .ctxtra/backups
+exec ctxtra setup --agent antigravity
+stdout 'is already set up for'
+
+exec ctxtra doctor
+stdout '    MCP: MCP entry runs .*/ctxtra \(ok\) \(~/.gemini/config/mcp_config.json\)'
+
+exec ctxtra setup --remove --agent antigravity
+! grep '"ctxtra":' .gemini/config/mcp_config.json
+grep '"other"' .gemini/config/mcp_config.json
+
+-- config.yaml --
+schema: ctxtra/v1
+mcp-servers:
+  pg: {command: [pg-mcp]}
+-- original.json --
+{
+  "mcpServers": {
+    "other": {
+      "command": "other-mcp"
+    }
+  }
+}
+-- want.json --
+{
+  "mcpServers": {
+    "other": {
+      "command": "other-mcp"
+    },
+    "ctxtra": {
+      "command": "$BIN",
+      "args": [
+        "mcp",
+        "proxy",
+        "antigravity"
+      ]
+    }
+  }
+}

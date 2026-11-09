@@ -11,9 +11,11 @@ import (
 	"github.com/ctxtra/ctxtra/internal/agent/registry"
 	"github.com/ctxtra/ctxtra/internal/chunk"
 	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/experimental"
 	"github.com/ctxtra/ctxtra/internal/hook"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/resolve"
+	"github.com/ctxtra/ctxtra/internal/setup"
 	"github.com/ctxtra/ctxtra/internal/source"
 	"github.com/ctxtra/ctxtra/internal/state"
 	"github.com/ctxtra/ctxtra/internal/term"
@@ -254,6 +256,8 @@ type traceInfo struct {
 	Files   []traceItem `json:"files"`
 	Skills  []traceItem `json:"skills"`
 	Missing []string    `json:"missing"`
+	// MCP servers by name; only when the binding has some.
+	MCPServers []traceItem `json:"mcp_servers,omitempty"`
 }
 
 // agentDrop is an agent whose sessions don't get all of a text, in --json.
@@ -298,6 +302,17 @@ func traces(res *resolve.Result) []traceInfo {
 				ti.Skills = append(ti.Skills, traceItem{Path: s, Status: "added", Name: h.Name})
 			} else if !mentions(t.Missing, s) {
 				ti.Skills = append(ti.Skills, traceItem{Path: s, Status: "skipped: not added; see problems"})
+			}
+		}
+		for _, name := range t.MCPServers {
+			i := slices.IndexFunc(res.MCPServers, func(m resolve.MCPServer) bool { return m.Name == name })
+			switch {
+			case !t.Matched:
+				ti.MCPServers = append(ti.MCPServers, traceItem{Path: name, Status: "not added"})
+			case i >= 0 && res.MCPServers[i].Origin == t.Origin:
+				ti.MCPServers = append(ti.MCPServers, traceItem{Path: name, Status: "added"})
+			default:
+				ti.MCPServers = append(ti.MCPServers, traceItem{Path: name, Status: "skipped: already added by an earlier binding"})
 			}
 		}
 		for _, f := range t.ExcludedFiles {
@@ -376,6 +391,15 @@ func (r report) explain(dir string, asJSON bool) int {
 		for _, m := range t.Missing {
 			fmt.Fprintf(r.Out, "    MISSING  %s\n", m)
 		}
+		for _, m := range t.MCPServers {
+			switch m.Status {
+			case "added":
+				fmt.Fprintf(r.Out, "    mcp      %s\n", m.Path)
+			case "not added":
+			default:
+				fmt.Fprintf(r.Out, "    skip     mcp %s (%s)\n", m.Path, strings.TrimPrefix(m.Status, "skipped: "))
+			}
+		}
 	}
 	if len(res.Problems) > 0 {
 		fmt.Fprintln(r.Out, "\nproblems:")
@@ -384,6 +408,9 @@ func (r report) explain(dir string, asJSON bool) int {
 		}
 	}
 	fmt.Fprintf(r.Out, "\ntotal: %d files, %d skills, %d chars (about %d tokens)", len(res.Files), len(res.Skills), total, total/4)
+	if n := len(res.MCPServers); n > 0 {
+		fmt.Fprintf(r.Out, ", %d MCP servers", n)
+	}
 	if res.MaxChars > 0 {
 		fmt.Fprintf(r.Out, ", budget.max-chars %d", res.MaxChars)
 	}
@@ -416,10 +443,20 @@ func (r report) doctor(dir string, asJSON bool) int {
 	setups, _, _ := state.LoadSetups()
 	bin := running()
 	var agents []hookInfo
+	mcp := setup.LoadMCP()
 	for _, a := range registry.All() {
-		st := a.Status(bin, setups.Known(a.Name(), a.ConfigPath()))
+		known := setups.Known(a.Name(), a.ConfigPath())
+		st := a.Status(bin, known)
+		details := append([]string{}, st.Details...)
+		if m, isMCP := a.(agent.MCPAgent); isMCP && experimental.MCP() {
+			host := m.MCP()
+			ms := host.MCPStatus(bin, agent.MCPCheck{Known: setups.Known(setup.MCPKey(a.Name()), host.MCPPath()), Want: mcp.Want && known, EnvPass: mcp.EnvPass})
+			details = append(details, "MCP: "+ms.State+" ("+paths.Tilde(host.MCPPath())+")")
+			details = append(details, ms.Details...)
+			st.OK = st.OK && ms.OK
+		}
 		ok = ok && st.OK
-		agents = append(agents, hookInfo{a.Name(), st.State, st.OK, a.ConfigPath(), append([]string{}, st.Details...)})
+		agents = append(agents, hookInfo{a.Name(), st.State, st.OK, a.ConfigPath(), details})
 	}
 	repo := ""
 	if res.Repo != nil {

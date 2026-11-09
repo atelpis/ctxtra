@@ -45,6 +45,9 @@ type Client struct {
 	// element. Plugins leave it out: their code is the reader.
 	Reads  string   `json:"reads,omitempty"`
 	Events []string `json:"events"`
+	// MCP: the fixture is ctxtra's MCP entry (experimental), which runs
+	// ctxtra mcp proxy AGENT.
+	MCP bool `json:"mcp,omitempty"`
 }
 
 // Limit is an amount of text in a unit: chars, bytes, utf16 or json (see
@@ -87,7 +90,7 @@ func Clients(t *testing.T) []Client {
 		}
 		c.Dir = filepath.Dir(f)
 		c.ID = filepath.Base(filepath.Dir(c.Dir))
-		if c.Agent != filepath.Base(c.Dir) || len(c.Events) == 0 || c.Slots < 0 || !valid(c.Limit) || !valid(c.Part) {
+		if c.Agent != filepath.Base(c.Dir) || len(c.Events) == 0 && !c.MCP || c.Slots < 0 || !valid(c.Limit) || !valid(c.Part) {
 			t.Fatalf("%s: %+v", f, c)
 		}
 		out = append(out, c)

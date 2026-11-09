@@ -1,0 +1,109 @@
+# With MCP servers in the config (experimental), setup adds one MCP server
+# named ctxtra to ~/.claude.json, keeps the rest of the file, is
+# idempotent, backs up what it changes, and --remove restores the file.
+
+mkdir .config/ctxtra
+cp config.yaml .config/ctxtra/config.yaml
+
+# Without CTXTRA_EXPERIMENTAL_MCP, no entry, and the config is an error.
+exec ctxtra setup --agent claude
+cmp .claude.json original.json
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+exec ctxtra setup --dry-run --agent claude
+stdout '\.claude\.json'
+cmp .claude.json original.json
+
+exec ctxtra setup --agent claude
+stdout '~/.claude.json'
+cmpenv .claude.json want.json
+exists .ctxtra/backups
+
+exec ctxtra setup --agent claude
+stdout 'is already set up for'
+
+exec ctxtra doctor
+stdout '    MCP: MCP entry runs .*/ctxtra \(ok\) \(~/.claude.json\)'
+! stderr .
+
+exec ctxtra setup --remove --agent claude
+cmp .claude.json original.json
+exec ctxtra setup --remove --agent claude
+stdout 'isn''t set up for'
+
+# Servers added after setup: the next command says what to run. The entry
+# gone from its file: the same.
+cp empty.yaml .config/ctxtra/config.yaml
+exec ctxtra setup --agent claude
+cmp .claude.json original.json
+cp config.yaml .config/ctxtra/config.yaml
+exec ctxtra binding list
+stderr '^claude: the ctxtra MCP server is missing; run ctxtra setup --agent claude$'
+exec ctxtra setup --agent claude
+exec ctxtra binding list
+! stderr .
+cp original.json .claude.json
+exec ctxtra binding list
+stderr '^claude: the ctxtra MCP server is gone from ~/.claude.json; if that wasn''t on purpose, run ctxtra setup --agent claude'
+exec ctxtra setup --agent claude
+
+# With MCP servers off, setup --remove leaves the MCP entry alone.
+env CTXTRA_EXPERIMENTAL_MCP=
+exec ctxtra setup --remove --agent claude
+grep '"ctxtra":' .claude.json
+env CTXTRA_EXPERIMENTAL_MCP=1
+exec ctxtra setup --remove --agent claude
+! grep '"ctxtra":' .claude.json
+exec ctxtra setup --agent claude
+
+# $CLAUDE_CONFIG_DIR moves the file.
+env CLAUDE_CONFIG_DIR=$HOME/claude-dir
+exec ctxtra setup --agent claude
+exists claude-dir/.claude.json
+grep '"args": \[' claude-dir/.claude.json
+
+-- config.yaml --
+schema: ctxtra/v1
+mcp-servers:
+  pg: {command: [pg-mcp]}
+-- empty.yaml --
+schema: ctxtra/v1
+-- .claude.json --
+{
+  "numStartups": 3,
+  "mcpServers": {
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp"
+    }
+  }
+}
+-- original.json --
+{
+  "numStartups": 3,
+  "mcpServers": {
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp"
+    }
+  }
+}
+-- want.json --
+{
+  "numStartups": 3,
+  "mcpServers": {
+    "linear": {
+      "type": "http",
+      "url": "https://mcp.linear.app/mcp"
+    },
+    "ctxtra": {
+      "type": "stdio",
+      "command": "$BIN",
+      "args": [
+        "mcp",
+        "proxy",
+        "claude"
+      ]
+    }
+  }
+}

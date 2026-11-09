@@ -28,7 +28,9 @@ func TestUpgradeFromRelease(t *testing.T) {
 	forEachAgent(t, nil, func(t *testing.T, a Agent) {
 		ran := false
 		for _, c := range all {
-			if c.Agent != a.Name() {
+			// An MCP entry has no hooks to upgrade; the client contract
+			// test of the main module runs it.
+			if c.Agent != a.Name() || c.MCP {
 				continue
 			}
 			ran = true

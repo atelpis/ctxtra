@@ -1,0 +1,73 @@
+# ctxtra mcp proxy AGENT, the MCP server that setup adds to each agent:
+# it starts in the session folder, gets the servers that the hook's rules
+# bind there, and ignores arguments it doesn't know.
+
+# Without CTXTRA_EXPERIMENTAL_MCP it serves no tools, and says nothing.
+mcp .
+stdout '^server: ctxtra$'
+! stdout '^tool'
+! stderr .
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+mkdir .config/ctxtra
+cp config.yaml .config/ctxtra/config.yaml
+exec ctxtra setup --agent claude
+gitrepo dev/svc git@github.com:acme/svc.git
+exec git -C dev/svc worktree add -q -b feature ../../elsewhere/svc-feature
+gitrepo dev/mono git@github.com:acme/mono.git
+mkdir dev/mono/services/billing/cmd
+
+# No server bound here: no tools.
+mcp .
+! stdout '^tool'
+! stderr .
+
+# A worktree outside the repository gets the servers of the repository's
+# folder, as the hook gets its instructions.
+mcp elsewhere/svc-feature
+stdout '^tool svc__echo: Echo the arguments.$'
+! stdout 'billing__'
+! stderr .
+runhook claude SessionStart elsewhere/svc-feature
+stdout 'CTXMARK-SVC'
+
+# A subfolder with a subpath binding.
+mcp dev/mono/services/billing/cmd billing__echo '{"title":"x"}'
+stdout '^tool billing__echo:'
+stdout '^tool billing__create_issue_[0-9a-f]{6}: \[billing: create-issue\] Tool create-issue.$'
+stdout '^result: echo {"title":"x"}$'
+! stdout 'svc__'
+mcp dev/mono/services/billing/cmd billing__env
+stdout '"cwd":"[^"]*/dev/mono/services/billing/cmd"'
+! stdout 'GITHUB_TOKEN'
+
+# The proxy logs to ctxtra's log, which doctor's hook runs leave out.
+exec cat .ctxtra/log.jsonl
+stdout '"kind":"mcp","harness":"test","event":"start","dir":"[^"]*/dev/mono/services/billing/cmd","servers":\["billing"\]'
+stdout '"event":"connect","server":"billing","tools":8'
+! stdout '"title"'
+
+# A broken config: no tools, and the session starts.
+cp broken.yaml .config/ctxtra/config.yaml
+mcp elsewhere/svc-feature
+stdout '^server: ctxtra$'
+! stdout '^tool'
+
+-- config.yaml --
+schema: ctxtra/v1
+mcp-servers:
+  svc: {command: [mcptest]}
+  billing: {command: [mcptest, -tools, create-issue]}
+bindings:
+  - name: svc
+    match: {dirs: ['~/dev/svc/**']}
+    instructions: [svc.md]
+    mcp-servers: [svc]
+  - name: billing
+    match: {repos: [{remote: github.com/acme/mono, subpath: services/billing/**}]}
+    mcp-servers: [billing]
+-- .config/ctxtra/svc.md --
+CTXMARK-SVC
+-- broken.yaml --
+schema: ctxtra/v1
+mcp-servers: [

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ctxtra/ctxtra/internal/agent"
 	"github.com/ctxtra/ctxtra/internal/agent/registry"
 	"github.com/ctxtra/ctxtra/internal/testenv"
 )
@@ -140,4 +141,53 @@ func homeFiles(t *testing.T, h string) map[string]string {
 func inside(h, path string) bool {
 	rel, err := filepath.Rel(h, path)
 	return err == nil && filepath.IsLocal(rel)
+}
+
+// TestContractMCP: ctxtra's MCP entry, as setup writes it with a config
+// that declares a local server with env-pass, is part of the contract
+// too: testdata/contract/mcp/<agent> has the entry's file, and
+// testdata/clients/mcp-preview the same for the client test.
+func TestContractMCP(t *testing.T) {
+	t.Setenv("CTXTRA_EXPERIMENTAL_MCP", "1")
+	clients := testenv.Clients(t)
+	for _, a := range registry.All() {
+		m, ok := a.(agent.MCPAgent)
+		if !ok {
+			continue
+		}
+		t.Run(a.Name(), func(t *testing.T) {
+			h := testenv.Home(t)
+			t.Setenv("PATH", t.TempDir())
+			host := m.MCP()
+			if !inside(h, host.MCPPath()) {
+				t.Fatalf("%s is outside the test home %s", host.MCPPath(), h)
+			}
+			o := agent.MCPOptions{Want: true, EnvPass: []string{"PGHOST"}}
+			o.Binary = filepath.Join(h, "bin", "ctxtra")
+			var r agent.Report
+			if err := host.SetupMCP(o, &r); err != nil {
+				t.Fatal(err)
+			}
+			got := homeFiles(t, h)
+			want := filepath.Join("testdata", "contract", "mcp", a.Name())
+			if *update {
+				if err := os.RemoveAll(want); err != nil {
+					t.Fatal(err)
+				}
+				for rel, content := range got {
+					testenv.Write(t, filepath.Join(want, rel), content)
+				}
+			}
+			golden := tree(t, want)
+			if !maps.Equal(got, golden) {
+				t.Errorf("setup writes\n%v\nnot what %s has", got, want)
+				return
+			}
+			if !slices.ContainsFunc(clients, func(c testenv.Client) bool {
+				return c.Agent == a.Name() && c.MCP && maps.Equal(tree(t, c.Dir), golden)
+			}) {
+				t.Errorf("no MCP fixture in %s has the files of %s", testenv.ClientsDir(), want)
+			}
+		})
+	}
 }

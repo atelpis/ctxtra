@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ctxtra/ctxtra/internal/chunk"
 	"github.com/ctxtra/ctxtra/internal/config"
@@ -477,3 +478,62 @@ type Status struct {
 	OK      bool     // false when the hooks can't work as set up
 	Details []string // extra lines, for example Codex trust records
 }
+
+// MCPAgent is an agent that gets ctxtra's MCP entry: one stdio MCP server
+// named ctxtra that runs ctxtra mcp proxy AGENT.
+type MCPAgent interface {
+	MCP() MCPHost
+	// MCPDeadline is how long the proxy waits for slow servers before it
+	// answers the agent's first tool list, counted from the proxy's start.
+	// It must be shorter than the agent waits for that list: an agent that
+	// gives up first gets no tools of any server.
+	MCPDeadline() time.Duration
+}
+
+// MCPDeadline is the proxy's longest wait for slow servers, for agents
+// that wait longer for MCP servers (measured: Muse and Antigravity wait
+// more than 11 seconds).
+const MCPDeadline = 10 * time.Second
+
+// MCPHost edits and checks an agent's MCP entry.
+type MCPHost interface {
+	// MCPPath is the file the entry is in.
+	MCPPath() string
+	// SetupMCP adds, updates or removes the entry, as o says.
+	SetupMCP(o MCPOptions, r *Report) error
+	// MCPStatus describes the entry, for doctor, with CheckMCP's notices.
+	MCPStatus(bin string, o MCPCheck) Status
+	// CheckMCP returns what the user should do about the entry, from its
+	// file only.
+	CheckMCP(bin string, o MCPCheck) []string
+	// MCPCommand is the program and arguments that the entry runs; false
+	// without an entry of ctxtra's.
+	MCPCommand() ([]string, bool)
+}
+
+// MCPOptions select what SetupMCP does.
+type MCPOptions struct {
+	Options
+	// Want is whether the agent should have the entry: the config declares
+	// MCP servers. Without it, setup adds no entry and keeps one that is
+	// there; Remove removes it either way.
+	Want bool
+	// EnvPass are the env-pass names of every local server, which Codex
+	// passes to MCP servers only when its entry lists them.
+	EnvPass []string
+}
+
+// MCPCheck is what CheckMCP needs besides the file.
+type MCPCheck struct {
+	Known bool // setup.json lists the entry as set up
+	Want  bool // the config declares MCP servers
+	// EnvPass are the env-pass names of every local server, which the
+	// entry must pass in Codex.
+	EnvPass []string
+}
+
+// MCPEntryName is the name of ctxtra's entry in every agent.
+const MCPEntryName = "ctxtra"
+
+// MCPArgs are the arguments of the entry's command for agent.
+func MCPArgs(agent string) []string { return []string{"mcp", "proxy", agent} }

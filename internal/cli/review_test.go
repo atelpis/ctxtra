@@ -82,3 +82,25 @@ func TestSpans(t *testing.T) {
 		}
 	}
 }
+
+// An update that adds a server to a global binding: the review lists the
+// servers and warns about the new name.
+func TestMCPReview(t *testing.T) {
+	b := func(sel config.Selector, servers ...string) *config.Config {
+		return &config.Config{Bindings: []config.Binding{{Name: "all", Source: "/gen/b.yaml", Selector: sel, MCPListed: servers}}}
+	}
+	var out strings.Builder
+	s := &sources{IO: IO{Out: &out}}
+	s.mcpWarnings(b(config.Selector{Global: true}, "linear"), b(config.Selector{Global: true}, "linear", "github"), "/gen", "/gen")
+	got := out.String()
+	if !strings.Contains(got, "MCP servers: binding all in b.yaml names linear, github\n") ||
+		!strings.Contains(got, "warning: binding all in b.yaml adds the MCP server github: a server of yours with that name would be in every session\n") ||
+		strings.Contains(got, "adds the MCP server linear") {
+		t.Errorf("%q", got)
+	}
+	out.Reset()
+	s.mcpWarnings(b(config.Selector{}), b(config.Selector{Dirs: []string{"/w/**"}}, "pg"), "/gen", "/gen")
+	if !strings.Contains(out.String(), "adds the MCP server pg: a server of yours with that name would be for /w/**") {
+		t.Errorf("%q", out.String())
+	}
+}

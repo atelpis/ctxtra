@@ -27,6 +27,7 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/state"
 	"github.com/ctxtra/ctxtra/internal/trust"
@@ -62,8 +63,11 @@ type Config struct {
 	CheckCtxtra bool
 	Summary     SummaryMessage
 	Problems    []string
-	Warnings    []string          // only from LoadSource: problems that leave the binding in use
-	Notes       []string          // hints, for doctor
+	Warnings    []string // only from LoadSource: problems that leave the binding in use
+	Notes       []string // hints, for doctor
+	// MCPServers are the valid servers of mcp-servers, in config order.
+	MCPServers  []upstream.Server
+	mcpBroken   map[string]bool   // names in mcp-servers with an error
 	pinned      map[string]string // paths resolved into the store, and their references
 	mappings    *state.Mappings   // of imported clones; read when needed
 	mappingsErr error
@@ -89,6 +93,10 @@ type Binding struct {
 	Selector     Selector // match
 	Instructions []string // resolved paths of instruction files
 	Skills       []string // resolved paths of skill folders, each with a SKILL.md
+	MCPServers   []string // names of servers in the config's mcp-servers
+	// MCPListed are the names in mcp-servers as written, also those
+	// skipped, for the review of a source.
+	MCPListed []string
 	// Paths that entries starting with ! removed from Instructions and Skills.
 	ExcludedInstructions, ExcludedSkills []string
 }
@@ -187,12 +195,19 @@ func (c *Config) decode(d document) ([]*yaml.Node, *yaml.Node, error) {
 	if d.err != nil {
 		return nil, nil, d.err
 	}
-	f, err := fields(c.withoutNullSummary(d.node), "schema", "check-updates", "summary-message", "sources", "include", "bindings", "budget")
+	keys := []string{"schema", "check-updates", "summary-message", "sources", "include", "bindings", "budget"}
+	if mcpOn() {
+		keys = append(keys, "mcp-servers")
+	}
+	f, err := fields(c.withoutNullSummary(d.node), keys...)
 	if err != nil {
 		return nil, nil, err
 	}
 	if err := checkSchema(d.node, f); err != nil {
 		return nil, nil, err
+	}
+	if v := f["mcp-servers"]; v != nil {
+		c.decodeMCPServers(v)
 	}
 	if v := f["sources"]; v != nil {
 		if err := c.decodeSources(v); err != nil {
@@ -380,8 +395,12 @@ var configOnly = []string{"check-updates", "summary-message", "sources", "includ
 // decodeBindingFile checks the top level of a binding file and returns its
 // bindings list.
 func (c *Config) decodeBindingFile(doc *yaml.Node) (*yaml.Node, error) {
+	only := configOnly
+	if mcpOn() {
+		only = append(slices.Clip(only), "mcp-servers")
+	}
 	for i := 0; i+1 < len(doc.Content); i += 2 {
-		if k := doc.Content[i]; slices.Contains(configOnly, k.Value) {
+		if k := doc.Content[i]; slices.Contains(only, k.Value) {
 			if c.File == "" {
 				return nil, fmt.Errorf("line %d: %s works only in the config, not in a binding file", k.Line, k.Value)
 			}
@@ -429,7 +448,11 @@ func (c *Config) decodeBinding(n *yaml.Node, file string, in *Source) (Binding, 
 	if n.Kind == yaml.ScalarNode {
 		return Binding{}, fmt.Errorf("line %d: a binding is a map with name, match, instructions and skills; a binding file goes under include, in the config", n.Line)
 	}
-	f, err := fields(n, "name", "match", "instructions", "skills")
+	keys := []string{"name", "match", "instructions", "skills"}
+	if mcpOn() {
+		keys = append(keys, "mcp-servers")
+	}
+	f, err := fields(n, keys...)
 	if err != nil {
 		return Binding{}, err
 	}
@@ -443,7 +466,10 @@ func (c *Config) decodeBinding(n *yaml.Node, file string, in *Source) (Binding, 
 	if !reName.MatchString(b.Name) {
 		return Binding{}, fmt.Errorf("line %d: name %q may only contain letters, digits, '.', '_' and '-'", f["name"].Line, b.Name)
 	}
-	if f["instructions"] == nil && f["skills"] == nil {
+	if f["instructions"] == nil && f["skills"] == nil && f["mcp-servers"] == nil {
+		if mcpOn() {
+			return Binding{}, fmt.Errorf("line %d: a binding needs instructions, skills or mcp-servers", n.Line)
+		}
 		return Binding{}, fmt.Errorf("line %d: a binding needs instructions, skills or both", n.Line)
 	}
 	if b.Selector, err = decodeSelector(f["match"]); err != nil {
@@ -458,6 +484,12 @@ func (c *Config) decodeBinding(n *yaml.Node, file string, in *Source) (Binding, 
 		if b.Skills, b.ExcludedSkills, err = c.pathList(v, "skills", file, in); err != nil {
 			return Binding{}, err
 		}
+	}
+	if v := f["mcp-servers"]; v != nil {
+		if b.MCPServers, err = c.mcpNames(v, file, in); err != nil {
+			return Binding{}, err
+		}
+		b.MCPListed, _ = strList(v, "mcp-servers")
 	}
 	return b, nil
 }

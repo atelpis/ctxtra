@@ -14,6 +14,8 @@ import (
 
 	"github.com/ctxtra/ctxtra/internal/agent"
 	"github.com/ctxtra/ctxtra/internal/agent/registry"
+	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/experimental"
 	"github.com/ctxtra/ctxtra/internal/fsutil"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/state"
@@ -23,7 +25,33 @@ import (
 type Options struct {
 	Agents []string // empty: every agent found on this machine
 	agent.Options
+	// MCP is what the config says about MCP servers: whether agents get
+	// ctxtra's MCP entry. Remove removes the entry either way.
+	MCP MCPConfig
 }
+
+// MCPConfig is what setup needs from the config about MCP servers.
+type MCPConfig struct {
+	Want    bool     // the config declares a server
+	EnvPass []string // every local server's env-pass names
+}
+
+// LoadMCP reads the config the way sessions do ($CTXTRA_CONFIG or the
+// default file). With MCP servers off, agents get no entry.
+func LoadMCP() MCPConfig {
+	if !experimental.MCP() {
+		return MCPConfig{}
+	}
+	cfg := config.Load(paths.ConfigPath(), fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes))
+	m := MCPConfig{Want: len(cfg.MCPServers) > 0}
+	for _, s := range cfg.MCPServers {
+		m.EnvPass = append(m.EnvPass, s.EnvPass...)
+	}
+	return m
+}
+
+// MCPKey is the key of an agent's MCP entry in setup.json.
+func MCPKey(agent string) string { return agent + "/mcp" }
 
 // Report is what Run changed, or would change with DryRun.
 type Report struct {
@@ -75,6 +103,11 @@ func Run(o Options) (Report, error) {
 	for _, a := range agents {
 		n := len(r.Changes)
 		err := a.Setup(o.Options, &r.Report)
+		// With MCP servers off, setup doesn't touch MCP entries, also with
+		// --remove.
+		if m, ok := a.(agent.MCPAgent); ok && err == nil && experimental.MCP() {
+			err = m.MCP().SetupMCP(agent.MCPOptions{Options: o.Options, Want: o.MCP.Want, EnvPass: o.MCP.EnvPass}, &r.Report)
+		}
 		r.Agents = append(r.Agents, Agent{a, slices.Clone(r.Changes[n:]), err})
 		if err != nil {
 			r.Errors = append(r.Errors, fmt.Errorf("%s: %w", a.Name(), err))
@@ -83,7 +116,7 @@ func Run(o Options) (Report, error) {
 		done = append(done, a)
 	}
 	if !o.DryRun {
-		r.Record = record(o.Remove, done)
+		r.Record = record(o.Remove, o.MCP.Want, done)
 	}
 	return r, nil
 }
@@ -91,7 +124,7 @@ func Run(o Options) (Report, error) {
 // record adds to setup.json the agents that this run set up, or removes
 // those it removed, and every agent found on this machine. A broken
 // setup.json is replaced.
-func record(remove bool, done []agent.Agent) error {
+func record(remove, mcp bool, done []agent.Agent) error {
 	s, _, err := state.LoadSetups()
 	if err != nil {
 		s = state.Setups{}
@@ -101,6 +134,14 @@ func record(remove bool, done []agent.Agent) error {
 			s.Uninstall(a.Name(), a.ConfigPath())
 		} else {
 			s.Install(a.Name(), a.ConfigPath())
+		}
+		if m, ok := a.(agent.MCPAgent); ok && experimental.MCP() {
+			switch {
+			case remove:
+				s.Uninstall(MCPKey(a.Name()), m.MCP().MCPPath())
+			case mcp:
+				s.Install(MCPKey(a.Name()), m.MCP().MCPPath())
+			}
 		}
 	}
 	for _, a := range registry.All() {

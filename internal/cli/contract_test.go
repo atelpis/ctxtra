@@ -20,6 +20,7 @@ import (
 	"github.com/ctxtra/ctxtra/internal/agent/registry"
 	"github.com/ctxtra/ctxtra/internal/chunk"
 	"github.com/ctxtra/ctxtra/internal/hook"
+	"github.com/ctxtra/ctxtra/internal/mcp/mcptest"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/resolve"
 	"github.com/ctxtra/ctxtra/internal/testenv"
@@ -30,6 +31,10 @@ import (
 // lock until its process ends, so the slots of one event can't share a
 // process.
 func TestMain(m *testing.M) {
+	if os.Getenv("CTXTRA_TEST_MCPSERVER") != "" {
+		mcptest.Main(os.Args[1:])
+		os.Exit(0)
+	}
 	if os.Getenv("CTXTRA_TEST_HOOK") != "" {
 		os.Exit(Run(os.Args[1:], IO{In: os.Stdin, Out: os.Stdout, Err: os.Stderr}, "test"))
 	}
@@ -52,6 +57,9 @@ func TestClientContract(t *testing.T) {
 			a, ok := registry.Get(c.Agent)
 			if !ok {
 				t.Fatalf("unknown agent %q", c.Agent)
+			}
+			if c.MCP {
+				t.Skip("an MCP entry: TestMCPClientContract")
 			}
 			h := testenv.Home(t)
 			// Not run: the test runs the hooks' argv itself.
