@@ -70,3 +70,22 @@ func TestWriteIfUnchanged(t *testing.T) {
 		t.Errorf("removed meanwhile: %v", err)
 	}
 }
+
+// A check that fails right before the rename leaves the file as it is.
+func TestReplaceCheckedLast(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "f")
+	if err := os.WriteFile(p, []byte("agent"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := replaceChecked(p, []byte("setup"), 0o644, 0o755, func() error { return ErrChanged })
+	if err != ErrChanged {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "agent" {
+		t.Errorf("%q", b)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("temporary file left: %v", entries)
+	}
+}

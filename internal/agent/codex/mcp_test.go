@@ -294,3 +294,38 @@ func TestCodexConcurrentChange(t *testing.T) {
 		t.Errorf("%s", b)
 	}
 }
+
+// ctxtra's subtables before the block, and with quoted keys, go with
+// --remove too.
+func TestCodexRemoveSubtables(t *testing.T) {
+	h := testenv.Home(t)
+	path := filepath.Join(h, ".codex", "config.toml")
+	testenv.Write(t, path, realConfig)
+	if _, err := setupMCP(t, add("/bin/ctxtra")); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	body := "[mcp_servers.ctxtra.tools.a]\napproval_mode = \"approve\"\n\n" + string(b) +
+		"\n[\"mcp_servers\".ctxtra.tools.b]\napproval_mode = \"approve\"\n\n[mcp_servers.other]\ncommand = \"x\"\n"
+	testenv.Write(t, path, body)
+	if _, err := setupMCP(t, add("/bin/ctxtra")); err != nil {
+		t.Fatalf("setup with subtables: %v", err)
+	}
+	if _, err := setupMCP(t, agent.MCPOptions{Options: agent.Options{Remove: true}}); err != nil {
+		t.Fatal(err)
+	}
+	m := decode(t, read(t, path))
+	servers, _ := m["mcp_servers"].(map[string]any)
+	if servers["ctxtra"] != nil || servers["other"] == nil || servers["linear"] == nil {
+		t.Errorf("%v", servers)
+	}
+}
+
+func read(t *testing.T, p string) string {
+	t.Helper()
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}

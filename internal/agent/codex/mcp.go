@@ -412,16 +412,22 @@ func (a Agent) MCPCommand() ([]string, bool) {
 // waits for it up to startup_timeout_sec.
 func (Agent) MCPDeadline() time.Duration { return agent.MCPDeadline }
 
-var reOurTable = regexp.MustCompile(`^\[\[?\s*mcp_servers\s*\.\s*("ctxtra"|'ctxtra'|ctxtra)\s*[.\]]`)
+// reOurTable is a header of a table under mcp_servers.ctxtra, with each
+// key bare or quoted.
+var reOurTable = regexp.MustCompile(`^\[\[?\s*("mcp_servers"|'mcp_servers'|mcp_servers)\s*\.\s*("ctxtra"|'ctxtra'|ctxtra)\s*[.\]]`)
 
-// removeRest removes, from line from on, what still belongs to ctxtra's
-// table once its block is gone: keys the user added after the block, up
-// to the next table, and every [mcp_servers.ctxtra.*] table. Comments and
-// blank lines stay. The check of the result catches what this misses.
+// removeRest removes what still belongs to ctxtra's table once its block,
+// which started at line from, is gone: keys the user added after the
+// block, up to the next table, and every table under mcp_servers.ctxtra,
+// wherever it is. Comments and blank lines stay. The check of the result
+// catches what this misses.
 func (f *tomlFile) removeRest(from int) {
-	ours := true // the lines right after the block are in ctxtra's table
-	out := f.lines[:from:from]
-	for _, l := range f.lines[from:] {
+	ours := false
+	var out []string
+	for i, l := range f.lines {
+		if i == from {
+			ours = true // the lines right after the block are in ctxtra's table
+		}
 		t := strings.TrimSpace(l)
 		if strings.HasPrefix(t, "[") {
 			ours = reOurTable.MatchString(t)
