@@ -304,6 +304,10 @@ ctxtra binds to that folder:
 - Antigravity: an allow rule `mcp(ctxtra/*)`.
 - Muse has no rules per server: approve the tools when it asks.
 
+ctxtra keeps the servers' secret values, such as an API token, encrypted in `~/.ctxtra/mcp`, with the key in
+your OS keychain. Without a keychain, for example on a Linux server, the key is a file there, and ctxtra warns
+that any process of yours can read the credentials.
+
 A session's servers are fixed when it starts; their tools can still change. ctxtra waits for slow servers only as long as each agent
 waits for it: 1.5 seconds in Claude Code (later tools follow in its interactive mode), up to 10 in the others.
 A server that starts slower, such as one run with `npx`, can be missing from that session. In Codex, the

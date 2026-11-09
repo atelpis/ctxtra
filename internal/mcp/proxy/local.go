@@ -78,27 +78,53 @@ func (u *Upstream) Close() {
 // available.
 var ErrSecrets = errors.New("secret values are not available")
 
+// Secrets are where servers' secret values come from: the credential
+// store.
+type Secrets interface {
+	// Secrets are the values of s's SecretEnv and SecretHeaders, or an
+	// error when one is missing or was set for another definition of s.
+	Secrets(s upstream.Server) (env, headers map[string]string, err error)
+}
+
 // ErrRemote is the error for a remote server, which this version can't
 // connect to yet.
 var ErrRemote = errors.New("remote servers are not supported yet")
 
-// Dial starts a session with s, a server bound to a session in dir.
+// Dial starts a session with s, a server bound to a session in dir,
+// without secret values.
 func Dial(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*Upstream, error) {
-	return DialStderr(ctx, s, dir, c, nil)
+	return Dialer{}.Dial(ctx, s, dir, c)
 }
 
-// DialStderr is Dial with a local server's stderr going to stderr, for
-// debugging; nil drops it.
-func DialStderr(ctx context.Context, s upstream.Server, dir string, c *mcp.Client, stderr io.Writer) (*Upstream, error) {
+// Dialer starts sessions with servers.
+type Dialer struct {
+	// Secrets has the servers' secret values; without it, a server that
+	// has some can't start.
+	Secrets Secrets
+	// Stderr gets a local server's stderr, for debugging; nil drops it.
+	Stderr io.Writer
+}
+
+// Dial starts a session with s, a server bound to a session in dir. Only s
+// gets its own secret values.
+func (d Dialer) Dial(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*Upstream, error) {
 	if !s.Local() {
 		return nil, ErrRemote
 	}
+	var secrets map[string]string
 	if len(s.SecretEnv) > 0 {
-		return nil, ErrSecrets
+		if d.Secrets == nil {
+			return nil, ErrSecrets
+		}
+		env, _, err := d.Secrets.Secrets(s)
+		if err != nil {
+			return nil, secretsError{err}
+		}
+		secrets = env
 	}
-	cmd := Command(s, dir, os.LookupEnv, nil)
-	if stderr != nil {
-		cmd.Stderr = stderr
+	cmd := Command(s, dir, os.LookupEnv, secrets)
+	if d.Stderr != nil {
+		cmd.Stderr = d.Stderr
 	}
 	t := &startWatch{CommandTransport: mcp.CommandTransport{Command: cmd, TerminateDuration: stopGrace}, ctx: ctx}
 	cs, err := c.Connect(ctx, t, nil)
@@ -200,6 +226,13 @@ type Record struct {
 	Error    string   `json:"error,omitempty"`
 }
 
+// secretsError is a server whose secret values couldn't be read. Its text
+// names the server and the reason, never a value.
+type secretsError struct{ err error }
+
+func (e secretsError) Error() string   { return ErrSecrets.Error() + ": " + e.err.Error() }
+func (e secretsError) Unwrap() []error { return []error{ErrSecrets, e.err} }
+
 // exited is the error of a server that ended before it answered.
 type exited struct {
 	state string
@@ -223,6 +256,7 @@ func errorKind(err error) string {
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"
 	case errors.Is(err, ErrSecrets), errors.Is(err, ErrRemote), errors.Is(err, ErrTooManyTools):
+		// These say why without the server's own words.
 		return err.Error()
 	case errors.Is(err, exec.ErrNotFound), errors.Is(err, os.ErrNotExist):
 		return "program not found"

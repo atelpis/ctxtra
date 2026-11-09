@@ -19,6 +19,7 @@ import (
 	"github.com/ctxtra/ctxtra/internal/agent/registry"
 	"github.com/ctxtra/ctxtra/internal/config"
 	"github.com/ctxtra/ctxtra/internal/experimental"
+	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/mcp/names"
 	"github.com/ctxtra/ctxtra/internal/mcp/proxy"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
@@ -87,10 +88,15 @@ and never fails a session. You don't run it yourself.`,
 }
 
 type mcpAddOptions struct {
-	env, envPass []string
-	notes        string
-	noLogin      bool
-	dryRun       bool
+	env, envPass  []string
+	secretEnv     []string
+	secretHeaders []string
+	clientID      string
+	clientSecret  bool
+	notes         string
+	noLogin       bool
+	dryRun        bool
+	noInput       bool
 }
 
 func (a *app) mcpAddCmd() *cobra.Command {
@@ -103,10 +109,16 @@ session folder, or a remote one at URL. Then it lists the tools that sessions
 will see. Bind the server to folders with ctxtra binding add --mcp NAME.
 
 NAME is 1 to 20 characters of a-z, 0-9 and _. The program must be an absolute
-path or a name in PATH. A local server gets only its --env and --env-pass
-variables and a few base ones (PATH, HOME, proxy settings), not the agent's.`,
-		Example: `  ctxtra mcp add pg --env PGUSER=dev -- npx -y @modelcontextprotocol/server-postgres postgresql://localhost/dev
-  ctxtra mcp add linear_work https://mcp.linear.app/mcp --no-login`,
+path or a name in PATH. A local server gets only its --env, --env-pass and
+--secret-env variables and a few base ones (PATH, HOME, proxy settings), not
+the agent's.
+
+ctxtra asks for the values of --secret-env, --secret-header and
+--client-secret in the terminal, or reads them from stdin, one per line, and
+stores them encrypted, never in the config.`,
+		Example: `  ctxtra mcp add pg --env PGUSER=dev --secret-env PGPASSWORD -- npx -y @modelcontextprotocol/server-postgres postgresql://localhost/dev
+  ctxtra mcp add linear_work https://mcp.linear.app/mcp --no-login
+  ctxtra mcp add internal https://mcp.internal.example/mcp --secret-header Authorization --no-login`,
 		Args: func(c *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return errors.New("expected NAME")
@@ -127,12 +139,17 @@ variables and a few base ones (PATH, HOME, proxy settings), not the agent's.`,
 			default:
 				return errors.New("expected a URL, or -- and a command")
 			}
+			o.noInput = a.noInput
 			return code(mcpAdd(a.IO, args[0], url, command, o))
 		}),
 	}
 	f := c.Flags()
 	f.StringArrayVar(&o.env, "env", nil, "give a local server the variable `NAME=VALUE` (repeatable)")
 	f.StringArrayVar(&o.envPass, "env-pass", nil, "pass a local server the variable `NAME` from the agent's environment (repeatable)")
+	f.StringArrayVar(&o.secretEnv, "secret-env", nil, "give a local server the variable `NAME`, with a value ctxtra asks for and stores (repeatable)")
+	f.StringArrayVar(&o.secretHeaders, "secret-header", nil, "send a remote server the header `NAME`, with a value ctxtra asks for and stores (repeatable)")
+	f.StringVar(&o.clientID, "client-id", "", "the `ID` of your own OAuth app for a remote server")
+	f.BoolVar(&o.clientSecret, "client-secret", false, "ask for the secret of the --client-id app, and store it")
 	f.StringVar(&o.notes, "notes", "", "your notes about the server, such as which account to use")
 	f.BoolVar(&o.noLogin, "no-login", false, "don't sign in now (remote servers)")
 	f.BoolVar(&o.dryRun, "dry-run", false, "show the change; change nothing, start and connect to nothing")
@@ -145,7 +162,11 @@ func mcpAdd(stdio IO, name, url string, command []string, o mcpAddOptions) int {
 	if err := config.CheckServerName(name); err != nil {
 		return fail(err)
 	}
-	srv := config.NewMCPServer{Name: name, URL: url, Command: command, EnvPass: o.envPass, Notes: o.notes}
+	srv := config.NewMCPServer{Name: name, URL: url, Command: command, EnvPass: o.envPass, SecretEnv: o.secretEnv,
+		SecretHeaders: o.secretHeaders, ClientID: o.clientID, Notes: o.notes}
+	if o.clientSecret && o.clientID == "" {
+		return fail(errors.New("--client-secret needs --client-id"))
+	}
 	for _, kv := range o.env {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok || k == "" {
@@ -175,22 +196,40 @@ func mcpAdd(stdio IO, name, url string, command []string, o mcpAddOptions) int {
 		}
 		return out, nil
 	}
+	old, err := readConfig(s.file)
+	if err == nil {
+		_, err = change(old)
+	}
+	if err != nil {
+		return fail(err)
+	}
 	if o.dryRun {
-		old, err := readConfig(s.file)
-		if err == nil {
-			_, err = change(old)
-		}
-		if err != nil {
-			return fail(err)
-		}
 		fmt.Fprintf(s.Out, "would add the MCP server %s to %s: %s\n", name, paths.Tilde(s.file), describeServer(added))
 		fmt.Fprintln(s.Out, "nothing changed (--dry-run)")
 		return 0
 	}
+	// The values are stored before the config names them, so that a
+	// session never starts the server without them.
+	secrets, err := askSecrets(stdio, o.noInput, name, added.SecretEnv, added.SecretHeaders, o.clientSecret)
+	if err != nil {
+		return fail(err)
+	}
+	store := creds.Open()
+	if !secrets.empty() {
+		if err := storeSecrets(s.Err, store, added, secrets); err != nil {
+			return fail(err)
+		}
+	}
 	if err := s.edit(change); err != nil {
+		if !secrets.empty() {
+			_ = store.Delete(added)
+		}
 		return fail(err)
 	}
 	fmt.Fprintf(s.Out, "added the MCP server %s to %s: %s\n", name, paths.Tilde(s.file), describeServer(added))
+	if !secrets.empty() {
+		fmt.Fprintf(s.Out, "stored its secret values, encrypted, in %s\n", paths.Tilde(store.Dir))
+	}
 	if added.Local() {
 		wd, _ := os.Getwd()
 		if tools, err := serverTools(added, wd, false); err != nil {
@@ -225,6 +264,27 @@ func agentsNeedingSetup() []string {
 	return out
 }
 
+// storeSecrets stores the secret values of srv, creating the store's key
+// when there is none.
+func storeSecrets(errOut io.Writer, store *creds.Store, srv upstream.Server, v secretValues) error {
+	fileKey, err := store.EnsureKey()
+	if err != nil {
+		return err
+	}
+	if fileKey {
+		warnFileKey(errOut, store)
+	}
+	if len(v.env) > 0 || len(v.headers) > 0 {
+		if err := store.SetSecrets(srv, v.env, v.headers); err != nil {
+			return err
+		}
+	}
+	if v.clientSecret != "" {
+		return store.SetClientSecret(srv, v.clientSecret)
+	}
+	return nil
+}
+
 func describeServer(s upstream.Server) string {
 	if s.Local() {
 		return "local, " + strings.Join(s.Command, " ")
@@ -246,7 +306,8 @@ func serverTools(s upstream.Server, dir string, stderr bool) ([]names.Name, erro
 	}
 	// Started and stopped like the proxy starts and stops it, with every
 	// process it starts.
-	up, err := proxy.DialStderr(ctx, s, dir, mcp.NewClient(&mcp.Implementation{Name: "ctxtra"}, &mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}}), errOut)
+	d := proxy.Dialer{Secrets: creds.Open(), Stderr: errOut}
+	up, err := d.Dial(ctx, s, dir, mcp.NewClient(&mcp.Implementation{Name: "ctxtra"}, &mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}}))
 	if err != nil {
 		return nil, err
 	}
@@ -294,6 +355,9 @@ func signIn(s upstream.Server) string {
 	case s.Local() && len(s.SecretEnv) == 0:
 		return "none needed"
 	case s.Local():
+		if st, err := creds.Open().State(s); err == nil && st.SignedIn {
+			return "secret values set"
+		}
 		return "secret values not set"
 	}
 	return "not signed in"
@@ -384,6 +448,8 @@ func (a *app) mcpRemoveCmd() *cobra.Command {
 		RunE: a.mcpRun(func(_ *cobra.Command, args []string) error {
 			name := args[0]
 			s := newSources(a.IO)
+			// Its credentials go with it; their key is its identity.
+			srv, declared := config.Load(paths.ConfigPath(), newReader()).MCPServer(name)
 			change := func(old []byte) ([]byte, error) { return config.RemoveMCPServer(old, name) }
 			var err error
 			if dryRun {
@@ -402,6 +468,11 @@ func (a *app) mcpRemoveCmd() *cobra.Command {
 				verb = "would remove"
 			}
 			fmt.Fprintf(a.Out, "%s the MCP server %s from %s\n", verb, name, paths.Tilde(s.file))
+			if declared && !dryRun {
+				if err := creds.Open().Delete(srv); err != nil {
+					fmt.Fprintf(a.Err, "warning: couldn't delete the credentials of %s: %v\n", name, err)
+				}
+			}
 			cfg := config.Load(paths.ConfigPath(), newReader())
 			// After the change, a binding that names the server has a problem
 			// for it; before it (--dry-run), the binding still has it.

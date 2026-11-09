@@ -696,6 +696,53 @@ ended, and its own end. It never logs tool arguments, results, secrets or config
 problems as text; a failed call is logged by its kind or code only, because error messages can repeat the
 arguments. `doctor`'s last hook runs leave these lines out.
 
+### Credentials
+
+A server's secret values, its OAuth client registration and its tokens are stored in `~/.ctxtra/mcp`, never in
+the config or in an agent's config. ctxtra asks for secret values in the terminal without showing them, or
+reads them from stdin, one per line.
+
+| Path | Content |
+|---|---|
+| `credentials/<server>.v1.age` | The server's credentials, encrypted. `v1` is the format version. |
+| `state/<server>.json` | No secrets: whether the server is signed in, and why it needs sign-in. |
+| `locks/<server>.lock`, `locks/store.lock` | Locks for changes of one server's files, and for creating the key. |
+| `key.json` | No secrets: where the key is, `keychain` or `file`. |
+| `key` | The key, only when `key.json` says `file`. |
+
+The folder is readable by the user only (0700), and the files too (0600). Every save replaces the file in one
+step and reaches the disk before ctxtra uses the new values: a failed save fails the command or the call.
+
+The key is an [age](https://age-encryption.org) X25519 key in the OS keychain: the login keychain on macOS, the
+Secret Service on Linux (service `ctxtra`, account `mcp-credentials`). Without a usable keychain, the key is the
+file `key`, and ctxtra warns that any process of the user can read the credentials then. Only the commands that
+set secret values or sign in create the key, and they record its place in `key.json`. Every other command and
+the proxy use that place and never create or move the key. When the keychain that holds the key can't be
+reached, for example over SSH or without a session bus, ctxtra says so and doesn't fall back to a file. A
+file key stays the key when a keychain becomes usable later. The proxy waits for the keychain at most 3
+seconds and never shows a prompt; when it can't get the key, the servers that need it are left out. When the
+key is gone, the credentials can't be read: the next command that creates the key moves them to
+`credentials/unreadable`, and their servers need their values or sign-in again.
+
+Each server's credentials record its name and its URL, or its command for a local server. When the server's
+definition changes, ctxtra sends nothing and the values must be set again. Two configs (`$CTXTRA_CONFIG`) with
+a server of the same name and URL share its credentials; use different names for different accounts.
+Removing a server deletes its credentials.
+
+Sessions in every agent refresh a server's tokens at the same time safely: a refresh holds that server's lock
+while it reads the credentials again, asks for new tokens and saves them, and other sessions wait for it and
+use the new tokens. Every other change of a server's credentials takes the same lock. The locks use `flock`,
+which can be unreliable on a network home folder (NFS).
+
+The hook never reads the credentials or the key. Like the agents' own MCP sign-ins, the credentials protect
+against backups, sync tools and casual reads, not against the user's own processes: any process of the user
+can read the key, through the keychain's command-line tool or the key file.
+
+The file names, the format version in them, the lock paths and the state file's meaning are a contract between
+ctxtra versions, so sessions of an older and a newer ctxtra can refresh the same server. Within a format
+version, ctxtra only adds fields and keeps the fields it doesn't know. An older ctxtra that finds credentials in
+a newer format fails that server's calls with an upgrade hint, and changes nothing.
+
 ### Setup
 
 With `CTXTRA_EXPERIMENTAL_MCP=1` and at least one MCP server in the config, `ctxtra setup` adds the entry to each

@@ -10,6 +10,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rogpeppe/go-internal/testscript"
+	"github.com/zalando/go-keyring"
 
 	"github.com/ctxtra/ctxtra/internal/cli"
 	"github.com/ctxtra/ctxtra/internal/jsonorder"
@@ -29,11 +31,17 @@ import (
 )
 
 // ctxtra-tty is ctxtra as if stdin and stdout were a terminal, for the
-// commands that ask only there.
+// commands that ask only there. Neither uses the user's keychain: the
+// credential store's key is a file in the script's HOME.
 func TestMain(m *testing.M) {
+	noKeychain := func() { keyring.MockInitWithError(errors.New("no keychain in tests")) }
 	testscript.Main(m, map[string]func(){
-		"ctxtra": main,
+		"ctxtra": func() {
+			noKeychain()
+			main()
+		},
 		"ctxtra-tty": func() {
+			noKeychain()
 			cli.Interactive = func(cli.IO) bool { return true }
 			main()
 		},

@@ -14,6 +14,7 @@ import (
 	"github.com/ctxtra/ctxtra/internal/agent/registry"
 	"github.com/ctxtra/ctxtra/internal/experimental"
 	"github.com/ctxtra/ctxtra/internal/logfile"
+	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/mcp/proxy"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 	"github.com/ctxtra/ctxtra/internal/paths"
@@ -37,8 +38,11 @@ func runProxy(args []string, stdio IO, version string) int {
 	log := func(r proxy.Record) {
 		logfile.Append(proxyRecord{Ts: time.Now().UTC().Format(time.RFC3339Nano), Kind: "mcp", Harness: agent, Record: r})
 	}
+	// The keychain can wait for a prompt that no one sees in a session.
+	store := creds.Open()
+	store.KeyTimeout = 3 * time.Second
 	o := proxy.Options{Agent: agent, Version: version, Dir: dir, Start: started, Servers: sessionServers, Log: log,
-		Deadline: mcpDeadline(agent)}
+		Deadline: mcpDeadline(agent), Secrets: store}
 	switch {
 	case !experimental.MCP():
 		o.Servers = func(string) ([]upstream.Server, []string) { return nil, nil }

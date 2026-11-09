@@ -74,9 +74,15 @@ func (s *session) records() []Record {
 // start runs a proxy for dir with servers, and connects to it.
 func start(t *testing.T, dir string, deadline time.Duration, servers ...upstream.Server) *session {
 	t.Helper()
+	return startSecrets(t, dir, deadline, nil, servers...)
+}
+
+// startSecrets is start with secret values from secrets.
+func startSecrets(t *testing.T, dir string, deadline time.Duration, secrets Secrets, servers ...upstream.Server) *session {
+	t.Helper()
 	s := &session{changed: make(chan struct{}, 10), done: make(chan error, 1), prog: make(chan *mcp.ProgressNotificationParams, 10)}
 	ct, st := mcp.NewInMemoryTransports()
-	o := Options{Agent: "test", Dir: dir, Deadline: deadline,
+	o := Options{Agent: "test", Dir: dir, Deadline: deadline, Secrets: secrets,
 		Servers: func(string) ([]upstream.Server, []string) { return servers, nil },
 		Log: func(r Record) {
 			s.logMu.Lock()
@@ -165,8 +171,37 @@ func TestNoServers(t *testing.T) {
 	}
 }
 
+// secrets are fixed secret values per server ID.
+type secrets map[string]map[string]string
+
+func (m secrets) Secrets(s upstream.Server) (map[string]string, map[string]string, error) {
+	env, ok := m[s.ID]
+	if !ok {
+		return nil, nil, errors.New(s.Name + ": its secret values are not set; run ctxtra mcp login " + s.Name)
+	}
+	return env, nil, nil
+}
+
+type localEnv struct {
+	Cwd string
+	Env []string
+}
+
+func envOf(t *testing.T, s *session, tool string) localEnv {
+	t.Helper()
+	out, err := s.call(t, tool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got localEnv
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(out)
+	}
+	return got
+}
+
 // Local servers start in the session folder with only their own and the
-// base variables.
+// base variables, and their own secret values.
 func TestLocalEnvironment(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "do-not-pass")
 	t.Setenv("HTTPS_PROXY", "http://proxy:3128")
@@ -175,17 +210,12 @@ func TestLocalEnvironment(t *testing.T) {
 	srv := testServer(t, "pg")
 	srv.Env["DB"] = "dev"
 	srv.EnvPass = []string{"MY_PASS"}
-	s := start(t, dir, 5*time.Second, srv)
-	out, err := s.call(t, "pg__env", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got struct {
-		Cwd string
-		Env []string
-	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatal(out)
+	srv.SecretEnv = []string{"PGPASSWORD"}
+	other := testServer(t, "other")
+	s := startSecrets(t, dir, 5*time.Second, secrets{"pg": {"PGPASSWORD": "s3cret"}, "other": {"PGPASSWORD": "not-for-pg"}}, srv, other)
+	got := envOf(t, s, "pg__env")
+	if o := envOf(t, s, "other__env"); slices.ContainsFunc(o.Env, func(kv string) bool { return strings.HasPrefix(kv, "PGPASSWORD=") }) {
+		t.Errorf("a server without secret-env got a secret: %v", o.Env)
 	}
 	real, _ := filepath.EvalSymlinks(dir)
 	if wd, _ := filepath.EvalSymlinks(got.Cwd); wd != real {
@@ -196,15 +226,35 @@ func TestLocalEnvironment(t *testing.T) {
 		k, _, _ := strings.Cut(kv, "=")
 		keys = append(keys, k)
 	}
-	for _, want := range []string{"DB=dev", "HTTPS_PROXY=http://proxy:3128", "MY_PASS=passed", "PATH=" + os.Getenv("PATH")} {
+	for _, want := range []string{"DB=dev", "HTTPS_PROXY=http://proxy:3128", "MY_PASS=passed", "PATH=" + os.Getenv("PATH"), "PGPASSWORD=s3cret"} {
 		if !slices.Contains(got.Env, want) {
 			t.Errorf("missing %s in %v", want, got.Env)
 		}
 	}
 	for _, k := range keys {
-		if !slices.Contains(baseEnv, k) && !slices.Contains([]string{"DB", "MY_PASS", "PROXYTEST_ROLE"}, k) {
+		if !slices.Contains(baseEnv, k) && !slices.Contains([]string{"DB", "MY_PASS", "PROXYTEST_ROLE", "PGPASSWORD"}, k) {
 			t.Errorf("unexpected variable %s", k)
 		}
+	}
+}
+
+// A server whose secret values are missing is left out, and the log says
+// why.
+func TestMissingSecrets(t *testing.T) {
+	srv := testServer(t, "pg")
+	srv.SecretEnv = []string{"PGPASSWORD"}
+	s := startSecrets(t, t.TempDir(), 5*time.Second, secrets{}, srv, testServer(t, "good"))
+	if got := toolNames(s.tools(t)); slices.ContainsFunc(got, func(n string) bool { return strings.HasPrefix(n, "pg__") }) {
+		t.Errorf("tools %v", got)
+	}
+	found := false
+	for _, r := range s.records() {
+		if r.Event == "connect" && r.Server == "pg" {
+			found = r.Error == "secret values are not available: pg: its secret values are not set; run ctxtra mcp login pg"
+		}
+	}
+	if !found {
+		t.Errorf("log: %+v", s.records())
 	}
 }
 

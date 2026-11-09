@@ -42,8 +42,11 @@ type Options struct {
 	// Servers returns the servers bound to dir, and problems to log. It
 	// never fails: a broken config has no servers.
 	Servers func(dir string) ([]upstream.Server, []string)
-	// Connect starts a session with one server; nil uses Dial.
+	// Connect starts a session with one server; nil uses a Dialer with
+	// Secrets.
 	Connect func(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*Upstream, error)
+	// Secrets has the servers' secret values.
+	Secrets Secrets
 	// Log records what happened; nil logs nothing.
 	Log func(Record)
 }
@@ -56,7 +59,7 @@ func Run(ctx context.Context, o Options, t mcp.Transport) error {
 		o.Deadline = Deadline
 	}
 	if o.Connect == nil {
-		o.Connect = Dial
+		o.Connect = Dialer{Secrets: o.Secrets}.Dial
 	}
 	if o.Log == nil {
 		o.Log = func(Record) {}
