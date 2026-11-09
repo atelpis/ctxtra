@@ -109,6 +109,17 @@ Not covered here, and checked by hand before a release:
   tool calls: the agent should read the listed `SKILL.md` without first calling `Skill`. The mock's
   scripted tool calls cannot establish this behavior.
 
+## MCP probe
+
+`mcpprobe` is a manual experiment, not a test: it runs agents with a stdio MCP server (`mcpprobe/probe`) that
+records what it gets (folder, environment names, client capabilities, roots, tool calls), and lets the mock
+model call MCP tools by name (`mock.CallMCPTools`). It runs only with `-out`:
+
+```bash
+go test -count=1 ./mcpprobe -v -out /tmp/probe -agents claude,codex
+python3 -I mcpprobe/analyze.py /tmp/probe
+```
+
 ## Add an agent
 
 1. Support it in ctxtra: `internal/agent/<name>`, and add it to the registry.

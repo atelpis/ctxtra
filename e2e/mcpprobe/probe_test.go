@@ -44,8 +44,9 @@ var ctxtraBin, probeBin string
 func TestMain(m *testing.M) {
 	flag.Parse()
 	if *outFlag == "" {
-		fmt.Fprintln(os.Stderr, "mcpprobe: -out DIR is required")
-		os.Exit(2)
+		// A manual experiment, not part of go test ./...: it runs only with -out.
+		fmt.Fprintln(os.Stderr, "mcpprobe: skipped without -out DIR")
+		os.Exit(0)
 	}
 	dir := filepath.Join(*outFlag, "bin")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
