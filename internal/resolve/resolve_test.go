@@ -330,3 +330,59 @@ func TestNotices(t *testing.T) {
 		t.Errorf("checks off: %v", got)
 	}
 }
+
+func serverNames(res *Result) []string {
+	var out []string
+	for _, s := range res.MCPServers {
+		out = append(out, s.Name+"<"+strings.SplitN(s.Origin, " ", 2)[0])
+	}
+	return out
+}
+
+// Sessions get the servers of the bindings that match, in binding order,
+// each once, with the binding that added it.
+func TestMCPServers(t *testing.T) {
+	t.Setenv("CTXTRA_EXPERIMENTAL_MCP", "1")
+	h := testenv.Home(t)
+	mono := testenv.Repo(t, filepath.Join(h, "dev", "mono"), "git@github.com:acme/mono.git")
+	svc := testenv.Repo(t, filepath.Join(h, "dev", "svc"), "git@github.com:acme/svc.git")
+	wt := filepath.Join(h, "elsewhere", "svc-feature")
+	testenv.Run(t, svc, "git", "worktree", "add", "-q", "-b", "feature", wt)
+	sub := filepath.Join(mono, "services", "billing", "cmd")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := config.Load(testenv.Config(t, h, `schema: ctxtra/v1
+mcp-servers:
+  everywhere: {command: [a]}
+  linear_work: {url: https://mcp.linear.app/mcp}
+  billing: {command: [b]}
+  svc: {command: [c]}
+bindings:
+  - {name: g, match: {global: true}, mcp-servers: [everywhere]}
+  - {name: work, match: {dirs: ['~/dev/**']}, mcp-servers: [linear_work, everywhere]}
+  - {name: bill, match: {repos: [{remote: github.com/acme/mono, subpath: services/billing/**}]}, mcp-servers: [billing, linear_work]}
+  - {name: s, match: {dirs: ['~/dev/svc/**']}, mcp-servers: [svc]}
+`), fsutil.NewReader(config.MaxFileBytes, config.MaxSessionBytes))
+	if len(cfg.Problems) > 0 {
+		t.Fatal(cfg.Problems)
+	}
+	for _, tc := range []struct {
+		dir  string
+		want []string
+	}{
+		{h, []string{"everywhere<g"}},
+		{mono, []string{"everywhere<g", "linear_work<work"}},
+		{sub, []string{"everywhere<g", "linear_work<work", "billing<bill"}},
+		{wt, []string{"everywhere<g", "linear_work<work", "svc<s"}},
+	} {
+		res := run(tc.dir, cfg)
+		if got := serverNames(res); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: %v, want %v", tc.dir, got, tc.want)
+		}
+	}
+	res := run(sub, cfg)
+	if res.MCPServers[0].ID != "everywhere" || !res.MCPServers[0].Local() || !slices.Equal(res.Trace[2].MCPServers, []string{"billing", "linear_work"}) {
+		t.Errorf("%+v %+v", res.MCPServers[0], res.Trace[2])
+	}
+}

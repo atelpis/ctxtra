@@ -1,0 +1,62 @@
+# MCP servers in the config (experimental): without CTXTRA_EXPERIMENTAL_MCP,
+# mcp-servers is an unknown key like any other, and the whole config is
+# ignored. With it, servers are checked one by one, and bindings name them.
+
+mkdir .config/ctxtra
+cp config.yaml .config/ctxtra/config.yaml
+mkdir dev/api
+
+! exec ctxtra doctor dev/api
+stdout 'PROBLEM: ~/.config/ctxtra/config.yaml: line \d+: unknown key "mcp-servers"'
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+! exec ctxtra doctor dev/api
+stdout 'PROBLEM: ~/.config/ctxtra/config.yaml: line 6: mcp-servers.linear-work: server name "linear-work": names are 1 to 20 characters of a-z, 0-9 and _, start with a letter, and have no __ and no _ at the end; for example linear_work; server skipped'
+stdout 'PROBLEM: ~/.config/ctxtra/config.yaml: line 7: mcp-servers.plain: url "http://example.com/mcp": remote servers need https'
+stdout 'PROBLEM: ~/.config/ctxtra/config.yaml: line 12: server linear_wrok is not in mcp-servers of ~/.config/ctxtra/config.yaml; skipped'
+stdout 'NOTE: mcp-servers.internal: headers.Authorization looks like a secret, which the config shouldn''t hold; use secret-headers: \[Authorization\]'
+stdout 'PROBLEM: ~/.config/ctxtra/bindings.yaml: line 2: mcp-servers works only in the config'
+
+! exec ctxtra context explain dev/api
+stdout '^\+ work \(~/.config/ctxtra/config.yaml\): '
+stdout '^    mcp      linear_work$'
+stdout '^    mcp      pg$'
+stdout '^    skip     mcp linear_work \(already added by an earlier binding\)$'
+stdout ', 2 MCP servers$'
+! exec ctxtra context explain --json dev/api
+stdout '"mcp_servers": \['
+stdout '"path": "pg",\s+"status": "added"'
+
+# A binding with only servers is valid.
+! exec ctxtra context explain .
+stdout '^- work'
+! stdout 'MCP servers'
+
+# source check reads no user config: it checks names only.
+! exec ctxtra source check team
+stdout 'server name "Bad"'
+! stdout 'linear'
+
+-- config.yaml --
+schema: ctxtra/v1
+mcp-servers:
+  linear_work: {url: https://mcp.linear.app/mcp}
+  pg: {command: [pg-mcp]}
+  internal: {url: https://mcp.internal.example/mcp, headers: {Authorization: Bearer abc}}
+  linear-work: {url: https://mcp.linear.app/mcp}
+  plain: {url: http://example.com/mcp}
+bindings:
+  - name: work
+    match: {dirs: ['~/dev/**']}
+    mcp-servers: [linear_work, pg]
+  - {name: typo, match: {dirs: ['~/dev/**']}, mcp-servers: [linear_wrok, linear_work]}
+include: [bindings.yaml]
+-- .config/ctxtra/bindings.yaml --
+schema: ctxtra/v1
+mcp-servers: {x: {command: [x]}}
+bindings:
+  - {name: b, match: {global: true}, mcp-servers: [pg]}
+-- team/bindings.yaml --
+schema: ctxtra/v1
+bindings:
+  - {name: a, match: {global: true}, mcp-servers: [linear, Bad]}

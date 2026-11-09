@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"unicode/utf8"
 
 	"github.com/ctxtra/ctxtra/internal/config"
 	"github.com/ctxtra/ctxtra/internal/fsutil"
 	"github.com/ctxtra/ctxtra/internal/gitrepo"
+	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/source"
 	"github.com/ctxtra/ctxtra/internal/state"
@@ -35,26 +37,36 @@ type Hit struct {
 	Over string
 }
 
+// MCPServer is an MCP server the session gets.
+type MCPServer struct {
+	upstream.Server
+	Origin string // the binding that added it
+}
+
 // Trace explains one binding, for `explain`.
 type Trace struct {
-	Origin   string
-	Matched  bool
-	Reason   string
-	Files    []string
-	Skills   []string // SKILL.md paths
-	Missing  []string
-	Problems []string
+	Origin  string
+	Matched bool
+	Reason  string
+	Files   []string
+	Skills  []string // SKILL.md paths
+	// MCPServers are the names of the binding's servers.
+	MCPServers []string
+	Missing    []string
+	Problems   []string
 	// Removed by the binding's entries that start with !.
 	ExcludedFiles, ExcludedSkills []string
 }
 
 // Result is what a session in Dir gets.
 type Result struct {
-	Dir     string
-	Repo    *gitrepo.Repo // nil outside git
-	Files   []Hit
-	Skills  []Hit
-	Dropped []Hit // over budget.max-chars or the agent's capacity, see Hit.Over
+	Dir    string
+	Repo   *gitrepo.Repo // nil outside git
+	Files  []Hit
+	Skills []Hit
+	// MCPServers are the bound MCP servers, in binding order, each once.
+	MCPServers []MCPServer
+	Dropped    []Hit // over budget.max-chars or the agent's capacity, see Hit.Over
 	// Known are files that apply here too, which the session already has
 	// from another folder: listed after the files, without their text.
 	Known    []Hit
@@ -197,6 +209,13 @@ func (r *Result) apply(t *Trace, b config.Binding, l *loader) {
 		src, rel := l.cfg.SourceOf(raw)
 		r.Skills = append(r.Skills, Hit{Path: f, Origin: t.Origin, Global: b.Selector.Global, Name: name, Description: desc,
 			Content: body, Source: src, SourcePath: rel})
+	}
+	for _, name := range b.MCPServers {
+		t.MCPServers = append(t.MCPServers, name)
+		s, ok := l.cfg.MCPServer(name)
+		if ok && !slices.ContainsFunc(r.MCPServers, func(m MCPServer) bool { return m.Name == name }) {
+			r.MCPServers = append(r.MCPServers, MCPServer{s, t.Origin})
+		}
 	}
 	for _, f := range b.ExcludedInstructions {
 		t.ExcludedFiles = append(t.ExcludedFiles, paths.Real(f))
