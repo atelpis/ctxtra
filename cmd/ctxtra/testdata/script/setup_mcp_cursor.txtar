@@ -1,0 +1,57 @@
+# With MCP servers in the config (experimental), setup adds the ctxtra MCP
+# server to .cursor/mcp.json: dry run, add, idempotent, backups, remove.
+
+mkdir .config/ctxtra
+cp config.yaml .config/ctxtra/config.yaml
+mkdir .cursor
+cp original.json .cursor/mcp.json
+
+exec ctxtra setup --agent cursor
+cmp .cursor/mcp.json original.json
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+exec ctxtra setup --dry-run --agent cursor
+cmp .cursor/mcp.json original.json
+
+exec ctxtra setup --agent cursor
+stdout '~/.cursor/mcp.json'
+cmpenv .cursor/mcp.json want.json
+exists .ctxtra/backups
+exec ctxtra setup --agent cursor
+stdout 'is already set up for'
+
+exec ctxtra doctor
+stdout '    MCP: MCP entry runs .*/ctxtra \(ok\) \(~/.cursor/mcp.json\)'
+
+exec ctxtra setup --remove --agent cursor
+! grep '"ctxtra":' .cursor/mcp.json
+grep '"other"' .cursor/mcp.json
+
+-- config.yaml --
+schema: ctxtra/v1
+mcp-servers:
+  pg: {command: [pg-mcp]}
+-- original.json --
+{
+  "mcpServers": {
+    "other": {
+      "command": "other-mcp"
+    }
+  }
+}
+-- want.json --
+{
+  "mcpServers": {
+    "other": {
+      "command": "other-mcp"
+    },
+    "ctxtra": {
+      "command": "$BIN",
+      "args": [
+        "mcp",
+        "proxy",
+        "cursor"
+      ]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+# >>> ctxtra MCP server: written by ctxtra setup; keys you add are kept
+[mcp_servers.ctxtra]
+command = "@@HOME@@/bin/ctxtra"
+args = ["mcp", "proxy", "codex"]
+env_vars = ["CTXTRA_CONFIG", "CTXTRA_LOG", "CTXTRA_EXPERIMENTAL_MCP", "DBUS_SESSION_BUS_ADDRESS", "XDG_RUNTIME_DIR", "HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "NO_PROXY", "no_proxy", "ALL_PROXY", "all_proxy", "SSL_CERT_FILE", "SSL_CERT_DIR", "PGHOST"]
+startup_timeout_sec = 30
+# <<< ctxtra MCP server

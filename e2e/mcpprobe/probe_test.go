@@ -37,6 +37,10 @@ var (
 	agentsFlag = flag.String("agents", "claude,codex,pi,opencode,muse,antigravity", "agents to run")
 	scenFlag   = flag.String("scenarios", "top,sub,worktree,resume,resume-elsewhere,concurrent", "scenarios to run")
 	runTimeout = flag.Duration("run-timeout", 3*time.Minute, "timeout of one agent run")
+	listDelay  = flag.Duration("list-delay", 0, "the probe answers its first tool list after this long")
+	codexStart = flag.Int("codex-startup-timeout", 0, "Codex's startup_timeout_sec for the probe; 0 leaves the default")
+	codexExtra = flag.String("codex-config", "", "one more -c override for Codex, such as mcp_servers.probe.required=true")
+	extraEnv   = flag.String("env", "", "one more variable for the agent, NAME=VALUE")
 )
 
 var ctxtraBin, probeBin string
@@ -188,7 +192,13 @@ func (e *env) runCmd(label string, dir string, extraEnv []string, name string, a
 	return string(out), err
 }
 
-func (e *env) mcpArgs() []string { return []string{probeBin, "mcp", "-log", e.mcpLog} }
+func (e *env) mcpArgs() []string {
+	args := []string{probeBin, "mcp", "-log", e.mcpLog}
+	if *listDelay > 0 {
+		args = append(args, "-list-delay", listDelay.String())
+	}
+	return args
+}
 
 // register adds the probe as a user-level stdio MCP server, the way a user
 // would.
@@ -318,6 +328,12 @@ func (e *env) command(dir, url, prompt string, resume bool, deferred bool) (*exe
 		drop("--ephemeral")
 		// Without it, exec refuses MCP calls: "MCP tool call requires approval, but approval policy is never".
 		args = append([]string{args[0], "-c", `mcp_servers.probe.default_tools_approval_mode="approve"`}, args[1:]...)
+		if *codexExtra != "" {
+			args = append([]string{args[0], "-c", *codexExtra}, args[1:]...)
+		}
+		if *codexStart > 0 {
+			args = append([]string{args[0], "-c", fmt.Sprintf("mcp_servers.probe.startup_timeout_sec=%d", *codexStart)}, args[1:]...)
+		}
 		if resume {
 			insertBeforeLast("resume", "--last")
 		}
@@ -339,6 +355,9 @@ func (e *env) command(dir, url, prompt string, resume bool, deferred bool) (*exe
 	}
 	c := exec.Command(cmd.Path, args...)
 	c.Dir, c.Env = cmd.Dir, cmd.Env
+	if *extraEnv != "" {
+		c.Env = append(c.Env, *extraEnv)
+	}
 	return c, nil
 }
 

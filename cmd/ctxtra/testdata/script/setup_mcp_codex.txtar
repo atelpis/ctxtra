@@ -1,0 +1,63 @@
+# With MCP servers in the config (experimental), setup adds the ctxtra MCP
+# server to Codex's config.toml between markers, with env_vars and
+# startup_timeout_sec, keeps the rest byte for byte, and --remove restores
+# the file. A user key in ctxtra's table stays.
+
+mkdir .config/ctxtra
+cp config.yaml .config/ctxtra/config.yaml
+mkdir .codex
+cp original.toml .codex/config.toml
+
+exec ctxtra setup --agent codex
+cmp .codex/config.toml original.toml
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+exec ctxtra setup --dry-run --agent codex
+cmp .codex/config.toml original.toml
+
+exec ctxtra setup --agent codex
+stdout '~/.codex/config.toml'
+grep '^# >>> ctxtra MCP server: written by ctxtra setup; keys you add are kept$' .codex/config.toml
+grep '^\[mcp_servers.ctxtra\]$' .codex/config.toml
+grep '^args = \["mcp", "proxy", "codex"\]$' .codex/config.toml
+grep '^env_vars = \["CTXTRA_CONFIG", "CTXTRA_LOG", "CTXTRA_EXPERIMENTAL_MCP", .*"HTTPS_PROXY", "https_proxy", .*"SSL_CERT_FILE", "SSL_CERT_DIR", "PGHOST"\]$' .codex/config.toml
+grep '^startup_timeout_sec = 30$' .codex/config.toml
+grep '^# <<< ctxtra MCP server$' .codex/config.toml
+exists .ctxtra/backups
+exec ctxtra setup --agent codex
+stdout 'is already set up for'
+
+! exec ctxtra doctor
+stdout '    MCP: MCP entry runs .*/ctxtra \(ok\) \(~/.codex/config.toml\)'
+
+# A key the user adds in ctxtra's table stays.
+exec sed -i.bak 's/^startup_timeout_sec = 30$/startup_timeout_sec = 30\ndefault_tools_approval_mode = "approve"/' .codex/config.toml
+exec ctxtra setup --agent codex
+grep '^default_tools_approval_mode = "approve"$' .codex/config.toml
+
+# Another entry named ctxtra: left alone.
+cp other.toml .codex/config.toml
+! exec ctxtra setup --agent codex
+stderr 'the ctxtra MCP server isn''t the one ctxtra setup wrote; left alone'
+cmp .codex/config.toml other.toml
+
+cp original.toml .codex/config.toml
+exec ctxtra setup --agent codex
+exec ctxtra setup --remove --agent codex
+cmp .codex/config.toml original.toml
+
+-- config.yaml --
+schema: ctxtra/v1
+mcp-servers:
+  pg: {command: [pg-mcp], env-pass: [PGHOST]}
+-- original.toml --
+model = "gpt-6.1-sol"
+
+[mcp_servers.linear]
+url = "https://mcp.linear.app/mcp"
+
+[projects."/home/me/api"]
+trust_level = "trusted"
+-- other.toml --
+[mcp_servers.ctxtra]
+command = "npx"

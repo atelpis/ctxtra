@@ -11,9 +11,11 @@ import (
 	"github.com/ctxtra/ctxtra/internal/agent/registry"
 	"github.com/ctxtra/ctxtra/internal/chunk"
 	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/experimental"
 	"github.com/ctxtra/ctxtra/internal/hook"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/resolve"
+	"github.com/ctxtra/ctxtra/internal/setup"
 	"github.com/ctxtra/ctxtra/internal/source"
 	"github.com/ctxtra/ctxtra/internal/state"
 	"github.com/ctxtra/ctxtra/internal/term"
@@ -441,10 +443,20 @@ func (r report) doctor(dir string, asJSON bool) int {
 	setups, _, _ := state.LoadSetups()
 	bin := running()
 	var agents []hookInfo
+	mcp := setup.LoadMCP()
 	for _, a := range registry.All() {
-		st := a.Status(bin, setups.Known(a.Name(), a.ConfigPath()))
+		known := setups.Known(a.Name(), a.ConfigPath())
+		st := a.Status(bin, known)
+		details := append([]string{}, st.Details...)
+		if m, isMCP := a.(agent.MCPAgent); isMCP && experimental.MCP() {
+			host := m.MCP()
+			ms := host.MCPStatus(bin, agent.MCPCheck{Known: setups.Known(setup.MCPKey(a.Name()), host.MCPPath()), Want: mcp.Want && known})
+			details = append(details, "MCP: "+ms.State+" ("+paths.Tilde(host.MCPPath())+")")
+			details = append(details, ms.Details...)
+			st.OK = st.OK && ms.OK
+		}
 		ok = ok && st.OK
-		agents = append(agents, hookInfo{a.Name(), st.State, st.OK, a.ConfigPath(), append([]string{}, st.Details...)})
+		agents = append(agents, hookInfo{a.Name(), st.State, st.OK, a.ConfigPath(), details})
 	}
 	repo := ""
 	if res.Repo != nil {

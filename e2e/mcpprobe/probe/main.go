@@ -189,6 +189,7 @@ type server struct {
 	pending  map[string]string // our request ID -> method
 	late     bool
 	notified bool
+	listed   bool
 	mu       sync.Mutex
 }
 
@@ -281,6 +282,19 @@ func serveMCP(logPath string) {
 						"properties": map[string]any{"note": map[string]any{"type": "string"}}}})
 			}
 			rec := map[string]any{"event": "tools_listed", "count": len(tools), "late": s.late}
+			// -list-delay D answers the first tool list after D, the way
+			// a proxy that waits for slow servers does.
+			if d, _ := time.ParseDuration(flagValue(os.Args[2:], "-list-delay")); d > 0 && !s.listed {
+				s.listed = true
+				go func() {
+					time.Sleep(d)
+					rec["delay"] = d.String()
+					record(logPath, rec)
+					reply(map[string]any{"tools": tools})
+				}()
+				continue
+			}
+			s.listed = true
 			record(logPath, rec)
 			reply(map[string]any{"tools": tools})
 		case "tools/call":

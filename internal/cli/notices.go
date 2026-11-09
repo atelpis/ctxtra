@@ -6,6 +6,7 @@ import (
 
 	"github.com/ctxtra/ctxtra/internal/agent"
 	"github.com/ctxtra/ctxtra/internal/agent/registry"
+	"github.com/ctxtra/ctxtra/internal/experimental"
 	"github.com/ctxtra/ctxtra/internal/fsutil"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/setup"
@@ -27,9 +28,16 @@ func setupNotices(w io.Writer) {
 			paths.Tilde(state.SetupsPath()))
 	}
 	bin := running()
+	mcp := setup.LoadMCP()
 	var found []string
 	for _, a := range registry.All() {
-		for _, n := range a.Check(bin, setups.Known(a.Name(), a.ConfigPath())) {
+		known := setups.Known(a.Name(), a.ConfigPath())
+		for _, n := range a.Check(bin, known) {
+			fmt.Fprintf(w, "%s: %s\n", a.Name(), n)
+		}
+		// Only for agents that ctxtra set up: setup adds the entry with the
+		// hooks.
+		for _, n := range mcpNotices(a, bin, known, setups, mcp) {
 			fmt.Fprintf(w, "%s: %s\n", a.Name(), n)
 		}
 		if ok && !setups.Seen(a.Name()) && a.Detect() {
@@ -69,4 +77,17 @@ func trustNote(a agent.Agent) string {
 		return " (" + r.TrustNote() + ")"
 	}
 	return ""
+}
+
+// mcpNotices are the notices about an agent's MCP entry, while MCP servers
+// are on. An agent that isn't set up gets none: the notice about it says
+// to run setup already.
+func mcpNotices(a agent.Agent, bin string, known bool, setups state.Setups, mcp setup.MCPConfig) []string {
+	m, ok := a.(agent.MCPAgent)
+	if !ok || !experimental.MCP() {
+		return nil
+	}
+	host := m.MCP()
+	check := agent.MCPCheck{Known: setups.Known(setup.MCPKey(a.Name()), host.MCPPath()), Want: mcp.Want && known}
+	return host.CheckMCP(bin, check)
 }
