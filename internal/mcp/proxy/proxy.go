@@ -355,6 +355,7 @@ func (p *proxy) connect(ctx context.Context, s upstream.Server) (*Upstream, []*m
 const (
 	maxToolPages = 100
 	maxTools     = 2000
+	maxToolBytes = 8 << 20 // of the tools as JSON
 )
 
 // ErrTooManyTools is the error of a tool list over the limits.
@@ -369,13 +370,21 @@ func ListTools(ctx context.Context, cs *mcp.ClientSession) ([]*mcp.Tool, error) 
 	var out []*mcp.Tool
 	seen := map[string]bool{}
 	cursor := ""
+	size := 0
 	for range maxToolPages {
 		res, err := cs.ListTools(ctx, &mcp.ListToolsParams{Cursor: cursor})
 		if err != nil {
 			return nil, err
 		}
 		out = append(out, res.Tools...)
-		if len(out) > maxTools {
+		for _, t := range res.Tools {
+			b, err := json.Marshal(t)
+			if err != nil {
+				return nil, err
+			}
+			size += len(b)
+		}
+		if len(out) > maxTools || size > maxToolBytes {
 			return nil, ErrTooManyTools
 		}
 		if res.NextCursor == "" {
@@ -586,11 +595,21 @@ func (p *proxy) watchExit(up *Upstream) {
 	if stopping {
 		return
 	}
+	// Stopped now, with the processes it started, and its tools go: a
+	// process group ID kept until the session ends could belong to other
+	// processes by then.
+	up.Close()
 	st := up.ExitState()
 	if st == "" {
 		st = "connection closed"
 	}
 	p.o.Log(Record{Event: "server ended", Server: up.Server.Name, Error: st})
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	delete(p.latest, up.Server.Name)
+	if _, shown := p.listed[up.Server.Name]; shown {
+		p.setToolsLocked(up, nil)
+	}
 }
 
 // tokenKey is a progress token as a map key. The spec allows strings and

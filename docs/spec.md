@@ -665,7 +665,9 @@ It gives the session the tools of the MCP servers bound to the session folder, a
   `required`). A server that answers later is added with a tool list change notification; agents that ignore
   it (Codex, Muse) don't get its tools in that session.
 - A problem never breaks a session: with a broken config, a failing server or no bound server, the proxy starts
-  and serves the tools it can, or none, and logs the problem.
+  and serves the tools it can, or none, and logs the problem. A server whose tool list has more than 2,000 tools
+  or 8 MiB, or that pages without end, is left out. A server that ends during the session is stopped with the
+  processes it started, and its tools go.
 
 ### Local servers
 

@@ -820,3 +820,51 @@ func TestToolListLimits(t *testing.T) {
 		_ = cs.Close()
 	}
 }
+
+// A server that ends during the session is stopped with the processes it
+// started, right away, and its tools go.
+func TestServerEndsDuringSession(t *testing.T) {
+	dir := t.TempDir()
+	child := filepath.Join(dir, "child.pid")
+	s := start(t, dir, 5*time.Second, testServer(t, "a", "-exit-after", "700ms", "-child", child), testServer(t, "b"))
+	if got := toolNames(s.tools(t)); !slices.Contains(got, "a__echo") {
+		t.Fatalf("tools %v", got)
+	}
+	pid := readPid(t, child)
+	waitGone(t, pid, 5*time.Second)
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		got := toolNames(s.tools(t))
+		if !slices.Contains(got, "a__echo") && slices.Contains(got, "b__echo") {
+			return
+		}
+	}
+	t.Errorf("tools %v", toolNames(s.tools(t)))
+}
+
+// Large pages hit the size limit before they fill the proxy's memory.
+func TestToolListBytes(t *testing.T) {
+	srv := mcp.NewServer(&mcp.Implementation{Name: "s"}, nil)
+	srv.AddTool(&mcp.Tool{Name: "t", InputSchema: map[string]any{"type": "object"}}, nil)
+	var n atomic.Int32
+	big := strings.Repeat("x", 1<<20)
+	srv.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method == "tools/list" {
+				i := n.Add(1)
+				return &mcp.ListToolsResult{Tools: []*mcp.Tool{{Name: "t" + strconv.Itoa(int(i)), Description: big,
+					InputSchema: map[string]any{"type": "object"}}}, NextCursor: strconv.Itoa(int(i))}, nil
+			}
+			return next(ctx, method, req)
+		}
+	})
+	ct, st := mcp.NewInMemoryTransports()
+	go func() { _ = srv.Run(context.Background(), st) }()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "c"}, nil).Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	if _, err := ListTools(context.Background(), cs); !errors.Is(err, ErrTooManyTools) || n.Load() > 9 {
+		t.Errorf("%v after %d pages", err, n.Load())
+	}
+}
