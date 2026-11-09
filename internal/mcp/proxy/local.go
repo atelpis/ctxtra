@@ -107,6 +107,9 @@ func DialStderr(ctx context.Context, s upstream.Server, dir string, c *mcp.Clien
 		if cmd.Process != nil {
 			signalGroup(cmd.Process.Pid, true)
 		}
+		if cmd.ProcessState != nil {
+			return nil, exited{cmd.ProcessState.String(), err}
+		}
 		return nil, err
 	}
 	return &Upstream{Server: s, Session: cs, cmd: cmd}, nil
@@ -197,12 +200,24 @@ type Record struct {
 	Error    string   `json:"error,omitempty"`
 }
 
+// exited is the error of a server that ended before it answered.
+type exited struct {
+	state string
+	err   error
+}
+
+func (e exited) Error() string { return "server " + e.state + ": " + e.err.Error() }
+func (e exited) Unwrap() error { return e.err }
+
 // errorKind is what the log says about err: its kind or code, never its
 // message, which can repeat the arguments of a call.
 func errorKind(err error) string {
 	var exit *exec.ExitError
 	var rpc *jsonrpc.Error
+	var ended exited
 	switch {
+	case errors.As(err, &ended):
+		return "server " + ended.state
 	case errors.Is(err, context.Canceled):
 		return "cancelled"
 	case errors.Is(err, context.DeadlineExceeded):

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -230,7 +232,10 @@ func describeServer(s upstream.Server) string {
 // serverTools connects to s, started in dir, and names its tools as
 // sessions see them. With stderr, a local server's stderr goes to ours.
 func serverTools(s upstream.Server, dir string, stderr bool) ([]names.Name, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), mcpConnectTimeout)
+	// A signal stops the server with every process it started.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+	defer stop()
+	ctx, cancel := context.WithTimeout(ctx, mcpConnectTimeout)
 	defer cancel()
 	var errOut io.Writer
 	if stderr {

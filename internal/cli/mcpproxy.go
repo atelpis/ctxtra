@@ -48,6 +48,10 @@ func runProxy(args []string, stdio IO, version string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
 	defer stop()
+	// Go ends the process on SIGPIPE when stdout's reader is gone: a write
+	// error instead ends the session and stops the servers. Notify, not
+	// Ignore, so that the servers start with the default.
+	signal.Notify(make(chan os.Signal, 1), syscall.SIGPIPE)
 	t := &mcp.IOTransport{Reader: io.NopCloser(stdio.In), Writer: nopWriteCloser{stdio.Out}}
 	if err := proxy.Run(ctx, o, t); err != nil {
 		o.Log(proxy.Record{Event: "error", Error: "agent connection: " + err.Error()})

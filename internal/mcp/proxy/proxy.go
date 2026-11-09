@@ -9,6 +9,7 @@ package proxy
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -66,7 +67,7 @@ func Run(ctx context.Context, o Options, t mcp.Transport) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	p := &proxy{o: o, ctx: ctx, ready: make(chan struct{}), tools: map[string]route{}, progress: map[any]*mcp.ServerSession{},
+	p := &proxy{o: o, ctx: ctx, ready: make(chan struct{}), tools: map[string]route{}, progress: map[string]*progressQueue{},
 		latest: map[string][]*mcp.Tool{}}
 	p.server = mcp.NewServer(&mcp.Implementation{Name: "ctxtra", Version: o.Version}, &mcp.ServerOptions{
 		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}},
@@ -151,11 +152,11 @@ type proxy struct {
 
 	mu        sync.Mutex
 	upstreams []*Upstream
-	tools     map[string]route           // by shown name
-	listed    map[string][]*mcp.Tool     // each connected server's tools, by server name
-	progress  map[any]*mcp.ServerSession // progress tokens of running calls
-	latest    map[string][]*mcp.Tool     // each server's last tool list before the first list was answered
-	stopping  bool                       // no more upstreams are added
+	tools     map[string]route          // by shown name
+	listed    map[string][]*mcp.Tool    // each connected server's tools, by server name
+	progress  map[string]*progressQueue // running calls, by their progress tokens
+	latest    map[string][]*mcp.Tool    // each server's last tool list before the first list was answered
+	stopping  bool                      // no more upstreams are added
 }
 
 // route is where a shown tool goes.
@@ -201,10 +202,11 @@ func (p *proxy) start(ctx context.Context) {
 		problems []string
 	}
 	got := make(chan resolved, 1)
-	go func() {
+	// Tracked: stop waits for it, and for the git processes it runs.
+	p.wg.Go(func() {
 		servers, problems := p.o.Servers(p.o.Dir)
 		got <- resolved{servers, problems}
-	}()
+	})
 	var servers []upstream.Server
 	select {
 	case r := <-got:
@@ -322,13 +324,15 @@ func (p *proxy) connect(ctx context.Context, s upstream.Server) (*Upstream, []*m
 			}
 		},
 		ProgressNotificationHandler: func(ctx context.Context, req *mcp.ProgressNotificationClientRequest) {
+			key, ok := tokenKey(req.Params.ProgressToken)
+			if !ok {
+				return
+			}
 			p.mu.Lock()
-			agent := p.progress[req.Params.ProgressToken]
+			q := p.progress[key]
 			p.mu.Unlock()
-			// Not in the handler: a write to an agent that doesn't
-			// read would hold up the server's session.
-			if agent != nil {
-				go func() { _ = agent.NotifyProgress(p.ctx, req.Params) }()
+			if q != nil {
+				q.send(req.Params)
 			}
 		},
 	})
@@ -494,14 +498,16 @@ func (p *proxy) call(ctx context.Context, req *mcp.CallToolRequest) (res *mcp.Ca
 	if len(req.Params.Arguments) == 0 {
 		params.Arguments = nil
 	}
-	if tok := req.Params.GetProgressToken(); tok != nil {
+	if key, ok := tokenKey(req.Params.GetProgressToken()); ok {
+		q := newProgress(p.ctx, req.Session)
 		p.mu.Lock()
-		p.progress[tok] = req.Session
+		p.progress[key] = q
 		p.mu.Unlock()
 		defer func() {
 			p.mu.Lock()
-			delete(p.progress, tok)
+			delete(p.progress, key)
 			p.mu.Unlock()
+			q.close()
 		}()
 	}
 	// The call ends with the session too, not only when the agent cancels
@@ -555,4 +561,59 @@ func (p *proxy) watchExit(up *Upstream) {
 		st = "connection closed"
 	}
 	p.o.Log(Record{Event: "server ended", Server: up.Server.Name, Error: st})
+}
+
+// tokenKey is a progress token as a map key. The spec allows strings and
+// numbers; anything else isn't forwarded.
+func tokenKey(tok any) (string, bool) {
+	switch t := tok.(type) {
+	case string:
+		return "s:" + t, true
+	case float64, int, int64, int32, json.Number:
+		return fmt.Sprintf("n:%v", t), true
+	}
+	return "", false
+}
+
+// progressQueue forwards one call's progress to the agent, in order, in a
+// goroutine of its own: a write to an agent that doesn't read must not
+// hold up the server's session. When the agent falls behind, progress is
+// dropped: a later notification says more than an earlier one.
+type progressQueue struct {
+	mu     sync.Mutex
+	ch     chan *mcp.ProgressNotificationParams
+	closed bool
+}
+
+func newProgress(ctx context.Context, agent *mcp.ServerSession) *progressQueue {
+	q := &progressQueue{ch: make(chan *mcp.ProgressNotificationParams, 16)}
+	go func() {
+		for params := range q.ch {
+			if ctx.Err() == nil {
+				_ = agent.NotifyProgress(ctx, params)
+			}
+		}
+	}()
+	return q
+}
+
+func (q *progressQueue) send(params *mcp.ProgressNotificationParams) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.closed {
+		return
+	}
+	select {
+	case q.ch <- params:
+	default:
+	}
+}
+
+func (q *progressQueue) close() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if !q.closed {
+		q.closed = true
+		close(q.ch)
+	}
 }

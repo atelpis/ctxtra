@@ -23,6 +23,7 @@ import (
 //	-child F    start a child process that ignores SIGTERM, and write its
 //	            process ID to F
 //	-exit-after D  exit with status 17 after D
+//	-exit-now   exit with status 17 before answering anything
 //
 // Tools: echo (returns its arguments), env (its folder and environment),
 // fail (an error that repeats its arguments), slow (waits until cancelled,
@@ -41,6 +42,9 @@ func Main(args []string) {
 		case "-pidfile":
 			_ = os.WriteFile(args[i+1], []byte(fmt.Sprint(os.Getpid())), 0o644)
 		}
+	}
+	if slices.Contains(args, "-exit-now") {
+		os.Exit(17)
 	}
 	if slices.Contains(args, "-ignore-term") {
 		ignoreTerm()

@@ -383,7 +383,8 @@ func TestFailingServer(t *testing.T) {
 	secret := testServer(t, "secret")
 	secret.SecretEnv = []string{"TOKEN"}
 	remote := upstream.Server{ID: "r", Name: "r", URL: "https://example.com/mcp"}
-	s := start(t, t.TempDir(), 5*time.Second, bad, testServer(t, "good"), exits, secret, remote)
+	dies := testServer(t, "dies", "-exit-now")
+	s := start(t, t.TempDir(), 5*time.Second, bad, testServer(t, "good"), exits, secret, remote, dies)
 	got := toolNames(s.tools(t))
 	if !slices.Contains(got, "good__echo") || slices.ContainsFunc(got, func(n string) bool { return !strings.HasPrefix(n, "good__") }) {
 		t.Errorf("tools %v", got)
@@ -395,9 +396,9 @@ func TestFailingServer(t *testing.T) {
 		}
 	}
 	want := map[string]string{"bad": "program not found", "good": "", "exits": "connection closed",
-		"secret": "secret values are not available", "r": "remote servers are not supported yet"}
+		"secret": "secret values are not available", "r": "remote servers are not supported yet", "dies": "server exit status 17"}
 	for k, v := range want {
-		if errs[k] != v && (k != "exits" || !strings.HasPrefix(errs[k], "server exited")) {
+		if errs[k] != v && (k != "exits" || !strings.HasPrefix(errs[k], "server exit")) {
 			t.Errorf("%s: %q, want %q", k, errs[k], v)
 		}
 	}
@@ -730,4 +731,57 @@ func TestServerExitLogged(t *testing.T) {
 		}
 	}
 	t.Errorf("not logged: %+v", s.records())
+}
+
+// A progress token that isn't a string or number is not forwarded, and
+// breaks nothing.
+func TestOddProgressToken(t *testing.T) {
+	dir := t.TempDir()
+	servers, _ := json.Marshal([]upstream.Server{testServer(t, "a")})
+	exe, _ := os.Executable()
+	cmd := exec.Command(exe)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "PROXYTEST_ROLE=proxy", "PROXYTEST_SERVERS="+string(servers))
+	in, _ := cmd.StdinPipe()
+	out, _ := cmd.StdoutPipe()
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = in.Close(); _ = cmd.Wait() }()
+	for _, line := range []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"a__slow","arguments":{},"_meta":{"progressToken":{}}}}`,
+		`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"a__echo","arguments":{},"_meta":{"progressToken":[1]}}}`,
+		`{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"a__echo","arguments":{}}}`,
+	} {
+		_, _ = in.Write([]byte(line + "\n"))
+	}
+	dec := json.NewDecoder(out)
+	got := map[float64]bool{}
+	deadline := time.AfterFunc(10*time.Second, func() { _ = cmd.Process.Kill() })
+	defer deadline.Stop()
+	for !got[5] {
+		var m map[string]any
+		if err := dec.Decode(&m); err != nil {
+			t.Fatalf("the proxy ended: %v", err)
+		}
+		if id, ok := m["id"].(float64); ok {
+			got[id] = true
+		}
+	}
+}
+
+func TestTokenKey(t *testing.T) {
+	for tok, want := range map[any]string{"a": "s:a", float64(3): "n:3", int64(4): "n:4"} {
+		if got, ok := tokenKey(tok); !ok || got != want {
+			t.Errorf("%v: %q %v", tok, got, ok)
+		}
+	}
+	for _, tok := range []any{nil, true, map[string]any{}, []any{}} {
+		if _, ok := tokenKey(tok); ok {
+			t.Errorf("%v accepted", tok)
+		}
+	}
 }
