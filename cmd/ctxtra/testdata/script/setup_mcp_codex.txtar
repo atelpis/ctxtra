@@ -22,6 +22,7 @@ grep '^\[mcp_servers.ctxtra\]$' .codex/config.toml
 grep '^args = \["mcp", "proxy", "codex"\]$' .codex/config.toml
 grep '^env_vars = \["CTXTRA_CONFIG", "CTXTRA_LOG", "CTXTRA_EXPERIMENTAL_MCP", .*"HTTPS_PROXY", "https_proxy", .*"SSL_CERT_FILE", "SSL_CERT_DIR", "PGHOST"\]$' .codex/config.toml
 grep '^startup_timeout_sec = 30$' .codex/config.toml
+grep '^required = true$' .codex/config.toml
 grep '^# <<< ctxtra MCP server$' .codex/config.toml
 exists .ctxtra/backups
 exec ctxtra setup --agent codex

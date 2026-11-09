@@ -10,6 +10,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	agentpkg "github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/agent/registry"
 	"github.com/ctxtra/ctxtra/internal/experimental"
 	"github.com/ctxtra/ctxtra/internal/logfile"
 	"github.com/ctxtra/ctxtra/internal/mcp/proxy"
@@ -35,7 +37,8 @@ func runProxy(args []string, stdio IO, version string) int {
 	log := func(r proxy.Record) {
 		logfile.Append(proxyRecord{Ts: time.Now().UTC().Format(time.RFC3339Nano), Kind: "mcp", Harness: agent, Record: r})
 	}
-	o := proxy.Options{Agent: agent, Version: version, Dir: dir, Start: started, Servers: sessionServers, Log: log}
+	o := proxy.Options{Agent: agent, Version: version, Dir: dir, Start: started, Servers: sessionServers, Log: log,
+		Deadline: mcpDeadline(agent)}
 	switch {
 	case !experimental.MCP():
 		o.Servers = func(string) ([]upstream.Server, []string) { return nil, nil }
@@ -74,3 +77,14 @@ func sessionServers(dir string) ([]upstream.Server, []string) {
 type nopWriteCloser struct{ io.Writer }
 
 func (nopWriteCloser) Close() error { return nil }
+
+// mcpDeadline is how long the proxy for agent waits for slow servers; the
+// longest wait for an agent this version doesn't know.
+func mcpDeadline(name string) time.Duration {
+	if a, ok := registry.Get(name); ok {
+		if m, ok := a.(agentpkg.MCPAgent); ok {
+			return m.MCPDeadline()
+		}
+	}
+	return agentpkg.MCPDeadline
+}

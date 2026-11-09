@@ -3,6 +3,7 @@ package claude
 import (
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/ctxtra/ctxtra/internal/agent"
 	"github.com/ctxtra/ctxtra/internal/agent/mcpentry"
@@ -20,3 +21,8 @@ func (a Agent) MCP() agent.MCPHost {
 	}
 	return mcpentry.Config{Agent: a.Name(), Path: path, Servers: []string{"mcpServers"}, Extra: []mcpentry.KV{{Key: "type", Value: "stdio"}}}
 }
+
+// MCPDeadline: claude -p doesn't wait for a first tool list that takes 3
+// seconds (measured with Claude Code 2.1.319); MCP_TIMEOUT doesn't change
+// that. In its interactive mode, later tools follow with list_changed.
+func (Agent) MCPDeadline() time.Duration { return 1500 * time.Millisecond }

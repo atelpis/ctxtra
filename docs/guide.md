@@ -304,9 +304,11 @@ ctxtra binds to that folder:
 - Antigravity: an allow rule `mcp(ctxtra/*)`.
 - Muse has no rules per server: approve the tools when it asks.
 
-A server's tools are fixed when the session starts. Some agents wait less than ctxtra for slow servers: a server
-that starts slowly, such as one run with `npx`, can be missing from a Codex session. Logs are in
-`~/.ctxtra/log.jsonl`.
+A server's tools are fixed when the session starts. ctxtra waits for slow servers only as long as each agent
+waits for it: 1.5 seconds in Claude Code (later tools follow in its interactive mode), up to 10 in the others.
+A server that starts slower, such as one run with `npx`, can be missing from that session. In Codex, the
+`ctxtra` server is required: if the ctxtra binary moves, Codex doesn't start until you run `ctxtra setup` again.
+Logs are in `~/.ctxtra/log.jsonl`.
 
 ## Limits
 

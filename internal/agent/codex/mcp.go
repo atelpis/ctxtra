@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -34,8 +35,10 @@ const (
 // deadline for its first tool list, so that Codex never gives up on it.
 const StartupTimeout = 30
 
-// mcpKeys are the keys setup owns, in the order it writes them.
-var mcpKeys = []string{"command", "args", "env_vars", "startup_timeout_sec"}
+// mcpKeys are the keys setup owns, in the order it writes them. required:
+// Codex waits for a required server's first tool list (up to
+// startup_timeout_sec), for an optional one about 1 second.
+var mcpKeys = []string{"command", "args", "env_vars", "startup_timeout_sec", "required"}
 
 func (Agent) MCPPath() string { return filepath.Join(dir(), "config.toml") }
 
@@ -67,6 +70,7 @@ func (a Agent) wanted(bin string, envPass []string) map[string]any {
 		"args":                toAny(agent.MCPArgs(a.Name())),
 		"env_vars":            toAny(EnvVars(envPass)),
 		"startup_timeout_sec": int64(StartupTimeout),
+		"required":            true,
 	}
 }
 
@@ -351,6 +355,9 @@ func (a Agent) CheckMCP(bin string, o agent.MCPCheck) []string {
 	if t, _ := f.entry()["startup_timeout_sec"].(int64); t < StartupTimeout {
 		out = append(out, "the ctxtra MCP server has a shorter startup_timeout_sec than setup writes; "+repair)
 	}
+	if r, _ := f.entry()["required"].(bool); !r {
+		out = append(out, "the ctxtra MCP server isn't required, so Codex doesn't wait for its tools; "+repair)
+	}
 	return out
 }
 
@@ -374,3 +381,8 @@ func (a Agent) MCPCommand() ([]string, bool) {
 	}
 	return out, true
 }
+
+// MCPDeadline: Codex waits about 1 second for an optional server's first
+// tool list (measured with Codex 0.166.0); the entry is required, so Codex
+// waits for it up to startup_timeout_sec.
+func (Agent) MCPDeadline() time.Duration { return agent.MCPDeadline }

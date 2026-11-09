@@ -658,9 +658,12 @@ It gives the session the tools of the MCP servers bound to the session folder, a
 - The proxy offers only tools. It forwards tool lists (titles, annotations and schemas unchanged), calls,
   cancellation and progress, and a server's tool list changes. It doesn't forward a server's instructions,
   prompts or resources, and offers servers no roots.
-- The proxy answers the agent's first tool list when every bound server has answered, or 10 seconds after the
-  proxy started, with the tools of the servers that answered. A server that answers later is added with a tool
-  list change notification; agents that ignore it (Codex, Muse) don't get its tools in that session.
+- The proxy answers the agent's first tool list when every bound server has answered, or at the agent's
+  deadline, with the tools of the servers that answered. The deadline counts from the proxy's start and is
+  shorter than the agent waits for the list, because an agent that gives up first gets no tools of any server:
+  1.5 seconds in Claude Code, 8 in Pi, 10 in the others (Codex waits that long because its entry is
+  `required`). A server that answers later is added with a tool list change notification; agents that ignore
+  it (Codex, Muse) don't get its tools in that session.
 - A problem never breaks a session: with a broken config, a failing server or no bound server, the proxy starts
   and serves the tools it can, or none, and logs the problem.
 
@@ -697,7 +700,7 @@ keeps one that is there; `--remove` removes it.
 | Agent | File | Entry |
 |---|---|---|
 | Claude Code | `~/.claude.json` (`$CLAUDE_CONFIG_DIR/.claude.json`) | `mcpServers.ctxtra: {type: stdio, command, args}` |
-| Codex | `~/.codex/config.toml` (`$CODEX_HOME`) | `[mcp_servers.ctxtra]`: `command`, `args`, `env_vars`, `startup_timeout_sec`, between marker comments |
+| Codex | `~/.codex/config.toml` (`$CODEX_HOME`) | `[mcp_servers.ctxtra]`: `command`, `args`, `env_vars`, `startup_timeout_sec`, `required`, between marker comments |
 | Cursor | `~/.cursor/mcp.json` | `mcpServers.ctxtra: {command, args}` |
 | OpenCode | `~/.config/opencode/opencode.json` | `mcp.servers.ctxtra: {type: local, command, pool: false}` |
 | Pi | `~/.pi/agent/mcp.json` | `mcpServers.ctxtra: {command, args}` |
@@ -714,7 +717,10 @@ it checks that the new file is valid TOML and says the same as the old one but f
 changes nothing, because Codex refuses an invalid config. Codex starts MCP servers with an allow-listed
 environment, so `env_vars` lists ctxtra's variables (`CTXTRA_CONFIG`, `CTXTRA_LOG`, `CTXTRA_EXPERIMENTAL_MCP`),
 the Secret Service's (`DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`), the proxy and certificate variables, and
-every local server's `env-pass` names. `startup_timeout_sec` is 30.
+every local server's `env-pass` names. `startup_timeout_sec` is 30, and `required = true`: Codex waits about 1
+second for an optional server's tools, and for a required one up to `startup_timeout_sec`. A required server that
+can't start stops the Codex session, so a moved or deleted ctxtra binary does too, until `ctxtra setup` runs again;
+the setup notices report it.
 
 OpenCode's entry isn't pooled, so its shared service starts one proxy per session folder.
 

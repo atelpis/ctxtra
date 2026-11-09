@@ -24,8 +24,9 @@ import (
 )
 
 // Deadline is how long after its start the proxy waits for slow servers
-// before it answers the first tool list. Codex and Muse keep only the
-// first list, and an agent that gives up on the proxy loses every tool.
+// before it answers the first tool list, when Options doesn't say. Codex
+// and Muse keep only the first list, and an agent that gives up on the
+// proxy loses every tool.
 const Deadline = 10 * time.Second
 
 // Options are what one proxy run needs.
@@ -34,7 +35,8 @@ type Options struct {
 	Version string
 	Dir     string    // the session folder
 	Start   time.Time // when the process started; Deadline counts from it
-	// Deadline overrides the package's Deadline, for tests.
+	// Deadline is the agent's wait for slow servers; 0 for the package's
+	// Deadline.
 	Deadline time.Duration
 	// Servers returns the servers bound to dir, and problems to log. It
 	// never fails: a broken config has no servers.

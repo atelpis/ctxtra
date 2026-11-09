@@ -76,7 +76,7 @@ func TestCodexAddKeepsTheRest(t *testing.T) {
 	}
 	tail := strings.TrimPrefix(string(b), realConfig)
 	if !strings.HasPrefix(tail, "\n"+beginMarker+"\n[mcp_servers.ctxtra]\ncommand = \"/bin/ctxtra\"\nargs = [\"mcp\", \"proxy\", \"codex\"]\nenv_vars = [\"CTXTRA_CONFIG\", \"CTXTRA_LOG\", \"CTXTRA_EXPERIMENTAL_MCP\"") ||
-		!strings.HasSuffix(tail, "\"SSL_CERT_DIR\", \"PGHOST\"]\nstartup_timeout_sec = 30\n"+endMarker+"\n") {
+		!strings.HasSuffix(tail, "\"SSL_CERT_DIR\", \"PGHOST\"]\nstartup_timeout_sec = 30\nrequired = true\n"+endMarker+"\n") {
 		t.Errorf("block:\n%s", tail)
 	}
 	e := ctxtraEntry(t, path)
@@ -247,6 +247,11 @@ func TestCodexCheck(t *testing.T) {
 	b, _ := os.ReadFile(path)
 	testenv.Write(t, path, strings.Replace(string(b), "startup_timeout_sec = 30", "startup_timeout_sec = 10", 1))
 	if n := a.CheckMCP(bin, agent.MCPCheck{Want: true}); len(n) != 1 || !strings.Contains(n[0], "shorter startup_timeout_sec") {
+		t.Errorf("%v", n)
+	}
+	b, _ = os.ReadFile(path)
+	testenv.Write(t, path, strings.Replace(strings.Replace(string(b), "startup_timeout_sec = 10", "startup_timeout_sec = 30", 1), "required = true", "required = false", 1))
+	if n := a.CheckMCP(bin, agent.MCPCheck{Want: true}); len(n) != 1 || !strings.Contains(n[0], "isn't required") {
 		t.Errorf("%v", n)
 	}
 	if st := a.MCPStatus(bin, agent.MCPCheck{Want: true}); !strings.HasPrefix(st.State, "MCP entry runs ~/ctxtra (ok)") || st.OK {

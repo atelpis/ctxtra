@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ctxtra/ctxtra/internal/chunk"
 	"github.com/ctxtra/ctxtra/internal/config"
@@ -482,7 +483,17 @@ type Status struct {
 // named ctxtra that runs ctxtra mcp proxy AGENT.
 type MCPAgent interface {
 	MCP() MCPHost
+	// MCPDeadline is how long the proxy waits for slow servers before it
+	// answers the agent's first tool list, counted from the proxy's start.
+	// It must be shorter than the agent waits for that list: an agent that
+	// gives up first gets no tools of any server.
+	MCPDeadline() time.Duration
 }
+
+// MCPDeadline is the proxy's longest wait for slow servers, for agents
+// that wait longer for MCP servers (measured: Muse and Antigravity wait
+// more than 11 seconds).
+const MCPDeadline = 10 * time.Second
 
 // MCPHost edits and checks an agent's MCP entry.
 type MCPHost interface {
