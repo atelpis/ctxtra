@@ -248,9 +248,12 @@ func (c Config) MCPStatus(bin string, o agent.MCPCheck) agent.Status {
 		return agent.Status{State: "unreadable: " + err.Error()}
 	}
 	notices := c.check(data, bin, o)
-	servers, _ := c.servers(data, false)
+	servers, err := c.servers(data, false)
+	if err != nil {
+		return agent.Status{State: "invalid: " + err.Error(), OK: len(notices) == 0, Details: notices}
+	}
 	cur, has := entry(servers)
-	if servers == nil || !has || cur == nil || !c.ours(cur) {
+	if !has || cur == nil || !c.ours(cur) {
 		return agent.Status{State: "no MCP entry", OK: len(notices) == 0, Details: notices}
 	}
 	s := agent.Status{State: fmt.Sprintf("MCP entry runs %s", paths.Tilde(c.binary(cur))), OK: len(notices) == 0, Details: notices}

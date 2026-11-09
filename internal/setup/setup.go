@@ -103,7 +103,9 @@ func Run(o Options) (Report, error) {
 	for _, a := range agents {
 		n := len(r.Changes)
 		err := a.Setup(o.Options, &r.Report)
-		if m, ok := a.(agent.MCPAgent); ok && err == nil {
+		// With MCP servers off, setup doesn't touch MCP entries, also with
+		// --remove.
+		if m, ok := a.(agent.MCPAgent); ok && err == nil && experimental.MCP() {
 			err = m.MCP().SetupMCP(agent.MCPOptions{Options: o.Options, Want: o.MCP.Want, EnvPass: o.MCP.EnvPass}, &r.Report)
 		}
 		r.Agents = append(r.Agents, Agent{a, slices.Clone(r.Changes[n:]), err})
@@ -133,7 +135,7 @@ func record(remove, mcp bool, done []agent.Agent) error {
 		} else {
 			s.Install(a.Name(), a.ConfigPath())
 		}
-		if m, ok := a.(agent.MCPAgent); ok {
+		if m, ok := a.(agent.MCPAgent); ok && experimental.MCP() {
 			switch {
 			case remove:
 				s.Uninstall(MCPKey(a.Name()), m.MCP().MCPPath())

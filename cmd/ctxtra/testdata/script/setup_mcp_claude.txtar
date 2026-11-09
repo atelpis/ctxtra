@@ -47,6 +47,15 @@ exec ctxtra binding list
 stderr '^claude: the ctxtra MCP server is gone from ~/.claude.json; if that wasn''t on purpose, run ctxtra setup --agent claude'
 exec ctxtra setup --agent claude
 
+# With MCP servers off, setup --remove leaves the MCP entry alone.
+env CTXTRA_EXPERIMENTAL_MCP=
+exec ctxtra setup --remove --agent claude
+grep '"ctxtra":' .claude.json
+env CTXTRA_EXPERIMENTAL_MCP=1
+exec ctxtra setup --remove --agent claude
+! grep '"ctxtra":' .claude.json
+exec ctxtra setup --agent claude
+
 # $CLAUDE_CONFIG_DIR moves the file.
 env CLAUDE_CONFIG_DIR=$HOME/claude-dir
 exec ctxtra setup --agent claude

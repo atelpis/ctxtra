@@ -129,6 +129,10 @@ func readTOML(path string) (*tomlFile, error) {
 	if f.begin < 0 && f.entry() != nil {
 		return f, errHandEdited
 	}
+	// ctxtra's block, changed to run something else: the user's now.
+	if _, ours := mcpBinary(f.entry()); f.begin >= 0 && !ours {
+		return f, errHandEdited
+	}
 	return f, nil
 }
 

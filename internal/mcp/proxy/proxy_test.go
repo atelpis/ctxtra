@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -381,7 +382,7 @@ func TestFailingServer(t *testing.T) {
 	remote := upstream.Server{ID: "r", Name: "r", URL: "https://example.com/mcp"}
 	s := start(t, t.TempDir(), 5*time.Second, bad, testServer(t, "good"), exits, secret, remote)
 	got := toolNames(s.tools(t))
-	if len(got) != 4 || got[0] != "good__echo" {
+	if len(got) != 5 || got[0] != "good__echo" {
 		t.Errorf("tools %v", got)
 	}
 	errs := map[string]string{}
@@ -411,13 +412,14 @@ func TestBadToolSchema(t *testing.T) {
 		}
 		return &Upstream{Server: s, Session: cs}, nil
 	}
-	p := &proxy{o: Options{Log: func(Record) {}}, tools: map[string]route{}}
+	p := &proxy{o: Options{Log: func(Record) {}}, tools: map[string]route{}, latest: map[string][]*mcp.Tool{}}
 	p.server = mcp.NewServer(&mcp.Implementation{Name: "ctxtra", Version: "1"}, nil)
 	up, err := connect(context.Background(), upstream.Server{Name: "x"}, "", mcp.NewClient(&mcp.Implementation{Name: "c"}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer up.Close()
+	p.add(up)
 	p.setTools(up, []*mcp.Tool{{Name: "ok", InputSchema: map[string]any{"type": "object"}}, {Name: "bad", InputSchema: map[string]any{"type": "string"}}})
 	if _, ok := p.tools["x__ok"]; !ok || len(p.tools) != 1 {
 		t.Errorf("tools %v", p.tools)
@@ -446,4 +448,170 @@ func TestLogHasNoContent(t *testing.T) {
 	if !strings.Contains(string(b), `"event":"start"`) || !strings.Contains(string(b), `"event":"exit"`) {
 		t.Errorf("start and exit: %s", b)
 	}
+}
+
+// A call that hangs in its server doesn't keep the proxy or the server
+// running when the agent closes the proxy's input.
+func TestStopWithHangingCall(t *testing.T) {
+	dir := t.TempDir()
+	pidfile := filepath.Join(dir, "a.pid")
+	servers, _ := json.Marshal([]upstream.Server{testServer(t, "a", "-pidfile", pidfile, "-ignore-term")})
+	exe, _ := os.Executable()
+	cmd := exec.Command(exe)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "PROXYTEST_ROLE=proxy", "PROXYTEST_SERVERS="+string(servers))
+	in, err := cmd.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range []string{
+		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`,
+		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
+		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"a__hang","arguments":{}}}`,
+	} {
+		if _, err := in.Write([]byte(line + "\n")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Wait for the tool list, so the call reached the server.
+	dec := json.NewDecoder(out)
+	for {
+		var m map[string]any
+		if err := dec.Decode(&m); err != nil {
+			t.Fatal(err)
+		}
+		if m["id"] == float64(2) {
+			break
+		}
+	}
+	pid := readPid(t, pidfile)
+	time.Sleep(300 * time.Millisecond)
+	began := time.Now()
+	_ = in.Close()
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(8 * time.Second):
+		_ = cmd.Process.Kill()
+		t.Fatal("the proxy didn't exit")
+	}
+	if took := time.Since(began); took > 6*time.Second {
+		t.Errorf("stop took %v", took)
+	}
+	waitGone(t, pid, 3*time.Second)
+}
+
+// A server that hangs before it answers initialize is stopped too.
+func TestStopWhileConnecting(t *testing.T) {
+	dir := t.TempDir()
+	pidfile := filepath.Join(dir, "a.pid")
+	s := start(t, dir, 500*time.Millisecond, testServer(t, "a", "-pidfile", pidfile, "-ignore-term", "-delay", "1h"))
+	s.tools(t)
+	pid := readPid(t, pidfile)
+	s.close(t)
+	waitGone(t, pid, 3*time.Second)
+}
+
+// A process that a server started, and that ignores SIGTERM, doesn't
+// outlive the session.
+func TestStopDescendants(t *testing.T) {
+	dir := t.TempDir()
+	child := filepath.Join(dir, "child.pid")
+	s := start(t, dir, 5*time.Second, testServer(t, "a", "-child", child))
+	s.tools(t)
+	pid := readPid(t, child)
+	s.close(t)
+	waitGone(t, pid, 4*time.Second)
+}
+
+// The deadline covers resolving the servers: a slow resolution answers
+// the first list without tools, and the tools follow.
+func TestSlowResolution(t *testing.T) {
+	ct, st := mcp.NewInMemoryTransports()
+	srv := testServer(t, "a")
+	o := Options{Agent: "test", Dir: t.TempDir(), Deadline: 300 * time.Millisecond,
+		Servers: func(string) ([]upstream.Server, []string) {
+			time.Sleep(1500 * time.Millisecond)
+			return []upstream.Server{srv}, nil
+		}}
+	done := make(chan error, 1)
+	go func() { done <- Run(context.Background(), o, st) }()
+	changed := make(chan struct{}, 10)
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, &mcp.ClientOptions{
+		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) { changed <- struct{}{} },
+	}).Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now()
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil || len(res.Tools) != 0 || time.Since(began) > time.Second {
+		t.Fatalf("%v %v after %v", res, err, time.Since(began))
+	}
+	select {
+	case <-changed:
+	case <-time.After(10 * time.Second):
+		t.Fatal("no list change")
+	}
+	_ = cs.Close()
+	<-done
+}
+
+// A server whose tools change while another server is still starting:
+// the first list has its new tools.
+func TestToolChangeBeforeFirstList(t *testing.T) {
+	fast := mcp.NewServer(&mcp.Implementation{Name: "fast"}, nil)
+	obj := map[string]any{"type": "object"}
+	fast.AddTool(&mcp.Tool{Name: "old", InputSchema: obj}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{}, nil
+	})
+	connect := func(ctx context.Context, s upstream.Server, _ string, c *mcp.Client) (*Upstream, error) {
+		if s.Name == "slow" {
+			select {
+			case <-time.After(time.Second):
+			case <-ctx.Done():
+			}
+			return nil, errors.New("slow")
+		}
+		ct, st := mcp.NewInMemoryTransports()
+		go func() { _ = fast.Run(context.Background(), st) }()
+		cs, err := c.Connect(ctx, ct, nil)
+		if err != nil {
+			return nil, err
+		}
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			fast.RemoveTools("old")
+			fast.AddTool(&mcp.Tool{Name: "new", InputSchema: obj}, func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+				return &mcp.CallToolResult{}, nil
+			})
+		}()
+		return &Upstream{Server: s, Session: cs}, nil
+	}
+	ct, st := mcp.NewInMemoryTransports()
+	o := Options{Agent: "test", Dir: t.TempDir(), Deadline: 5 * time.Second, Connect: connect,
+		Servers: func(string) ([]upstream.Server, []string) {
+			return []upstream.Server{{ID: "fast", Name: "fast", Command: []string{"x"}}, {ID: "slow", Name: "slow", Command: []string{"x"}}}, nil
+		}}
+	done := make(chan error, 1)
+	go func() { done <- Run(context.Background(), o, st) }()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, nil).Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil || len(res.Tools) != 1 || res.Tools[0].Name != "fast__new" {
+		t.Errorf("%v %+v", err, res)
+	}
+	_ = cs.Close()
+	<-done
 }

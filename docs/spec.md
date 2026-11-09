@@ -679,17 +679,19 @@ The program must be an absolute path or a name in `PATH`: a relative path could 
 repository. A tool like `npx` still prefers a project's own packages, so a repository can change what such a
 server runs.
 
-When the agent closes the proxy's input, each local server's process group gets SIGTERM, and SIGKILL after 2
-seconds. When the proxy is killed, its servers get the end of their input, as when an agent is killed: a server
+When the agent closes the proxy's input, or the proxy gets SIGTERM, running calls end, and each local server's
+process group gets SIGTERM, and SIGKILL after 2 seconds if any process of the group is still there, also a
+server that is still starting. When the proxy is killed, its servers get the end of their input, as when an agent is killed: a server
 that exits then stops.
 
 ### Network and logs
 
 The hook never uses the network. The proxy connects only to the bound remote servers and their authorization
 servers. It logs to ctxtra's log (`$CTXTRA_LOG` or `~/.ctxtra/log.jsonl`) with the agent's name: its start,
-the session folder, the bound servers, each server's connection, late servers and its end. It never logs tool
-arguments, results or secrets; a failed call is logged by its kind or code only, because error messages can
-repeat the arguments. `doctor`'s last hook runs leave these lines out.
+the session folder, the bound servers, the number of config problems (`ctxtra doctor` lists them), each
+server's connection, late servers and its end. It never logs tool arguments, results, secrets or config
+problems as text; a failed call is logged by its kind or code only, because error messages can repeat the
+arguments. `doctor`'s last hook runs leave these lines out.
 
 ### Setup
 

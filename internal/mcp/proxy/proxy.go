@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ctxtra/ctxtra/internal/mcp/names"
@@ -65,15 +66,25 @@ func Run(ctx context.Context, o Options, t mcp.Transport) error {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	p := &proxy{o: o, ready: make(chan struct{}), tools: map[string]route{}, progress: map[any]*mcp.ServerSession{}}
+	p := &proxy{o: o, ctx: ctx, ready: make(chan struct{}), tools: map[string]route{}, progress: map[any]*mcp.ServerSession{},
+		latest: map[string][]*mcp.Tool{}}
 	p.server = mcp.NewServer(&mcp.Implementation{Name: "ctxtra", Version: o.Version}, &mcp.ServerOptions{
 		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}},
 	})
 	p.server.AddReceivingMiddleware(p.waitForTools)
-	go p.start(ctx)
-	err := p.server.Run(ctx, t)
+	p.wg.Go(func() { p.start(ctx) })
+	// The servers stop as soon as the session ends: when the agent closes
+	// the connection, or ctx ends. The SDK then still waits for running
+	// calls, and a call that hangs in a server must not keep it running.
+	stopped := make(chan struct{})
+	go func() {
+		<-ctx.Done()
+		p.stop()
+		close(stopped)
+	}()
+	err := p.server.Run(ctx, watch{t, cancel})
 	cancel()
-	p.stop()
+	<-stopped
 	o.Log(Record{Event: "exit"})
 	// The agent ends a session by closing the connection.
 	if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, mcp.ErrConnectionClosed) {
@@ -82,10 +93,40 @@ func Run(ctx context.Context, o Options, t mcp.Transport) error {
 	return err
 }
 
+// watch is a transport that calls end when the agent's side of the
+// connection ends.
+type watch struct {
+	mcp.Transport
+	end func()
+}
+
+func (w watch) Connect(ctx context.Context) (mcp.Connection, error) {
+	c, err := w.Transport.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return watchConn{c, w.end}, nil
+}
+
+type watchConn struct {
+	mcp.Connection
+	end func()
+}
+
+func (c watchConn) Read(ctx context.Context) (jsonrpc.Message, error) {
+	m, err := c.Connection.Read(ctx)
+	if err != nil {
+		c.end()
+	}
+	return m, err
+}
+
 // proxy is one session's proxy.
 type proxy struct {
 	o      Options
+	ctx    context.Context // ends with the session
 	server *mcp.Server
+	wg     sync.WaitGroup // start and the connections it makes
 
 	ready     chan struct{} // closed when the first tool list may be answered
 	readyOnce sync.Once
@@ -95,6 +136,8 @@ type proxy struct {
 	tools     map[string]route           // by shown name
 	listed    map[string][]*mcp.Tool     // each connected server's tools, by server name
 	progress  map[any]*mcp.ServerSession // progress tokens of running calls
+	latest    map[string][]*mcp.Tool     // each server's last tool list before the first list was answered
+	stopping  bool                       // no more upstreams are added
 }
 
 // route is where a shown tool goes.
@@ -131,14 +174,37 @@ func (p *proxy) start(ctx context.Context) {
 			p.open()
 		}
 	}()
-	servers, problems := p.o.Servers(p.o.Dir)
-	var bound []string
-	for _, s := range servers {
-		bound = append(bound, s.Name)
-	}
-	p.o.Log(Record{Event: "start", Dir: p.o.Dir, Servers: bound, Problems: problems})
+	// The deadline counts from the proxy's start, and covers resolving the
+	// servers too: finding the folder's repository can be slow.
 	deadline := time.NewTimer(time.Until(p.o.Start.Add(p.o.Deadline)))
 	defer deadline.Stop()
+	type resolved struct {
+		servers  []upstream.Server
+		problems []string
+	}
+	got := make(chan resolved, 1)
+	go func() {
+		servers, problems := p.o.Servers(p.o.Dir)
+		got <- resolved{servers, problems}
+	}()
+	var servers []upstream.Server
+	select {
+	case r := <-got:
+		servers = r.servers
+		p.logStart(r.servers, r.problems)
+	case <-deadline.C:
+		p.o.Log(Record{Event: "deadline", Error: "resolving the servers"})
+		p.open()
+		select {
+		case r := <-got:
+			servers = r.servers
+			p.logStart(r.servers, r.problems)
+		case <-ctx.Done():
+			return
+		}
+	case <-ctx.Done():
+		return
+	}
 	type result struct {
 		s     upstream.Server
 		up    *Upstream
@@ -148,11 +214,16 @@ func (p *proxy) start(ctx context.Context) {
 	}
 	results := make(chan result, len(servers))
 	for _, s := range servers {
-		go func() {
+		p.wg.Go(func() {
 			began := time.Now()
 			up, tools, err := p.connect(ctx, s)
+			if err == nil && !p.add(up) {
+				// The session ended while it connected.
+				up.Close()
+				err = context.Canceled
+			}
 			results <- result{s, up, tools, err, time.Since(began)}
-		}()
+		})
 	}
 	waiting := map[string]bool{}
 	for _, s := range servers {
@@ -175,7 +246,6 @@ func (p *proxy) start(ctx context.Context) {
 				p.setTools(r.up, r.tools)
 				continue
 			}
-			p.addUpstream(r.up)
 			first[r.s.Name] = r.tools
 		case <-deadline.C:
 			var slow []string
@@ -223,7 +293,11 @@ func (p *proxy) connect(ctx context.Context, s upstream.Server) (*Upstream, []*m
 			}
 			if p.isOpen() {
 				p.setTools(up, tools)
+				return
 			}
+			p.mu.Lock()
+			p.latest[s.Name] = tools
+			p.mu.Unlock()
 		},
 		ProgressNotificationHandler: func(ctx context.Context, req *mcp.ProgressNotificationClientRequest) {
 			p.mu.Lock()
@@ -258,19 +332,43 @@ func listTools(ctx context.Context, cs *mcp.ClientSession) ([]*mcp.Tool, error) 
 	return out, nil
 }
 
-func (p *proxy) addUpstream(up *Upstream) {
+// add records up, to stop it with the session; false when the session
+// is ending.
+func (p *proxy) add(up *Upstream) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.stopping {
+		return false
+	}
 	p.upstreams = append(p.upstreams, up)
+	return true
 }
 
-// publish shows the first tools of the servers that connected in time.
+// logStart logs the bound servers. Problems are counted, not quoted: a
+// config problem can quote a URL with a secret in it.
+func (p *proxy) logStart(servers []upstream.Server, problems []string) {
+	var bound []string
+	for _, s := range servers {
+		bound = append(bound, s.Name)
+	}
+	p.o.Log(Record{Event: "start", Dir: p.o.Dir, Servers: bound, Problems: len(problems)})
+}
+
+// publish shows the tools of the servers that connected in time: their
+// first lists, or a later one that came before the agent's first list.
 func (p *proxy) publish(first map[string][]*mcp.Tool) {
 	p.mu.Lock()
 	ups := slices.Clone(p.upstreams)
+	for name, tools := range p.latest {
+		if _, ok := first[name]; ok {
+			first[name] = tools
+		}
+	}
 	p.mu.Unlock()
 	for _, up := range ups {
-		p.setTools(up, first[up.Server.Name])
+		if tools, ok := first[up.Server.Name]; ok {
+			p.setTools(up, tools)
+		}
 	}
 }
 
@@ -280,7 +378,7 @@ func (p *proxy) setTools(up *Upstream, tools []*mcp.Tool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !slices.Contains(p.upstreams, up) {
-		p.upstreams = append(p.upstreams, up)
+		return
 	}
 	if p.listed == nil {
 		p.listed = map[string][]*mcp.Tool{}
@@ -375,6 +473,11 @@ func (p *proxy) call(ctx context.Context, req *mcp.CallToolRequest) (res *mcp.Ca
 			p.mu.Unlock()
 		}()
 	}
+	// The call ends with the session too, not only when the agent cancels
+	// it.
+	ctx, stop := context.WithCancel(ctx)
+	defer stop()
+	defer context.AfterFunc(p.ctx, stop)()
 	res, err = r.up.Session.CallTool(ctx, params)
 	switch {
 	case err != nil:
@@ -385,10 +488,13 @@ func (p *proxy) call(ctx context.Context, req *mcp.CallToolRequest) (res *mcp.Ca
 	return res, err
 }
 
-// stop ends every server session, and stops the local servers.
+// stop ends every server session and stops the local servers, also those
+// still connecting: their connections end with the session's context, and
+// Dial stops a server whose connection failed.
 func (p *proxy) stop() {
 	p.open()
 	p.mu.Lock()
+	p.stopping = true
 	ups := slices.Clone(p.upstreams)
 	p.mu.Unlock()
 	var wg sync.WaitGroup
@@ -396,4 +502,5 @@ func (p *proxy) stop() {
 		wg.Go(up.Close)
 	}
 	wg.Wait()
+	p.wg.Wait()
 }

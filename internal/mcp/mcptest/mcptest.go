@@ -20,10 +20,13 @@ import (
 //	-tools a,b  also offer tools with these names, which answer "ok"
 //	-pidfile F  write the server's process ID to F
 //	-ignore-term  keep running on SIGTERM
+//	-child F    start a child process that ignores SIGTERM, and write its
+//	            process ID to F
 //
 // Tools: echo (returns its arguments), env (its folder and environment),
 // fail (an error that repeats its arguments), slow (waits until cancelled,
-// sending progress), and the -tools names. It also offers a prompt and a
+// sending progress), hang (never answers, also when cancelled), and the
+// -tools names. It also offers a prompt and a
 // resource, which a proxy must not forward.
 func Main(args []string) {
 	var delay time.Duration
@@ -40,6 +43,11 @@ func Main(args []string) {
 	}
 	if slices.Contains(args, "-ignore-term") {
 		ignoreTerm()
+	}
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "-child" {
+			startChild(args[i+1])
+		}
 	}
 	time.Sleep(delay)
 	_ = Server(extra).Run(context.Background(), &mcp.StdioTransport{})
@@ -73,6 +81,10 @@ func Server(extra []string) *mcp.Server {
 			}
 			<-ctx.Done()
 			return text("cancelled"), nil
+		})
+	s.AddTool(&mcp.Tool{Name: "hang", Description: "Never answer.", InputSchema: obj},
+		func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			select {}
 		})
 	for _, name := range extra {
 		s.AddTool(&mcp.Tool{Name: name, Description: "Tool " + name + ".", InputSchema: obj},

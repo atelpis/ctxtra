@@ -817,6 +817,11 @@ func (s *sources) showBindings(file, root string) {
 		if len(b.Skills) > 0 {
 			fmt.Fprintf(s.Out, "    skills: %s\n", source.Sanitize(strings.Join(mapList(b.Skills, show), ", ")))
 		}
+		// As written: the user's servers of these names would reach the
+		// sessions the binding matches.
+		if len(b.MCPListed) > 0 {
+			fmt.Fprintf(s.Out, "    MCP servers: %s\n", source.Sanitize(strings.Join(b.MCPListed, ", ")))
+		}
 	}
 	prefix := paths.Tilde(file) + ": "
 	for _, p := range cfg.Problems {

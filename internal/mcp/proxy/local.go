@@ -45,11 +45,23 @@ func (u *Upstream) Close() {
 			_ = u.Session.Close()
 			close(done)
 		}()
+		grace := time.After(stopGrace)
 		select {
 		case <-done:
-		case <-time.After(stopGrace):
+		case <-grace:
 			_ = syscall.Kill(-pgid, syscall.SIGKILL)
 			<-done
+			return
+		}
+		// The server exited; processes it started may still run in its
+		// group.
+		for syscall.Kill(-pgid, 0) == nil {
+			select {
+			case <-grace:
+				_ = syscall.Kill(-pgid, syscall.SIGKILL)
+				return
+			case <-time.After(50 * time.Millisecond):
+			}
 		}
 	})
 }
@@ -125,7 +137,7 @@ type Record struct {
 	Dir      string   `json:"dir,omitempty"`
 	Server   string   `json:"server,omitempty"`
 	Servers  []string `json:"servers,omitempty"`
-	Problems []string `json:"problems,omitempty"`
+	Problems int      `json:"problems,omitempty"`
 	Tools    int      `json:"tools,omitempty"`
 	Ms       int64    `json:"ms,omitempty"`
 	Error    string   `json:"error,omitempty"`

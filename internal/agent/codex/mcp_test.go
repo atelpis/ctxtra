@@ -202,12 +202,6 @@ func TestCodexHandEdited(t *testing.T) {
 		testenv.Write(t, path, body)
 		for _, o := range []agent.MCPOptions{add("/bin/ctxtra"), {Options: agent.Options{Remove: true}}} {
 			_, err := setupMCP(t, o)
-			if name == "not the proxy" {
-				// An owned key in ctxtra's block: setup sets it back, and
-				// --remove removes the block.
-				testenv.Write(t, path, body)
-				continue
-			}
 			if err == nil || !strings.Contains(err.Error(), "left alone") {
 				t.Errorf("%s (remove %v): %v", name, o.Remove, err)
 			}

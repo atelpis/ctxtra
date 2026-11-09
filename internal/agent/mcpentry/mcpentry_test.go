@@ -174,6 +174,9 @@ func TestChangedByHand(t *testing.T) {
 		}
 	}
 	testenv.Write(t, p, `{"mcpServers": []}`)
+	if st := claude(p).MCPStatus("", agent.MCPCheck{Want: true}); !strings.HasPrefix(st.State, "invalid: ") || st.OK {
+		t.Errorf("status %+v", st)
+	}
 	var r agent.Report
 	if err := claude(p).SetupMCP(add("/bin/ctxtra"), &r); err == nil || !strings.Contains(err.Error(), "mcpServers is not an object; left alone") {
 		t.Errorf("%v", err)

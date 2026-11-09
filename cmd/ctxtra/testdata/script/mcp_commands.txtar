@@ -83,3 +83,14 @@ stderr 'warning: a binding still names gh, which is now unknown'
 ! grep '^  gh:$' .config/ctxtra/config.yaml
 ! exec ctxtra mcp remove gh
 stderr 'no MCP server "gh" in the config'
+
+# source add shows the servers that a source's bindings name.
+mkdir dot
+cp dot.yaml dot/b.yaml
+exec ctxtra source add trusted-path dot --include b.yaml
+stdout '^    MCP servers: linear_work$'
+
+-- dot.yaml --
+schema: ctxtra/v1
+bindings:
+  - {name: dotb, match: {dirs: ['~/dot/**']}, mcp-servers: [linear_work]}
