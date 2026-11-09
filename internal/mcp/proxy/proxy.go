@@ -91,14 +91,18 @@ func Run(ctx context.Context, o Options, t mcp.Transport) error {
 		// The SDK waits for the agent's connection to drain, for example a
 		// large answer that the agent no longer reads: once the servers
 		// stopped, the proxy waits for it only a short while.
-		<-stopped
+		// Stopping is bounded too: a server's handler that writes to a
+		// blocked agent connection can hold up its session's close.
+		select {
+		case <-stopped:
+		case <-time.After(3 * stopGrace):
+		}
 		select {
 		case err = <-ran:
 		case <-time.After(stopGrace):
 		}
 	}
 	cancel()
-	<-stopped
 	o.Log(Record{Event: "exit"})
 	// The agent ends a session by closing the connection.
 	if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, mcp.ErrConnectionClosed) {
@@ -236,6 +240,9 @@ func (p *proxy) start(ctx context.Context) {
 				up.Close()
 				err = context.Canceled
 			}
+			if err == nil {
+				p.wg.Go(func() { p.watchExit(up) })
+			}
 			results <- result{s, up, tools, err, time.Since(began)}
 		})
 	}
@@ -318,8 +325,10 @@ func (p *proxy) connect(ctx context.Context, s upstream.Server) (*Upstream, []*m
 			p.mu.Lock()
 			agent := p.progress[req.Params.ProgressToken]
 			p.mu.Unlock()
+			// Not in the handler: a write to an agent that doesn't
+			// read would hold up the server's session.
 			if agent != nil {
-				_ = agent.NotifyProgress(ctx, req.Params)
+				go func() { _ = agent.NotifyProgress(p.ctx, req.Params) }()
 			}
 		},
 	})
@@ -456,7 +465,8 @@ func (p *proxy) setToolsLocked(up *Upstream, tools []*mcp.Tool) {
 func (p *proxy) addTool(t *mcp.Tool) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("tool left out: %v", r)
+			// Not the SDK's message: it can quote the server's schema.
+			err = errors.New("invalid tool definition; tool left out")
 		}
 	}()
 	p.server.AddTool(t, p.call)
@@ -520,8 +530,29 @@ func (p *proxy) stop() {
 	p.mu.Unlock()
 	var wg sync.WaitGroup
 	for _, up := range ups {
-		wg.Go(up.Close)
+		wg.Go(func() {
+			up.Close()
+			if st := up.ExitState(); st != "" {
+				p.o.Log(Record{Event: "stopped", Server: up.Server.Name, Error: st})
+			}
+		})
 	}
 	wg.Wait()
 	p.wg.Wait()
+}
+
+// watchExit logs a server whose session ends before the proxy's.
+func (p *proxy) watchExit(up *Upstream) {
+	_ = up.Session.Wait()
+	p.mu.Lock()
+	stopping := p.stopping
+	p.mu.Unlock()
+	if stopping {
+		return
+	}
+	st := up.ExitState()
+	if st == "" {
+		st = "connection closed"
+	}
+	p.o.Log(Record{Event: "server ended", Server: up.Server.Name, Error: st})
 }

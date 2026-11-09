@@ -689,7 +689,8 @@ that exits then stops.
 The hook never uses the network. The proxy connects only to the bound remote servers and their authorization
 servers. It logs to ctxtra's log (`$CTXTRA_LOG` or `~/.ctxtra/log.jsonl`) with the agent's name: its start,
 the session folder, the bound servers, the number of config problems (`ctxtra doctor` lists them), each
-server's connection, late servers and its end. It never logs tool arguments, results, secrets or config
+server's connection, late servers, servers that end during the session and how each local server's process
+ended, and its own end. It never logs tool arguments, results, secrets or config
 problems as text; a failed call is logged by its kind or code only, because error messages can repeat the
 arguments. `doctor`'s last hook runs leave these lines out.
 

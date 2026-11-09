@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"slices"
 	"strings"
@@ -231,24 +232,19 @@ func describeServer(s upstream.Server) string {
 func serverTools(s upstream.Server, dir string, stderr bool) ([]names.Name, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), mcpConnectTimeout)
 	defer cancel()
-	if !s.Local() {
-		return nil, proxy.ErrRemote
-	}
-	if len(s.SecretEnv) > 0 {
-		return nil, proxy.ErrSecrets
-	}
-	cmd := proxy.Command(s, dir, os.LookupEnv, nil)
+	var errOut io.Writer
 	if stderr {
-		cmd.Stderr = os.Stderr
+		errOut = os.Stderr
 	}
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "ctxtra"}, &mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}}).
-		Connect(ctx, &mcp.CommandTransport{Command: cmd, TerminateDuration: 2 * time.Second}, nil)
+	// Started and stopped like the proxy starts and stops it, with every
+	// process it starts.
+	up, err := proxy.DialStderr(ctx, s, dir, mcp.NewClient(&mcp.Implementation{Name: "ctxtra"}, &mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}}), errOut)
 	if err != nil {
 		return nil, err
 	}
-	defer cs.Close()
+	defer up.Close()
 	var tools []names.Tool
-	for t, err := range cs.Tools(ctx, nil) {
+	for t, err := range up.Session.Tools(ctx, nil) {
 		if err != nil {
 			return nil, err
 		}

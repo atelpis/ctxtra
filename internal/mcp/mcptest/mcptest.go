@@ -22,10 +22,11 @@ import (
 //	-ignore-term  keep running on SIGTERM
 //	-child F    start a child process that ignores SIGTERM, and write its
 //	            process ID to F
+//	-exit-after D  exit with status 17 after D
 //
 // Tools: echo (returns its arguments), env (its folder and environment),
 // fail (an error that repeats its arguments), slow (waits until cancelled,
-// sending progress), big (a 1 MiB answer), hang (never answers, also when cancelled), and the
+// sending progress), big (a 1 MiB answer), bigprogress (1 MiB of progress), hang (never answers, also when cancelled), and the
 // -tools names. It also offers a prompt and a
 // resource, which a proxy must not forward.
 func Main(args []string) {
@@ -45,8 +46,13 @@ func Main(args []string) {
 		ignoreTerm()
 	}
 	for i := 0; i+1 < len(args); i++ {
-		if args[i] == "-child" {
+		switch args[i] {
+		case "-child":
 			startChild(args[i+1])
+		case "-exit-after":
+			if d, err := time.ParseDuration(args[i+1]); err == nil {
+				time.AfterFunc(d, func() { os.Exit(17) })
+			}
 		}
 	}
 	time.Sleep(delay)
@@ -85,6 +91,14 @@ func Server(extra []string) *mcp.Server {
 	s.AddTool(&mcp.Tool{Name: "big", Description: "Answer 1 MiB.", InputSchema: obj},
 		func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 			return text(strings.Repeat("x", 1<<20)), nil
+		})
+	s.AddTool(&mcp.Tool{Name: "bigprogress", Description: "Send 1 MiB of progress, then wait until cancelled.", InputSchema: obj},
+		func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			if tok := req.Params.GetProgressToken(); tok != nil {
+				_ = req.Session.NotifyProgress(ctx, &mcp.ProgressNotificationParams{ProgressToken: tok, Progress: 1, Message: strings.Repeat("x", 1<<20)})
+			}
+			<-ctx.Done()
+			return text("cancelled"), nil
 		})
 	s.AddTool(&mcp.Tool{Name: "hang", Description: "Never answer.", InputSchema: obj},
 		func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {

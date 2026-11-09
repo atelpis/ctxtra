@@ -26,6 +26,15 @@ type Upstream struct {
 	once    sync.Once
 }
 
+// ExitState is how a local server's process ended, "" while it runs or
+// for a remote server.
+func (u *Upstream) ExitState() string {
+	if u.cmd == nil || u.cmd.ProcessState == nil {
+		return ""
+	}
+	return u.cmd.ProcessState.String()
+}
+
 // stopGrace is how long a local server has to exit after SIGTERM.
 const stopGrace = 2 * time.Second
 
@@ -76,6 +85,12 @@ var ErrRemote = errors.New("remote servers are not supported yet")
 
 // Dial starts a session with s, a server bound to a session in dir.
 func Dial(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*Upstream, error) {
+	return DialStderr(ctx, s, dir, c, nil)
+}
+
+// DialStderr is Dial with a local server's stderr going to stderr, for
+// debugging; nil drops it.
+func DialStderr(ctx context.Context, s upstream.Server, dir string, c *mcp.Client, stderr io.Writer) (*Upstream, error) {
 	if !s.Local() {
 		return nil, ErrRemote
 	}
@@ -83,6 +98,9 @@ func Dial(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*U
 		return nil, ErrSecrets
 	}
 	cmd := Command(s, dir, os.LookupEnv, nil)
+	if stderr != nil {
+		cmd.Stderr = stderr
+	}
 	t := &startWatch{CommandTransport: mcp.CommandTransport{Command: cmd, TerminateDuration: stopGrace}, ctx: ctx}
 	cs, err := c.Connect(ctx, t, nil)
 	t.release()

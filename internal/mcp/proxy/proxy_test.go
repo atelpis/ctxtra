@@ -383,7 +383,7 @@ func TestFailingServer(t *testing.T) {
 	remote := upstream.Server{ID: "r", Name: "r", URL: "https://example.com/mcp"}
 	s := start(t, t.TempDir(), 5*time.Second, bad, testServer(t, "good"), exits, secret, remote)
 	got := toolNames(s.tools(t))
-	if len(got) != 6 || !slices.Contains(got, "good__echo") {
+	if !slices.Contains(got, "good__echo") || slices.ContainsFunc(got, func(n string) bool { return !strings.HasPrefix(n, "good__") }) {
 		t.Errorf("tools %v", got)
 	}
 	errs := map[string]string{}
@@ -413,7 +413,8 @@ func TestBadToolSchema(t *testing.T) {
 		}
 		return &Upstream{Server: s, Session: cs}, nil
 	}
-	p := &proxy{o: Options{Log: func(Record) {}}, tools: map[string]route{}, latest: map[string][]*mcp.Tool{}, ready: make(chan struct{})}
+	var logged []Record
+	p := &proxy{o: Options{Log: func(r Record) { logged = append(logged, r) }}, tools: map[string]route{}, latest: map[string][]*mcp.Tool{}, ready: make(chan struct{})}
 	p.server = mcp.NewServer(&mcp.Implementation{Name: "ctxtra", Version: "1"}, nil)
 	up, err := connect(context.Background(), upstream.Server{Name: "x"}, "", mcp.NewClient(&mcp.Implementation{Name: "c"}, nil))
 	if err != nil {
@@ -421,7 +422,10 @@ func TestBadToolSchema(t *testing.T) {
 	}
 	defer up.Close()
 	p.add(up)
-	p.setTools(up, []*mcp.Tool{{Name: "ok", InputSchema: map[string]any{"type": "object"}}, {Name: "bad", InputSchema: map[string]any{"type": "string"}}})
+	p.setTools(up, []*mcp.Tool{{Name: "ok", InputSchema: map[string]any{"type": "object"}}, {Name: "bad", InputSchema: map[string]any{"type": "https://x/SECRET"}}})
+	if len(logged) != 1 || logged[0].Error != "invalid tool definition; tool left out" {
+		t.Errorf("log %+v", logged)
+	}
 	if _, ok := p.tools["x__ok"]; !ok || len(p.tools) != 1 {
 		t.Errorf("tools %v", p.tools)
 	}
@@ -467,12 +471,15 @@ func TestLogHasNoContent(t *testing.T) {
 
 // A call that hangs in its server doesn't keep the proxy or the server
 // running when the agent closes the proxy's input.
-func TestStopWithHangingCall(t *testing.T) { stopWithCall(t, false) }
+func TestStopWithHangingCall(t *testing.T) { stopWithCall(t, "a__hang") }
 
 // Neither does an answer that the agent stopped reading.
-func TestStopWithUnreadAnswer(t *testing.T) { stopWithCall(t, true) }
+func TestStopWithUnreadAnswer(t *testing.T) { stopWithCall(t, "a__big") }
 
-func stopWithCall(t *testing.T, big bool) {
+// Nor progress that the agent stopped reading.
+func TestStopWithUnreadProgress(t *testing.T) { stopWithCall(t, "a__bigprogress") }
+
+func stopWithCall(t *testing.T, tool string) {
 	dir := t.TempDir()
 	pidfile := filepath.Join(dir, "a.pid")
 	servers, _ := json.Marshal([]upstream.Server{testServer(t, "a", "-pidfile", pidfile, "-ignore-term")})
@@ -491,15 +498,11 @@ func stopWithCall(t *testing.T, big bool) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
-	tool := "a__hang"
-	if big {
-		tool = "a__big"
-	}
 	for _, line := range []string{
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"` + tool + `","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"` + tool + `","arguments":{},"_meta":{"progressToken":"p1"}}}`,
 	} {
 		if _, err := in.Write([]byte(line + "\n")); err != nil {
 			t.Fatal(err)
@@ -524,11 +527,11 @@ func stopWithCall(t *testing.T, big bool) {
 	go func() { done <- cmd.Wait() }()
 	select {
 	case <-done:
-	case <-time.After(8 * time.Second):
+	case <-time.After(12 * time.Second):
 		_ = cmd.Process.Kill()
 		t.Fatal("the proxy didn't exit")
 	}
-	if took := time.Since(began); took > 6*time.Second {
+	if took := time.Since(began); took > 10*time.Second {
 		t.Errorf("stop took %v", took)
 	}
 	waitGone(t, pid, 3*time.Second)
@@ -708,4 +711,21 @@ func TestLateServerChanged(t *testing.T) {
 	}
 	_ = cs.Close()
 	<-done
+}
+
+// A server that ends during the session is logged with its exit status.
+func TestServerExitLogged(t *testing.T) {
+	s := start(t, t.TempDir(), 5*time.Second, testServer(t, "a", "-exit-after", "500ms"))
+	s.tools(t)
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(50 * time.Millisecond) {
+		for _, r := range s.records() {
+			if r.Event == "server ended" && r.Server == "a" {
+				if r.Error != "exit status 17" && r.Error != "connection closed" {
+					t.Errorf("%+v", r)
+				}
+				return
+			}
+		}
+	}
+	t.Errorf("not logged: %+v", s.records())
 }
