@@ -82,7 +82,21 @@ func Run(ctx context.Context, o Options, t mcp.Transport) error {
 		p.stop()
 		close(stopped)
 	}()
-	err := p.server.Run(ctx, watch{t, cancel})
+	ran := make(chan error, 1)
+	go func() { ran <- p.server.Run(ctx, watch{t, cancel}) }()
+	var err error
+	select {
+	case err = <-ran:
+	case <-ctx.Done():
+		// The SDK waits for the agent's connection to drain, for example a
+		// large answer that the agent no longer reads: once the servers
+		// stopped, the proxy waits for it only a short while.
+		<-stopped
+		select {
+		case err = <-ran:
+		case <-time.After(stopGrace):
+		}
+	}
 	cancel()
 	<-stopped
 	o.Log(Record{Event: "exit"})
@@ -291,13 +305,14 @@ func (p *proxy) connect(ctx context.Context, s upstream.Server) (*Upstream, []*m
 				p.o.Log(Record{Event: "list", Server: s.Name, Error: errorKind(err)})
 				return
 			}
-			if p.isOpen() {
-				p.setTools(up, tools)
-				return
-			}
+			// Kept for when the server's tools are shown, or shown now
+			// when they are: one lock, so no list falls in between.
 			p.mu.Lock()
+			defer p.mu.Unlock()
 			p.latest[s.Name] = tools
-			p.mu.Unlock()
+			if _, shown := p.listed[s.Name]; shown {
+				p.setToolsLocked(up, tools)
+			}
 		},
 		ProgressNotificationHandler: func(ctx context.Context, req *mcp.ProgressNotificationClientRequest) {
 			p.mu.Lock()
@@ -354,16 +369,10 @@ func (p *proxy) logStart(servers []upstream.Server, problems []string) {
 	p.o.Log(Record{Event: "start", Dir: p.o.Dir, Servers: bound, Problems: len(problems)})
 }
 
-// publish shows the tools of the servers that connected in time: their
-// first lists, or a later one that came before the agent's first list.
+// publish shows the tools of the servers that connected in time.
 func (p *proxy) publish(first map[string][]*mcp.Tool) {
 	p.mu.Lock()
 	ups := slices.Clone(p.upstreams)
-	for name, tools := range p.latest {
-		if _, ok := first[name]; ok {
-			first[name] = tools
-		}
-	}
 	p.mu.Unlock()
 	for _, up := range ups {
 		if tools, ok := first[up.Server.Name]; ok {
@@ -372,11 +381,21 @@ func (p *proxy) publish(first map[string][]*mcp.Tool) {
 	}
 }
 
-// setTools replaces up's tools, and renames the session's tools where a
-// new name collides. The agent gets one list change notification.
+// setTools shows up's tools: tools, or the list that a change
+// notification brought since.
 func (p *proxy) setTools(up *Upstream, tools []*mcp.Tool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if newer, ok := p.latest[up.Server.Name]; ok {
+		tools = newer
+	}
+	p.setToolsLocked(up, tools)
+}
+
+// setToolsLocked replaces up's tools, and renames the session's tools where
+// a new name collides. The agent gets one list change notification. p.mu
+// is held.
+func (p *proxy) setToolsLocked(up *Upstream, tools []*mcp.Tool) {
 	if !slices.Contains(p.upstreams, up) {
 		return
 	}
@@ -425,6 +444,8 @@ func (p *proxy) setTools(up *Upstream, tools []*mcp.Tool) {
 		if err := p.addTool(t); err != nil {
 			p.o.Log(Record{Event: "tool", Server: want[t.Name].up.Server.Name, Error: err.Error()})
 			delete(p.tools, t.Name)
+			// An earlier definition of the tool would stay listed.
+			p.server.RemoveTools(t.Name)
 		}
 	}
 }

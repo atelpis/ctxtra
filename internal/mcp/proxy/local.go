@@ -83,7 +83,9 @@ func Dial(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*U
 		return nil, ErrSecrets
 	}
 	cmd := Command(s, dir, os.LookupEnv, nil)
-	cs, err := c.Connect(ctx, &mcp.CommandTransport{Command: cmd, TerminateDuration: stopGrace}, nil)
+	t := &startWatch{CommandTransport: mcp.CommandTransport{Command: cmd, TerminateDuration: stopGrace}, ctx: ctx}
+	cs, err := c.Connect(ctx, t, nil)
+	t.release()
 	if err != nil {
 		if cmd.Process != nil {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
@@ -91,6 +93,41 @@ func Dial(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*U
 		return nil, err
 	}
 	return &Upstream{Server: s, Session: cs, cmd: cmd}, nil
+}
+
+// startWatch stops the server's process group when ctx ends while the
+// server starts: SIGTERM, then SIGKILL after stopGrace. The SDK's own
+// cleanup of a failed start waits longer, and only for the server itself.
+type startWatch struct {
+	mcp.CommandTransport
+	ctx  context.Context
+	mu   sync.Mutex
+	stop func() bool
+}
+
+func (t *startWatch) Connect(ctx context.Context) (mcp.Connection, error) {
+	conn, err := t.CommandTransport.Connect(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pgid := t.Command.Process.Pid
+	t.mu.Lock()
+	t.stop = context.AfterFunc(t.ctx, func() {
+		_ = syscall.Kill(-pgid, syscall.SIGTERM)
+		time.AfterFunc(stopGrace, func() { _ = syscall.Kill(-pgid, syscall.SIGKILL) })
+	})
+	t.mu.Unlock()
+	return conn, nil
+}
+
+// release ends the watch once the server has started: Upstream.Close
+// stops it from then on.
+func (t *startWatch) release() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stop != nil {
+		t.stop()
+	}
 }
 
 // baseEnv are the variables every local server gets from the proxy's

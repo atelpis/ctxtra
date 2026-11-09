@@ -295,6 +295,9 @@ func normalize(v any) any {
 	case map[string]any:
 		out := map[string]any{}
 		for k, val := range x {
+			if m, ok := normalize(val).(map[string]any); ok && len(m) == 0 {
+				continue
+			}
 			out[k] = normalize(val)
 		}
 		return out

@@ -252,3 +252,20 @@ func TestCodexCheck(t *testing.T) {
 		t.Errorf("%+v", st)
 	}
 }
+
+// An empty [mcp_servers] table of the user's stays, and --remove works.
+func TestCodexEmptyParentTable(t *testing.T) {
+	h := testenv.Home(t)
+	path := filepath.Join(h, ".codex", "config.toml")
+	body := "model = \"x\"\n\n[mcp_servers]\n"
+	testenv.Write(t, path, body)
+	if _, err := setupMCP(t, add("/bin/ctxtra")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := setupMCP(t, agent.MCPOptions{Options: agent.Options{Remove: true}}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); string(b) != body {
+		t.Errorf("%q", b)
+	}
+}

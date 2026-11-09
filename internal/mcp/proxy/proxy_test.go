@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -382,7 +383,7 @@ func TestFailingServer(t *testing.T) {
 	remote := upstream.Server{ID: "r", Name: "r", URL: "https://example.com/mcp"}
 	s := start(t, t.TempDir(), 5*time.Second, bad, testServer(t, "good"), exits, secret, remote)
 	got := toolNames(s.tools(t))
-	if len(got) != 5 || got[0] != "good__echo" {
+	if len(got) != 6 || !slices.Contains(got, "good__echo") {
 		t.Errorf("tools %v", got)
 	}
 	errs := map[string]string{}
@@ -412,7 +413,7 @@ func TestBadToolSchema(t *testing.T) {
 		}
 		return &Upstream{Server: s, Session: cs}, nil
 	}
-	p := &proxy{o: Options{Log: func(Record) {}}, tools: map[string]route{}, latest: map[string][]*mcp.Tool{}}
+	p := &proxy{o: Options{Log: func(Record) {}}, tools: map[string]route{}, latest: map[string][]*mcp.Tool{}, ready: make(chan struct{})}
 	p.server = mcp.NewServer(&mcp.Implementation{Name: "ctxtra", Version: "1"}, nil)
 	up, err := connect(context.Background(), upstream.Server{Name: "x"}, "", mcp.NewClient(&mcp.Implementation{Name: "c"}, nil))
 	if err != nil {
@@ -423,6 +424,20 @@ func TestBadToolSchema(t *testing.T) {
 	p.setTools(up, []*mcp.Tool{{Name: "ok", InputSchema: map[string]any{"type": "object"}}, {Name: "bad", InputSchema: map[string]any{"type": "string"}}})
 	if _, ok := p.tools["x__ok"]; !ok || len(p.tools) != 1 {
 		t.Errorf("tools %v", p.tools)
+	}
+	// A tool that changes to a schema the SDK can't serve is gone from the
+	// list too, not listed with its old schema.
+	p.setTools(up, []*mcp.Tool{{Name: "ok", InputSchema: map[string]any{"type": "string"}}})
+	ct2, st2 := mcp.NewInMemoryTransports()
+	go func() { _ = p.server.Run(context.Background(), st2) }()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, nil).Connect(context.Background(), ct2, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	p.open()
+	if res, err := cs.ListTools(context.Background(), nil); err != nil || len(res.Tools) != 0 || len(p.tools) != 0 {
+		t.Errorf("%v %+v %v", err, res, p.tools)
 	}
 }
 
@@ -452,7 +467,12 @@ func TestLogHasNoContent(t *testing.T) {
 
 // A call that hangs in its server doesn't keep the proxy or the server
 // running when the agent closes the proxy's input.
-func TestStopWithHangingCall(t *testing.T) {
+func TestStopWithHangingCall(t *testing.T) { stopWithCall(t, false) }
+
+// Neither does an answer that the agent stopped reading.
+func TestStopWithUnreadAnswer(t *testing.T) { stopWithCall(t, true) }
+
+func stopWithCall(t *testing.T, big bool) {
 	dir := t.TempDir()
 	pidfile := filepath.Join(dir, "a.pid")
 	servers, _ := json.Marshal([]upstream.Server{testServer(t, "a", "-pidfile", pidfile, "-ignore-term")})
@@ -471,11 +491,15 @@ func TestStopWithHangingCall(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatal(err)
 	}
+	tool := "a__hang"
+	if big {
+		tool = "a__big"
+	}
 	for _, line := range []string{
 		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`,
 		`{"jsonrpc":"2.0","method":"notifications/initialized"}`,
 		`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
-		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"a__hang","arguments":{}}}`,
+		`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"` + tool + `","arguments":{}}}`,
 	} {
 		if _, err := in.Write([]byte(line + "\n")); err != nil {
 			t.Fatal(err)
@@ -517,8 +541,12 @@ func TestStopWhileConnecting(t *testing.T) {
 	s := start(t, dir, 500*time.Millisecond, testServer(t, "a", "-pidfile", pidfile, "-ignore-term", "-delay", "1h"))
 	s.tools(t)
 	pid := readPid(t, pidfile)
+	began := time.Now()
 	s.close(t)
 	waitGone(t, pid, 3*time.Second)
+	if took := time.Since(began); took > 3*time.Second {
+		t.Errorf("stopped after %v", took)
+	}
 }
 
 // A process that a server started, and that ignores SIGTERM, doesn't
@@ -611,6 +639,72 @@ func TestToolChangeBeforeFirstList(t *testing.T) {
 	res, err := cs.ListTools(context.Background(), nil)
 	if err != nil || len(res.Tools) != 1 || res.Tools[0].Name != "fast__new" {
 		t.Errorf("%v %+v", err, res)
+	}
+	_ = cs.Close()
+	<-done
+}
+
+// A server that answers its first tool list after the deadline, and
+// changes its tools before that: the session gets the new tools.
+func TestLateServerChanged(t *testing.T) {
+	up := mcp.NewServer(&mcp.Implementation{Name: "s"}, nil)
+	obj := map[string]any{"type": "object"}
+	noop := func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+		return &mcp.CallToolResult{}, nil
+	}
+	up.AddTool(&mcp.Tool{Name: "old", InputSchema: obj}, noop)
+	var lists atomic.Int32
+	up.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			if method == "tools/list" && lists.Add(1) == 1 {
+				res, err := next(ctx, method, req) // the list as it is now, answered late
+				time.Sleep(1500 * time.Millisecond)
+				return res, err
+			}
+			return next(ctx, method, req)
+		}
+	})
+	connect := func(ctx context.Context, s upstream.Server, _ string, c *mcp.Client) (*Upstream, error) {
+		ct, st := mcp.NewInMemoryTransports()
+		go func() { _ = up.Run(context.Background(), st) }()
+		cs, err := c.Connect(ctx, ct, nil)
+		if err != nil {
+			return nil, err
+		}
+		go func() {
+			time.Sleep(300 * time.Millisecond)
+			up.RemoveTools("old")
+			up.AddTool(&mcp.Tool{Name: "new", InputSchema: obj}, noop)
+		}()
+		return &Upstream{Server: s, Session: cs}, nil
+	}
+	ct, st := mcp.NewInMemoryTransports()
+	o := Options{Agent: "test", Dir: t.TempDir(), Deadline: 200 * time.Millisecond, Connect: connect,
+		Servers: func(string) ([]upstream.Server, []string) {
+			return []upstream.Server{{ID: "s", Name: "s", Command: []string{"x"}}}, nil
+		}}
+	done := make(chan error, 1)
+	go func() { done <- Run(context.Background(), o, st) }()
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "agent"}, nil).Connect(context.Background(), ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(100 * time.Millisecond) {
+		res, err := cs.ListTools(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = nil
+		for _, tool := range res.Tools {
+			names = append(names, tool.Name)
+		}
+		if len(names) > 0 && lists.Load() >= 2 && time.Since(end.Add(-5*time.Second)) > 2500*time.Millisecond {
+			break
+		}
+	}
+	if !slices.Equal(names, []string{"s__new"}) {
+		t.Errorf("tools %v", names)
 	}
 	_ = cs.Close()
 	<-done

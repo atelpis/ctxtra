@@ -25,7 +25,7 @@ import (
 //
 // Tools: echo (returns its arguments), env (its folder and environment),
 // fail (an error that repeats its arguments), slow (waits until cancelled,
-// sending progress), hang (never answers, also when cancelled), and the
+// sending progress), big (a 1 MiB answer), hang (never answers, also when cancelled), and the
 // -tools names. It also offers a prompt and a
 // resource, which a proxy must not forward.
 func Main(args []string) {
@@ -81,6 +81,10 @@ func Server(extra []string) *mcp.Server {
 			}
 			<-ctx.Done()
 			return text("cancelled"), nil
+		})
+	s.AddTool(&mcp.Tool{Name: "big", Description: "Answer 1 MiB.", InputSchema: obj},
+		func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+			return text(strings.Repeat("x", 1<<20)), nil
 		})
 	s.AddTool(&mcp.Tool{Name: "hang", Description: "Never answer.", InputSchema: obj},
 		func(context.Context, *mcp.CallToolRequest) (*mcp.CallToolResult, error) {

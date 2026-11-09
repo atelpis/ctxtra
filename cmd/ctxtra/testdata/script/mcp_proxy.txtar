@@ -44,7 +44,7 @@ stdout '"cwd":"[^"]*/dev/mono/services/billing/cmd"'
 # The proxy logs to ctxtra's log, which doctor's hook runs leave out.
 exec cat .ctxtra/log.jsonl
 stdout '"kind":"mcp","harness":"test","event":"start","dir":"[^"]*/dev/mono/services/billing/cmd","servers":\["billing"\]'
-stdout '"event":"connect","server":"billing","tools":6'
+stdout '"event":"connect","server":"billing","tools":7'
 ! stdout '"title"'
 
 # A broken config: no tools, and the session starts.
