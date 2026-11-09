@@ -55,6 +55,9 @@ func Run(args []string, stdio IO, version string) int {
 	if len(args) > 0 && args[0] == "hook" {
 		return runHook(args[1:], stdio, version)
 	}
+	if len(args) > 1 && args[0] == "mcp" && args[1] == "proxy" {
+		return runProxy(args[2:], stdio, version)
+	}
 	// Output can hold text from sources (selectors, paths, diffs): no
 	// control characters reach the terminal. The hook's stdout is JSON
 	// for the agent and stays as it is.

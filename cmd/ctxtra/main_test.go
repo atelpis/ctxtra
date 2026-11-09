@@ -8,6 +8,7 @@ package main
 // Run one script: go test ./cmd/ctxtra -run TestScript/setup_claude
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -16,11 +17,14 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rogpeppe/go-internal/testscript"
 
 	"github.com/ctxtra/ctxtra/internal/cli"
 	"github.com/ctxtra/ctxtra/internal/jsonorder"
+	"github.com/ctxtra/ctxtra/internal/mcp/mcptest"
 	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
@@ -33,6 +37,8 @@ func TestMain(m *testing.M) {
 			cli.Interactive = func(cli.IO) bool { return true }
 			main()
 		},
+		// A stdio MCP server for the proxy's tests.
+		"mcptest": func() { mcptest.Main(os.Args[1:]) },
 	})
 }
 
@@ -48,6 +54,7 @@ func TestScript(t *testing.T) {
 			"gitcommit": gitCommit,
 			"expand":    expandFile,
 			"slots":     collapseSlots,
+			"mcp":       mcpClient,
 		},
 	})
 }
@@ -142,7 +149,7 @@ func environ(ts *testscript.TestScript) []string {
 		"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
 		"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR",
 		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "HERMES_HOME", "DSH_HOME", "GIT_SSL_NO_VERIFY",
-		"DEVIN_PROJECT_DIR"} {
+		"DEVIN_PROJECT_DIR", "CTXTRA_EXPERIMENTAL_MCP", "GITHUB_TOKEN"} {
 		if v := ts.Getenv(k); v != "" {
 			env = append(env, k+"="+v)
 		}
@@ -327,4 +334,53 @@ func hookCommand(ts *testscript.TestScript, path, event string) string {
 		ts.Fatalf("%s: want one ctxtra %s hook, found %d", path, event, len(found))
 	}
 	return found[0]
+}
+
+// mcp DIR [TOOL [JSON]]: starts ctxtra mcp proxy test --unknown-flag in DIR,
+// the way an agent starts the MCP entry, lists its tools as "tool NAME:
+// DESCRIPTION" lines, and calls TOOL with the arguments JSON, printing
+// "result: TEXT" or "error: MESSAGE". The proxy's stderr goes to stderr.
+func mcpClient(ts *testscript.TestScript, neg bool, args []string) {
+	if neg || len(args) < 1 || len(args) > 3 {
+		ts.Fatalf("usage: mcp DIR [TOOL [JSON]]")
+	}
+	bin, err := exec.LookPath("ctxtra")
+	ts.Check(err)
+	cmd := exec.Command(bin, "mcp", "proxy", "test", "--unknown-flag")
+	cmd.Dir = ts.MkAbs(args[0])
+	cmd.Env = environ(ts)
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	c := mcp.NewClient(&mcp.Implementation{Name: "testscript", Version: "1"}, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cs, err := c.Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
+	ts.Check(err)
+	defer func() {
+		_ = cs.Close()
+		fmt.Fprint(ts.Stderr(), stderr.String())
+	}()
+	fmt.Fprintf(ts.Stdout(), "server: %s\n", cs.InitializeResult().ServerInfo.Name)
+	res, err := cs.ListTools(ctx, nil)
+	ts.Check(err)
+	for _, t := range res.Tools {
+		fmt.Fprintf(ts.Stdout(), "tool %s: %s\n", t.Name, t.Description)
+	}
+	if len(args) == 1 {
+		return
+	}
+	var arguments any
+	if len(args) == 3 {
+		ts.Check(json.Unmarshal([]byte(args[2]), &arguments))
+	}
+	out, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: args[1], Arguments: arguments})
+	if err != nil {
+		fmt.Fprintf(ts.Stdout(), "error: %v\n", err)
+		return
+	}
+	for _, content := range out.Content {
+		if t, ok := content.(*mcp.TextContent); ok {
+			fmt.Fprintf(ts.Stdout(), "result: %s\n", t.Text)
+		}
+	}
 }

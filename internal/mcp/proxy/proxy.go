@@ -1,0 +1,397 @@
+// Package proxy is the MCP server that ctxtra setup adds to each agent: it
+// gives the session the tools of the MCP servers bound to its folder, and
+// forwards each call to the server the tool came from.
+//
+// The servers are fixed when the proxy starts, like the agents' own MCP
+// servers. A proxy problem never breaks a session: a server that fails is
+// left out, and the proxy serves the tools it can.
+package proxy
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"slices"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/ctxtra/ctxtra/internal/mcp/names"
+	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
+)
+
+// Deadline is how long after its start the proxy waits for slow servers
+// before it answers the first tool list. Codex and Muse keep only the
+// first list, and an agent that gives up on the proxy loses every tool.
+const Deadline = 10 * time.Second
+
+// Options are what one proxy run needs.
+type Options struct {
+	Agent   string // the agent that started the proxy, for the log
+	Version string
+	Dir     string    // the session folder
+	Start   time.Time // when the process started; Deadline counts from it
+	// Deadline overrides the package's Deadline, for tests.
+	Deadline time.Duration
+	// Servers returns the servers bound to dir, and problems to log. It
+	// never fails: a broken config has no servers.
+	Servers func(dir string) ([]upstream.Server, []string)
+	// Connect starts a session with one server; nil uses Dial.
+	Connect func(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*Upstream, error)
+	// Log records what happened; nil logs nothing.
+	Log func(Record)
+}
+
+// Run serves the agent over t until the agent closes it or ctx ends, then
+// stops every server it started. It returns only errors of the agent's
+// connection.
+func Run(ctx context.Context, o Options, t mcp.Transport) error {
+	if o.Deadline == 0 {
+		o.Deadline = Deadline
+	}
+	if o.Connect == nil {
+		o.Connect = Dial
+	}
+	if o.Log == nil {
+		o.Log = func(Record) {}
+	}
+	if o.Start.IsZero() {
+		o.Start = time.Now()
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	p := &proxy{o: o, ready: make(chan struct{}), tools: map[string]route{}, progress: map[any]*mcp.ServerSession{}}
+	p.server = mcp.NewServer(&mcp.Implementation{Name: "ctxtra", Version: o.Version}, &mcp.ServerOptions{
+		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}},
+	})
+	p.server.AddReceivingMiddleware(p.waitForTools)
+	go p.start(ctx)
+	err := p.server.Run(ctx, t)
+	cancel()
+	p.stop()
+	o.Log(Record{Event: "exit"})
+	// The agent ends a session by closing the connection.
+	if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrClosedPipe) || errors.Is(err, mcp.ErrConnectionClosed) {
+		return nil
+	}
+	return err
+}
+
+// proxy is one session's proxy.
+type proxy struct {
+	o      Options
+	server *mcp.Server
+
+	ready     chan struct{} // closed when the first tool list may be answered
+	readyOnce sync.Once
+
+	mu        sync.Mutex
+	upstreams []*Upstream
+	tools     map[string]route           // by shown name
+	listed    map[string][]*mcp.Tool     // each connected server's tools, by server name
+	progress  map[any]*mcp.ServerSession // progress tokens of running calls
+}
+
+// route is where a shown tool goes.
+type route struct {
+	up   *Upstream
+	name string // the server's own tool name
+}
+
+// waitForTools holds the agent's tool lists and calls until the first one may be
+// answered: some agents keep only the first list they get.
+func (p *proxy) waitForTools(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		// A call before the first list waits too: its tool may not be
+		// there yet.
+		if method == "tools/list" || method == "tools/call" {
+			select {
+			case <-p.ready:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+		}
+		return next(ctx, method, req)
+	}
+}
+
+func (p *proxy) open() { p.readyOnce.Do(func() { close(p.ready) }) }
+
+// start resolves the session's servers and connects to all of them at
+// once. The first tool list waits for all of them, or until the deadline.
+func (p *proxy) start(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			p.o.Log(Record{Event: "error", Error: fmt.Sprint("panic: ", r)})
+			p.open()
+		}
+	}()
+	servers, problems := p.o.Servers(p.o.Dir)
+	var bound []string
+	for _, s := range servers {
+		bound = append(bound, s.Name)
+	}
+	p.o.Log(Record{Event: "start", Dir: p.o.Dir, Servers: bound, Problems: problems})
+	deadline := time.NewTimer(time.Until(p.o.Start.Add(p.o.Deadline)))
+	defer deadline.Stop()
+	type result struct {
+		s     upstream.Server
+		up    *Upstream
+		tools []*mcp.Tool
+		err   error
+		took  time.Duration
+	}
+	results := make(chan result, len(servers))
+	for _, s := range servers {
+		go func() {
+			began := time.Now()
+			up, tools, err := p.connect(ctx, s)
+			results <- result{s, up, tools, err, time.Since(began)}
+		}()
+	}
+	waiting := map[string]bool{}
+	for _, s := range servers {
+		waiting[s.Name] = true
+	}
+	first := map[string][]*mcp.Tool{}
+	for len(waiting) > 0 {
+		select {
+		case r := <-results:
+			delete(waiting, r.s.Name)
+			rec := Record{Event: "connect", Server: r.s.Name, Ms: r.took.Milliseconds(), Tools: len(r.tools)}
+			if r.err != nil {
+				rec.Error = errorKind(r.err)
+				p.o.Log(rec)
+				continue
+			}
+			p.o.Log(rec)
+			if p.isOpen() {
+				p.o.Log(Record{Event: "late", Server: r.s.Name, Ms: time.Since(p.o.Start).Milliseconds()})
+				p.setTools(r.up, r.tools)
+				continue
+			}
+			p.addUpstream(r.up)
+			first[r.s.Name] = r.tools
+		case <-deadline.C:
+			var slow []string
+			for n := range waiting {
+				slow = append(slow, n)
+			}
+			slices.Sort(slow)
+			p.o.Log(Record{Event: "deadline", Servers: slow})
+			p.publish(first)
+			p.open()
+		case <-ctx.Done():
+			return
+		}
+	}
+	if !p.isOpen() {
+		p.publish(first)
+		p.open()
+	}
+}
+
+func (p *proxy) isOpen() bool {
+	select {
+	case <-p.ready:
+		return true
+	default:
+		return false
+	}
+}
+
+// connect starts a session with s and lists its tools.
+func (p *proxy) connect(ctx context.Context, s upstream.Server) (*Upstream, []*mcp.Tool, error) {
+	var cur atomic.Pointer[Upstream] // set once connected
+	client := mcp.NewClient(&mcp.Implementation{Name: "ctxtra", Version: p.o.Version}, &mcp.ClientOptions{
+		// No roots: a server learns nothing about the session's folders.
+		Capabilities: &mcp.ClientCapabilities{},
+		ToolListChangedHandler: func(ctx context.Context, _ *mcp.ToolListChangedRequest) {
+			up := cur.Load()
+			if up == nil {
+				return
+			}
+			tools, err := listTools(ctx, up.Session)
+			if err != nil {
+				p.o.Log(Record{Event: "list", Server: s.Name, Error: errorKind(err)})
+				return
+			}
+			if p.isOpen() {
+				p.setTools(up, tools)
+			}
+		},
+		ProgressNotificationHandler: func(ctx context.Context, req *mcp.ProgressNotificationClientRequest) {
+			p.mu.Lock()
+			agent := p.progress[req.Params.ProgressToken]
+			p.mu.Unlock()
+			if agent != nil {
+				_ = agent.NotifyProgress(ctx, req.Params)
+			}
+		},
+	})
+	up, err := p.o.Connect(ctx, s, p.o.Dir, client)
+	if err != nil {
+		return nil, nil, err
+	}
+	cur.Store(up)
+	tools, err := listTools(ctx, up.Session)
+	if err != nil {
+		up.Close()
+		return nil, nil, err
+	}
+	return up, tools, nil
+}
+
+func listTools(ctx context.Context, cs *mcp.ClientSession) ([]*mcp.Tool, error) {
+	var out []*mcp.Tool
+	for t, err := range cs.Tools(ctx, nil) {
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, nil
+}
+
+func (p *proxy) addUpstream(up *Upstream) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.upstreams = append(p.upstreams, up)
+}
+
+// publish shows the first tools of the servers that connected in time.
+func (p *proxy) publish(first map[string][]*mcp.Tool) {
+	p.mu.Lock()
+	ups := slices.Clone(p.upstreams)
+	p.mu.Unlock()
+	for _, up := range ups {
+		p.setTools(up, first[up.Server.Name])
+	}
+}
+
+// setTools replaces up's tools, and renames the session's tools where a
+// new name collides. The agent gets one list change notification.
+func (p *proxy) setTools(up *Upstream, tools []*mcp.Tool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !slices.Contains(p.upstreams, up) {
+		p.upstreams = append(p.upstreams, up)
+	}
+	if p.listed == nil {
+		p.listed = map[string][]*mcp.Tool{}
+	}
+	p.listed[up.Server.Name] = tools
+	byServer := map[string]*Upstream{}
+	for _, u := range p.upstreams {
+		byServer[u.Server.Name] = u
+	}
+	var all []names.Tool
+	defs := map[names.Tool]*mcp.Tool{}
+	for server, list := range p.listed {
+		for _, t := range list {
+			nt := names.Tool{Server: server, Name: t.Name}
+			all = append(all, nt)
+			defs[nt] = t
+		}
+	}
+	named, dropped := names.Assign(all)
+	for _, d := range dropped {
+		p.o.Log(Record{Event: "dropped", Server: d.Server, Error: "name collision"})
+	}
+	want := map[string]route{}
+	var add []*mcp.Tool
+	for _, n := range named {
+		want[n.Shown] = route{up: byServer[n.Server], name: n.Name}
+		t := *defs[n.Tool]
+		t.Name = n.Shown
+		t.Description = names.Describe(n, t.Description)
+		add = append(add, &t)
+	}
+	var remove []string
+	for shown := range p.tools {
+		if _, ok := want[shown]; !ok {
+			remove = append(remove, shown)
+		}
+	}
+	slices.Sort(remove)
+	if len(remove) > 0 {
+		p.server.RemoveTools(remove...)
+	}
+	p.tools = want
+	for _, t := range add {
+		if err := p.addTool(t); err != nil {
+			p.o.Log(Record{Event: "tool", Server: want[t.Name].up.Server.Name, Error: err.Error()})
+			delete(p.tools, t.Name)
+		}
+	}
+}
+
+// addTool adds t to the agent's list. The SDK panics on a tool it can't
+// serve, such as one whose input schema isn't an object: that tool is left
+// out.
+func (p *proxy) addTool(t *mcp.Tool) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("tool left out: %v", r)
+		}
+	}()
+	p.server.AddTool(t, p.call)
+	return nil
+}
+
+// call forwards a tool call to its server, with the server's own name for
+// the tool, and the agent's progress token.
+func (p *proxy) call(ctx context.Context, req *mcp.CallToolRequest) (res *mcp.CallToolResult, err error) {
+	shown := req.Params.Name
+	p.mu.Lock()
+	r, ok := p.tools[shown]
+	p.mu.Unlock()
+	if !ok {
+		return nil, fmt.Errorf("unknown tool %q", shown)
+	}
+	server := r.up.Server.Name
+	defer func() {
+		if x := recover(); x != nil {
+			err = fmt.Errorf("ctxtra: the call to %s failed", server)
+			p.o.Log(Record{Event: "call", Server: server, Error: "panic"})
+		}
+	}()
+	params := &mcp.CallToolParams{Meta: req.Params.Meta, Name: r.name, Arguments: req.Params.Arguments}
+	if len(req.Params.Arguments) == 0 {
+		params.Arguments = nil
+	}
+	if tok := req.Params.GetProgressToken(); tok != nil {
+		p.mu.Lock()
+		p.progress[tok] = req.Session
+		p.mu.Unlock()
+		defer func() {
+			p.mu.Lock()
+			delete(p.progress, tok)
+			p.mu.Unlock()
+		}()
+	}
+	res, err = r.up.Session.CallTool(ctx, params)
+	switch {
+	case err != nil:
+		p.o.Log(Record{Event: "call", Server: server, Error: errorKind(err)})
+	case res.IsError:
+		p.o.Log(Record{Event: "call", Server: server, Error: "tool error"})
+	}
+	return res, err
+}
+
+// stop ends every server session, and stops the local servers.
+func (p *proxy) stop() {
+	p.open()
+	p.mu.Lock()
+	ups := slices.Clone(p.upstreams)
+	p.mu.Unlock()
+	var wg sync.WaitGroup
+	for _, up := range ups {
+		wg.Go(up.Close)
+	}
+	wg.Wait()
+}

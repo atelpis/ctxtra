@@ -4,16 +4,13 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"sort"
 
 	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/logfile"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/resolve"
 )
-
-// maxLogBytes is when the log is rotated to log.jsonl.1.
-const maxLogBytes = 1 << 20
 
 // Entry is one hook run in the log.
 type Entry struct {
@@ -33,6 +30,9 @@ type Entry struct {
 	Error     string   `json:"error,omitempty"`
 	Skipped   string   `json:"skipped,omitempty"` // why the hook added nothing, see agent.Skipper
 	Reused    string   `json:"reused,omitempty"`  // the session start got an earlier one's text, see slot.go
+	// Kind is set by other writers of the log, such as "mcp" for the MCP
+	// proxy; hook runs have none.
+	Kind string `json:"kind,omitempty"`
 }
 
 func newEntry(ts, harness, event string, p payload, res *resolve.Result, chars int) Entry {
@@ -53,24 +53,8 @@ func newEntry(ts, harness, event string, p payload, res *resolve.Result, chars i
 	return e
 }
 
-// logEntry appends e to the log. Errors are ignored and nothing blocks (the
-// log can't be a FIFO): logging must never break a session.
-func logEntry(e Entry) {
-	path := paths.LogPath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return
-	}
-	if st, err := os.Lstat(path); err == nil && st.Mode().IsRegular() && st.Size() > maxLogBytes {
-		_ = os.Rename(path, path+".1")
-	}
-	f, err := fsutil.OpenRegular(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	b, _ := json.Marshal(e)
-	_, _ = f.Write(append(b, '\n'))
-}
+// logEntry appends e to the log.
+func logEntry(e Entry) { logfile.Append(e) }
 
 // LastRuns returns the last logged run per agent and event for sessions in
 // dir (or in repo, when repo is set), sorted by agent and event. It reads the
@@ -80,6 +64,9 @@ func LastRuns(dir, repo string) []Entry {
 	path := paths.LogPath()
 	for _, p := range []string{path + ".1", path} {
 		scanLog(p, func(e Entry) {
+			if e.Kind != "" {
+				return
+			}
 			if (repo != "" && e.Repo == repo) || (repo == "" && e.Dir == dir) {
 				last[e.Harness+" "+e.Event] = e
 			}
