@@ -588,17 +588,11 @@ func (p *proxy) watchExit(up *Upstream) {
 	if stopping {
 		return
 	}
-	// Stopped now, with the processes it started, and its tools go: a
+	// Its tools go first, so that no list has them while it is being
+	// stopped. Then it is stopped now, with the processes it started: a
 	// process group ID kept until the session ends could belong to other
 	// processes by then.
-	up.Close()
-	st := up.ExitState()
-	if st == "" {
-		st = "connection closed"
-	}
-	p.o.Log(Record{Event: "server ended", Server: up.Server.Name, Error: st})
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	if p.ended == nil {
 		p.ended = map[*Upstream]bool{}
 	}
@@ -607,6 +601,13 @@ func (p *proxy) watchExit(up *Upstream) {
 	if _, shown := p.listed[up.Server.Name]; shown {
 		p.setToolsLocked(up, nil)
 	}
+	p.mu.Unlock()
+	up.Close()
+	st := up.ExitState()
+	if st == "" {
+		st = "connection closed"
+	}
+	p.o.Log(Record{Event: "server ended", Server: up.Server.Name, Error: st})
 }
 
 // tokenKey is a progress token as a map key. The spec allows strings and

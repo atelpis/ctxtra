@@ -927,7 +927,10 @@ func TestListChangesCoalesce(t *testing.T) {
 
 // A server that ends before the first list is answered isn't in it.
 func TestServerEndsBeforeFirstList(t *testing.T) {
-	s := start(t, t.TempDir(), 5*time.Second, testServer(t, "a", "-exit-after", "200ms"), testServer(t, "b", "-delay", "1500ms"))
+	dir := t.TempDir()
+	// A child that ignores SIGTERM keeps the server's stop busy for a while.
+	s := start(t, dir, 5*time.Second, testServer(t, "a", "-exit-after", "200ms", "-child", filepath.Join(dir, "child.pid")),
+		testServer(t, "b", "-delay", "800ms"))
 	got := toolNames(s.tools(t))
 	if slices.ContainsFunc(got, func(n string) bool { return strings.HasPrefix(n, "a__") }) || !slices.Contains(got, "b__echo") {
 		t.Errorf("tools %v", got)
