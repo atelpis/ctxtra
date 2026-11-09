@@ -110,7 +110,7 @@ func (s *Store) Token(ctx context.Context, srv upstream.Server) (string, error) 
 // refreshes once under the lock, unless another process stored a new
 // token since, and returns the token to retry with.
 func (s *Store) Rejected(ctx context.Context, srv upstream.Server, rejected string) (string, error) {
-	return s.refreshLocked(ctx, srv, func(cur *Record) bool { return cur.Token.Access != rejected })
+	return s.refreshLocked(ctx, srv, func(cur *Record) bool { return cur.Token.Access != rejected && s.fresh(cur) })
 }
 
 // refreshLocked takes srv's lock, reads the record again, and returns its

@@ -176,6 +176,7 @@ func TestProcessRefreshRacesLogin(t *testing.T) {
 		OnRefresh: func() { started <- struct{}{} }})
 	s, srv := fileKeyStore(t, fake)
 	expireToken(t, s, srv, time.Minute)
+	first, _ := s.Generation(srv)
 	login := fake.SignIn("app", "read", "write")
 	tok, _ := json.Marshal(newToken(tokenResponse{AccessToken: login.AccessToken, RefreshToken: login.RefreshToken,
 		ExpiresIn: json.Number(itoa(login.ExpiresIn))}, time.Now()))
@@ -194,7 +195,7 @@ func TestProcessRefreshRacesLogin(t *testing.T) {
 		t.Errorf("%d refreshes: %q", fake.Refreshes(), outs)
 	}
 	r, err := s.Load(srv)
-	if err != nil || r.Token.Access != login.AccessToken || r.Generation != 2 {
+	if err != nil || r.Token.Access != login.AccessToken || r.Generation <= first {
 		t.Fatalf("the new sign-in was lost: %+v %v", r, err)
 	}
 	// Later refreshes use the new sign-in's refresh token.

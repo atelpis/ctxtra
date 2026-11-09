@@ -448,7 +448,19 @@ func (a *app) mcpRemoveCmd() *cobra.Command {
 		RunE: a.mcpRun(func(_ *cobra.Command, args []string) error {
 			name := args[0]
 			s := newSources(a.IO)
-			change := func(old []byte) ([]byte, error) { return config.RemoveMCPServer(old, name) }
+			// Its credentials go with it, also when its definition was
+			// broken, under the config's lock: a later add of the same
+			// name keeps its own.
+			change := func(old []byte) ([]byte, error) {
+				out, err := config.RemoveMCPServer(old, name)
+				if err != nil || dryRun {
+					return out, err
+				}
+				if err := creds.Open().Delete(upstream.Server{ID: config.MCPServerID(name), Name: name}); err != nil {
+					return nil, fmt.Errorf("couldn't delete its credentials: %w", err)
+				}
+				return out, nil
+			}
 			var err error
 			if dryRun {
 				var old []byte
@@ -466,13 +478,6 @@ func (a *app) mcpRemoveCmd() *cobra.Command {
 				verb = "would remove"
 			}
 			fmt.Fprintf(a.Out, "%s the MCP server %s from %s\n", verb, name, paths.Tilde(s.file))
-			if !dryRun {
-				// Its credentials go with it, also when its definition was
-				// broken.
-				if err := creds.Open().Delete(upstream.Server{ID: config.MCPServerID(name), Name: name}); err != nil {
-					fmt.Fprintf(a.Err, "warning: couldn't delete the credentials of %s: %v\n", name, err)
-				}
-			}
 			cfg := config.Load(paths.ConfigPath(), newReader())
 			// After the change, a binding that names the server has a problem
 			// for it; before it (--dry-run), the binding still has it.

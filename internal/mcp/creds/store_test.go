@@ -63,7 +63,7 @@ func TestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.ID != srv.ID || r.URL != srv.URL || r.Issuer != fake.URL || r.Generation != 1 ||
+	if r.ID != srv.ID || r.URL != srv.URL || r.Issuer != fake.URL || r.Generation <= 0 ||
 		r.Token.Access != tok.AccessToken || r.Token.Refresh != tok.RefreshToken || r.Client.ID != "app" {
 		t.Errorf("record: %+v", r)
 	}
@@ -228,7 +228,7 @@ func TestStateHasNoSecrets(t *testing.T) {
 		}
 	}
 	st, _ := s.State(srv)
-	if !st.SignedIn || st.Generation != 1 || st.Version != 1 {
+	if !st.SignedIn || st.Generation != r.Generation || st.Version != 1 {
 		t.Errorf("state: %+v", st)
 	}
 }
@@ -345,13 +345,14 @@ func TestLoginDuringRefresh(t *testing.T) {
 		done <- err
 	}()
 	time.Sleep(100 * time.Millisecond)
+	before, _ := s.Generation(srv)
 	login := fake.SignIn("app", "read", "write")
 	saveSignIn(t, s, srv, fake, login)
 	if err := <-done; err != nil {
 		t.Fatal(err)
 	}
 	r, _ := s.Load(srv)
-	if r.Token.Access != login.AccessToken || r.Generation != 2 {
+	if r.Token.Access != login.AccessToken || r.Generation <= before {
 		t.Errorf("the new sign-in was lost: %+v", r.Token)
 	}
 	if got, err := s.Token(context.Background(), srv); err != nil || got != login.AccessToken {
@@ -483,27 +484,63 @@ func TestStaleSignIn(t *testing.T) {
 	fake := oauthtest.New(t, oauthtest.Options{Lifetime: time.Hour})
 	s, srv, _ := signedInStore(t, fake, t.TempDir())
 	c := Client{ID: "app", AuthMethod: "none", TokenURL: fake.TokenURL()}
-	// Two sign-ins start from generation 1; the second to finish is too
-	// late.
+	gen, _ := s.Generation(srv)
+	// Two sign-ins start from gen; the second to finish is too late.
 	first, second := fake.SignIn("app"), fake.SignIn("app")
-	if _, err := s.SaveSignIn(srv, 1, fake.URL, c, Token{Access: first.AccessToken}); err != nil {
+	if _, err := s.SaveSignIn(srv, gen, fake.URL, c, Token{Access: first.AccessToken}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SaveSignIn(srv, 1, fake.URL, c, Token{Access: second.AccessToken}); !errors.Is(err, ErrSignInChanged) {
+	if _, err := s.SaveSignIn(srv, gen, fake.URL, c, Token{Access: second.AccessToken}); !errors.Is(err, ErrSignInChanged) {
 		t.Errorf("stale sign-in: %v", err)
 	}
-	if r, _ := s.Load(srv); r.Token.Access != first.AccessToken || r.Generation != 2 {
+	r, _ := s.Load(srv)
+	if r.Token.Access != first.AccessToken || r.Generation <= gen {
 		t.Errorf("record: %+v", r)
 	}
-	// A removal while a sign-in runs: it isn't recreated.
+	// A sign-in that started before a removal: not saved, whether or not
+	// another sign-in came after the removal.
+	pending := r.Generation
 	if err := s.Delete(srv); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SaveSignIn(srv, 2, fake.URL, c, Token{Access: second.AccessToken}); !errors.Is(err, ErrSignInChanged) {
+	if _, err := s.SaveSignIn(srv, pending, fake.URL, c, Token{Access: second.AccessToken}); !errors.Is(err, ErrSignInChanged) {
 		t.Errorf("sign-in after removal: %v", err)
 	}
 	if r, err := s.Load(srv); r != nil || err != nil {
 		t.Errorf("recreated: %+v %v", r, err)
+	}
+	fresh := fake.SignIn("app")
+	if _, err := s.SaveSignIn(srv, 0, fake.URL, c, Token{Access: fresh.AccessToken}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveSignIn(srv, pending, fake.URL, c, Token{Access: second.AccessToken}); !errors.Is(err, ErrSignInChanged) {
+		t.Errorf("sign-in from before a removal and a new sign-in: %v", err)
+	}
+	if r, _ := s.Load(srv); r.Token.Access != fresh.AccessToken {
+		t.Errorf("the new sign-in was overwritten: %+v", r.Token)
+	}
+}
+
+// A late 401 for an old token doesn't hand out a newer token that has
+// expired meanwhile: it is refreshed.
+func TestDelayedRejection(t *testing.T) {
+	fake := oauthtest.New(t, oauthtest.Options{Lifetime: time.Hour})
+	s, srv, tok := signedInStore(t, fake, t.TempDir())
+	expireToken(t, s, srv, time.Minute)
+	s.Update(srv, false, func(r *Record) error { r.Token.Access = "expired-b"; return nil })
+	got, err := s.Rejected(context.Background(), srv, tok.AccessToken)
+	if err != nil || got == "expired-b" || fake.Refreshes() != 1 {
+		t.Errorf("Rejected: %q %v, %d refreshes", got, err, fake.Refreshes())
+	}
+}
+
+func TestGenerationErrors(t *testing.T) {
+	fake := oauthtest.New(t, oauthtest.Options{})
+	s, srv, _ := signedInStore(t, fake, t.TempDir())
+	os.WriteFile(filepath.Join(s.Dir, "credentials", "linear_work.v2.age"), []byte("v2"), 0o600)
+	var nerr *NewerError
+	if _, err := s.Generation(srv); !errors.As(err, &nerr) {
+		t.Errorf("Generation: %v", err)
 	}
 }
 

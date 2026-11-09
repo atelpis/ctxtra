@@ -338,3 +338,17 @@ func TestKeyReplacedWhileRunning(t *testing.T) {
 		t.Errorf("secret: %q %v", v, err)
 	}
 }
+
+// Key recovery leaves a newer ctxtra's credentials alone.
+func TestRecoveryWithNewerRecords(t *testing.T) {
+	keyring.MockInitWithError(errNoKeychain)
+	dir := t.TempDir()
+	os.MkdirAll(filepath.Join(dir, "credentials"), 0o700)
+	os.WriteFile(filepath.Join(dir, "credentials", "pg.v2.age"), []byte("v2"), 0o600)
+	if _, err := (&Store{Dir: dir}).EnsureKey(); err == nil || !strings.Contains(err.Error(), "upgrade ctxtra") {
+		t.Errorf("EnsureKey: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "key")); !os.IsNotExist(err) {
+		t.Errorf("a key was made: %v", err)
+	}
+}

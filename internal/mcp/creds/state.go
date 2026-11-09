@@ -22,7 +22,7 @@ type State struct {
 	// Scopes are those that a server asked for with 403
 	// insufficient_scope, for the next login.
 	Scopes     []string  `json:"scopes"`
-	Generation int       `json:"generation"`
+	Generation int64     `json:"generation"`
 	Updated    time.Time `json:"updated"`
 
 	raw []byte

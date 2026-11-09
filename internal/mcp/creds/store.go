@@ -155,7 +155,7 @@ type Record struct {
 	Command []string `json:"command"`
 	Issuer  string   `json:"issuer"`
 	// Generation counts the sign-ins; a refresh keeps it.
-	Generation int     `json:"generation"`
+	Generation int64   `json:"generation"`
 	Client     Client  `json:"client"`
 	Token      Token   `json:"token"`
 	Secrets    Secrets `json:"secrets"`
@@ -476,6 +476,18 @@ func readable(path string, key *age.X25519Identity) (bool, error) {
 	defer f.Close()
 	_, err = age.Decrypt(io.LimitReader(f, maxRecord), key)
 	return err == nil, nil
+}
+
+// newerRecords reports whether a record of a newer format version exists.
+func (s *Store) newerRecords() bool {
+	matches, _ := filepath.Glob(filepath.Join(s.Dir, "credentials", "*.v*.age"))
+	for _, m := range matches {
+		base := strings.TrimSuffix(filepath.Base(m), ".age")
+		if n, err := strconv.Atoi(base[strings.LastIndex(base, ".v")+2:]); err == nil && n > version {
+			return true
+		}
+	}
+	return false
 }
 
 // recordFiles are the records of this format version.

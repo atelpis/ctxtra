@@ -15,14 +15,17 @@ import (
 var ErrSignInChanged = errors.New("another sign-in or a removal of the server finished meanwhile; nothing was saved")
 
 // Generation is the sign-in generation of srv's credentials, 0 without
-// any. A sign-in reads it before it starts and gives it to SaveSignIn.
-func (s *Store) Generation(srv upstream.Server) (int, error) {
+// any. Generations come from the clock, so a server removed and signed in
+// again never gets a generation that an earlier sign-in saw. A sign-in reads it before it starts and gives it to SaveSignIn.
+func (s *Store) Generation(srv upstream.Server) (int64, error) {
 	r, err := s.Load(srv)
-	if errors.Is(err, errUnreadable) || r == nil {
+	switch {
+	case errors.Is(err, errUnreadable):
 		return 0, nil
-	}
-	if err != nil {
+	case err != nil:
 		return 0, err
+	case r == nil:
+		return 0, nil
 	}
 	return r.Generation, nil
 }
@@ -32,7 +35,7 @@ func (s *Store) Generation(srv upstream.Server) (int, error) {
 // It saves nothing and returns ErrSignInChanged when the credentials are
 // no longer at generation gen, which the sign-in started from. The caller
 // made sure the store has a key.
-func (s *Store) SaveSignIn(srv upstream.Server, gen int, issuer string, c Client, t Token) (*Record, error) {
+func (s *Store) SaveSignIn(srv upstream.Server, gen int64, issuer string, c Client, t Token) (*Record, error) {
 	unlock, err := s.lock(srv)
 	if err != nil {
 		return nil, err
@@ -51,7 +54,7 @@ func (s *Store) SaveSignIn(srv upstream.Server, gen int, issuer string, c Client
 	}
 	r, err := s.updateLocked(srv, true, func(r *Record) error {
 		r.Issuer, r.Client, r.Token = issuer, c, t
-		r.Generation++
+		r.Generation = s.nextGeneration(r.Generation)
 		return nil
 	})
 	if err != nil {
@@ -146,4 +149,10 @@ func lookupHeader(h map[string]string, name string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// nextGeneration is the generation of a sign-in after old: the time in
+// nanoseconds, or old+1 when the clock is behind.
+func (s *Store) nextGeneration(old int64) int64 {
+	return max(s.now().UnixNano(), old+1)
 }

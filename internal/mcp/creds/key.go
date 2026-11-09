@@ -147,6 +147,13 @@ func (s *Store) EnsureKey() (fileKey bool, err error) {
 	s.forgetKey()
 
 	info, err := s.readKeyInfo()
+	if err != nil {
+		// The key will be looked for or made: a newer ctxtra's
+		// credentials must not lose theirs.
+		if newer := s.newerRecords(); newer {
+			return false, errors.New("a newer ctxtra stored credentials here; upgrade ctxtra")
+		}
+	}
 	switch {
 	case err == nil:
 		id, err := s.loadKey(info)
@@ -156,6 +163,9 @@ func (s *Store) EnsureKey() (fileKey bool, err error) {
 		}
 		if !errors.Is(err, errKeyGone) {
 			return false, err
+		}
+		if s.newerRecords() {
+			return false, errors.New("a newer ctxtra stored credentials here; upgrade ctxtra")
 		}
 		// The key is gone, and with it every stored credential: move them
 		// aside, then make a new key where the old one was.

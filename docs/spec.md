@@ -711,7 +711,8 @@ reads them from stdin, one per line.
 | `key` | The key, only when `key.json` says `file`. |
 
 The folder is readable by the user only (0700), and the files too (0600). Every save replaces the file in one
-step and reaches the disk before ctxtra uses the new values: a failed save fails the command or the call.
+step and is synced to the disk before the command or session that made it uses the new values: a failed save
+fails the command or the call.
 
 The key is an [age](https://age-encryption.org) X25519 key in the OS keychain: the login keychain on macOS, the
 Secret Service on Linux (service `ctxtra`, account `mcp-credentials`). Without a usable keychain, the key is the
