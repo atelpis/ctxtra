@@ -88,6 +88,6 @@ func mcpNotices(a agent.Agent, bin string, known bool, setups state.Setups, mcp 
 		return nil
 	}
 	host := m.MCP()
-	check := agent.MCPCheck{Known: setups.Known(setup.MCPKey(a.Name()), host.MCPPath()), Want: mcp.Want && known}
+	check := agent.MCPCheck{Known: setups.Known(setup.MCPKey(a.Name()), host.MCPPath()), Want: mcp.Want && known, EnvPass: mcp.EnvPass}
 	return host.CheckMCP(bin, check)
 }

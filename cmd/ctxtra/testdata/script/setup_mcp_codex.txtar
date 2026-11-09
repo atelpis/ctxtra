@@ -31,6 +31,14 @@ stdout 'is already set up for'
 ! exec ctxtra doctor
 stdout '    MCP: MCP entry runs .*/ctxtra \(ok\) \(~/.codex/config.toml\)'
 
+# A server with a new env-pass name: Codex must pass it too.
+exec ctxtra mcp add db --env-pass DBHOST -- mcptest
+stdout 'run ctxtra setup: ctxtra''s MCP server in codex needs it'
+! exec ctxtra doctor
+stdout 'the ctxtra MCP server doesn''t pass DBHOST to local servers; run ctxtra setup --agent codex'
+exec ctxtra setup --agent codex
+grep '"DBHOST", "PGHOST"\]$' .codex/config.toml
+
 # A key the user adds in ctxtra's table stays.
 exec sed -i.bak 's/^startup_timeout_sec = 30$/startup_timeout_sec = 30\ndefault_tools_approval_mode = "approve"/' .codex/config.toml
 exec ctxtra setup --agent codex

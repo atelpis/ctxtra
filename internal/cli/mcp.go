@@ -23,6 +23,7 @@ import (
 	"github.com/ctxtra/ctxtra/internal/mcp/proxy"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 	"github.com/ctxtra/ctxtra/internal/paths"
+	"github.com/ctxtra/ctxtra/internal/setup"
 	"github.com/ctxtra/ctxtra/internal/state"
 )
 
@@ -199,23 +200,25 @@ func mcpAdd(stdio IO, name, url string, command []string, o mcpAddOptions) int {
 		}
 	}
 	fmt.Fprintf(s.Out, "\nNext: bind it to folders, for example ctxtra binding add %s --dir '~/dev/**' --mcp %s\n", name, name)
-	if missing := agentsWithoutEntry(); len(missing) > 0 {
-		fmt.Fprintf(s.Out, "and run ctxtra setup: %s don't have ctxtra's MCP server yet\n", strings.Join(missing, ", "))
+	if stale := agentsNeedingSetup(); len(stale) > 0 {
+		fmt.Fprintf(s.Out, "and run ctxtra setup: ctxtra's MCP server in %s needs it\n", strings.Join(stale, ", "))
 	}
 	return 0
 }
 
-// agentsWithoutEntry are the agents set up for ctxtra that don't have the
-// MCP entry.
-func agentsWithoutEntry() []string {
+// agentsNeedingSetup are the agents set up for ctxtra whose MCP entry is
+// missing or out of date for the config, such as Codex's env_vars for a
+// new env-pass name.
+func agentsNeedingSetup() []string {
 	setups, _, _ := state.LoadSetups()
+	mcp := setup.LoadMCP()
 	var out []string
 	for _, a := range registry.All() {
 		m, ok := a.(agent.MCPAgent)
 		if !ok || !setups.Known(a.Name(), a.ConfigPath()) {
 			continue
 		}
-		if _, ok := m.MCP().MCPCommand(); !ok {
+		if len(m.MCP().CheckMCP("", agent.MCPCheck{Want: true, EnvPass: mcp.EnvPass})) > 0 {
 			out = append(out, a.Name())
 		}
 	}

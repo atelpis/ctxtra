@@ -9,6 +9,7 @@ import (
 	"github.com/BurntSushi/toml"
 
 	"github.com/ctxtra/ctxtra/internal/agent"
+	"github.com/ctxtra/ctxtra/internal/fsutil"
 	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
@@ -117,14 +118,16 @@ func TestCodexUserKeysSurvive(t *testing.T) {
 	if !strings.Contains(string(b), "\"PGHOST\"]") {
 		t.Errorf("env_vars not updated:\n%s", b)
 	}
-	// --remove with a subtable left: removing the block would leave
-	// mcp_servers.ctxtra in the file, so the file stays as it is.
-	before, _ := os.ReadFile(path)
-	if _, err := setupMCP(t, agent.MCPOptions{Options: agent.Options{Remove: true}}); err == nil {
-		t.Errorf("removed with a subtable left")
+	// --remove removes the user's keys in ctxtra's table and its
+	// subtables too, and nothing else.
+	if _, err := setupMCP(t, agent.MCPOptions{Options: agent.Options{Remove: true}}); err != nil {
+		t.Fatal(err)
 	}
-	if after, _ := os.ReadFile(path); string(after) != string(before) {
-		t.Errorf("changed")
+	if e := ctxtraEntry(t, path); e != nil {
+		t.Errorf("left %v", e)
+	}
+	if b, _ := os.ReadFile(path); !strings.HasPrefix(string(b), realConfig) {
+		t.Errorf("the rest changed:\n%s", b)
 	}
 }
 
@@ -267,5 +270,27 @@ func TestCodexEmptyParentTable(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(path); string(b) != body {
 		t.Errorf("%q", b)
+	}
+}
+
+// The agent writes the file between setup's read and its write: setup
+// edits the new content, and keeps the agent's change.
+func TestCodexConcurrentChange(t *testing.T) {
+	h := testenv.Home(t)
+	path := filepath.Join(h, ".codex", "config.toml")
+	testenv.Write(t, path, realConfig)
+	f, err := readTOML(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testenv.Write(t, path, realConfig+"[projects.\"/new\"]\ntrust_level = \"trusted\"\n")
+	if _, _, err := fsutil.WriteIfUnchanged(path, f.raw, []byte("x"), t.TempDir(), false); err != fsutil.ErrChanged {
+		t.Fatalf("%v", err)
+	}
+	if _, err := setupMCP(t, add("/bin/ctxtra")); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path); !strings.Contains(string(b), "/new") || !strings.Contains(string(b), beginMarker) {
+		t.Errorf("%s", b)
 	}
 }

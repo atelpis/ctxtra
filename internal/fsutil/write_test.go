@@ -46,3 +46,27 @@ func TestWriteAtomicBackups(t *testing.T) {
 func contains(list []string, s string) bool {
 	return slices.Contains(list, s)
 }
+
+func TestWriteIfUnchanged(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "f.json")
+	if _, _, err := WriteIfUnchanged(p, nil, []byte("a"), filepath.Join(dir, "b"), false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := WriteIfUnchanged(p, nil, []byte("b"), filepath.Join(dir, "b"), false); err != ErrChanged {
+		t.Errorf("created meanwhile: %v", err)
+	}
+	if _, _, err := WriteIfUnchanged(p, []byte("x"), []byte("b"), filepath.Join(dir, "b"), false); err != ErrChanged {
+		t.Errorf("changed meanwhile: %v", err)
+	}
+	if _, changed, err := WriteIfUnchanged(p, []byte("a"), []byte("b"), filepath.Join(dir, "b"), false); err != nil || !changed {
+		t.Errorf("%v %v", changed, err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "b" {
+		t.Errorf("%q", b)
+	}
+	_ = os.Remove(p)
+	if _, _, err := WriteIfUnchanged(p, []byte("b"), []byte("c"), filepath.Join(dir, "b"), false); err != ErrChanged {
+		t.Errorf("removed meanwhile: %v", err)
+	}
+}

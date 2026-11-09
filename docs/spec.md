@@ -710,12 +710,16 @@ keeps one that is there; `--remove` removes it.
 | Muse | `~/.config/muse/settings.json` | `mcpServers.ctxtra: {type: stdio, command, args, mode: optional}` |
 | Antigravity | `~/.gemini/config/mcp_config.json` | `mcpServers.ctxtra: {command, args}` |
 
+Agents write these files themselves too (Claude Code often writes `~/.claude.json`): when a file changes
+between setup's read and its write, setup makes its edit again on the new content, so the agent's change stays.
+
 The command is the ctxtra binary and its arguments are `mcp proxy AGENT`. Setup owns only the keys in the table
 and keeps every other key the user adds to the entry, such as an approval setting. An entry named `ctxtra` that
 doesn't run `ctxtra mcp proxy` is the user's: setup and `--remove` leave its file alone and say so.
 
 In Codex, the entry is a block between `# >>> ctxtra MCP server` and `# <<< ctxtra MCP server` lines. Setup
-rewrites only its own keys' lines in the block, and keeps the rest of the file byte for byte. Before it writes,
+rewrites only its own keys' lines in the block, and keeps the rest of the file byte for byte. `--remove` removes
+the block, keys you added to ctxtra's table after it, and `[mcp_servers.ctxtra.*]` tables. Before it writes,
 it checks that the new file is valid TOML and says the same as the old one but for those keys; otherwise it
 changes nothing, because Codex refuses an invalid config. Codex starts MCP servers with an allow-listed
 environment, so `env_vars` lists ctxtra's variables (`CTXTRA_CONFIG`, `CTXTRA_LOG`, `CTXTRA_EXPERIMENTAL_MCP`),
@@ -738,6 +742,7 @@ The setup notices and `doctor` report the entry:
 | Servers were added after setup | `claude: the ctxtra MCP server is missing; run ctxtra setup --agent claude` |
 | The entry runs another binary | `claude: the ctxtra MCP server runs /usr/local/bin/ctxtra, not this ctxtra (/opt/homebrew/bin/ctxtra); to switch, run ctxtra setup --agent claude` |
 | The entry is gone from its file | `claude: the ctxtra MCP server is gone from ~/.claude.json; if that wasn't on purpose, run ctxtra setup --agent claude; ...` |
+| Codex's entry doesn't pass a local server's `env-pass` variable | `codex: the ctxtra MCP server doesn't pass DBHOST to local servers; run ctxtra setup --agent codex` |
 | An entry named ctxtra isn't setup's | `~/.claude.json: the ctxtra MCP server doesn't run ctxtra mcp proxy; rename or delete it, then run ctxtra setup --agent claude` |
 
 ### Tool names

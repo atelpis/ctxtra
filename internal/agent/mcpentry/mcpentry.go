@@ -76,12 +76,28 @@ func toAny(s []string) []any {
 	return out
 }
 
-// SetupMCP adds, updates or removes the entry.
+// SetupMCP adds, updates or removes the entry. The agent can write its
+// file meanwhile (Claude Code writes ~/.claude.json often): then the edit
+// is made again on the new content.
 func (c Config) SetupMCP(o agent.MCPOptions, r *agent.Report) error {
 	if !o.Remove && !o.Want {
 		return nil
 	}
-	data, err := c.load()
+	for range 3 {
+		err := c.setupOnce(o, r)
+		if !errors.Is(err, fsutil.ErrChanged) {
+			return err
+		}
+	}
+	return fmt.Errorf("%s: %v; left alone, run setup again", c.Path, fsutil.ErrChanged)
+}
+
+func (c Config) setupOnce(o agent.MCPOptions, r *agent.Report) error {
+	raw, err := c.read()
+	if err != nil {
+		return fmt.Errorf("%s: %w", c.Path, err)
+	}
+	data, err := parse(raw)
 	if err != nil {
 		return fmt.Errorf("%s: %w", c.Path, err)
 	}
@@ -115,21 +131,28 @@ func (c Config) SetupMCP(o agent.MCPOptions, r *agent.Report) error {
 	if err != nil {
 		return err
 	}
-	path, changed, err := fsutil.WriteAtomic(c.Path, out, paths.BackupDir(), o.DryRun)
+	path, changed, err := fsutil.WriteIfUnchanged(c.Path, raw, out, paths.BackupDir(), o.DryRun)
 	if changed {
 		r.Changes = append(r.Changes, path)
 	}
 	return err
 }
 
-// load parses the file, an empty object when it is missing or blank.
-func (c Config) load() (*jsonorder.Map, error) {
+// read is the file's content, nil when it is missing. It reads a regular
+// file only, so a FIFO can't block it.
+func (c Config) read() ([]byte, error) {
 	b, err := fsutil.ReadBounded(c.Path, agent.MaxConfig)
-	if errors.Is(err, os.ErrNotExist) || err == nil && len(bytes.TrimSpace(b)) == 0 {
-		return jsonorder.NewMap(), nil
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
 	}
-	if err != nil {
-		return nil, err
+	return b, err
+}
+
+// parse is the content as an object, an empty one when it is missing or
+// blank.
+func parse(b []byte) (*jsonorder.Map, error) {
+	if len(bytes.TrimSpace(b)) == 0 {
+		return jsonorder.NewMap(), nil
 	}
 	v, err := jsonorder.Decode(b)
 	if err != nil {
@@ -140,6 +163,15 @@ func (c Config) load() (*jsonorder.Map, error) {
 		return nil, errors.New("expected a JSON object")
 	}
 	return o, nil
+}
+
+// load parses the file.
+func (c Config) load() (*jsonorder.Map, error) {
+	b, err := c.read()
+	if err != nil {
+		return nil, err
+	}
+	return parse(b)
 }
 
 // servers is the object of MCP servers in data, created when create is

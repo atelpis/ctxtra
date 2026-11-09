@@ -450,7 +450,7 @@ func (r report) doctor(dir string, asJSON bool) int {
 		details := append([]string{}, st.Details...)
 		if m, isMCP := a.(agent.MCPAgent); isMCP && experimental.MCP() {
 			host := m.MCP()
-			ms := host.MCPStatus(bin, agent.MCPCheck{Known: setups.Known(setup.MCPKey(a.Name()), host.MCPPath()), Want: mcp.Want && known})
+			ms := host.MCPStatus(bin, agent.MCPCheck{Known: setups.Known(setup.MCPKey(a.Name()), host.MCPPath()), Want: mcp.Want && known, EnvPass: mcp.EnvPass})
 			details = append(details, "MCP: "+ms.State+" ("+paths.Tilde(host.MCPPath())+")")
 			details = append(details, ms.Details...)
 			st.OK = st.OK && ms.OK

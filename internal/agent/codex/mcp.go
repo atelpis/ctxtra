@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -85,6 +86,7 @@ func toAny(s []string) []any {
 // tomlFile is config.toml as text, and as data.
 type tomlFile struct {
 	path       string
+	raw        []byte // nil for a missing file
 	lines      []string
 	data       map[string]any
 	begin, end int // the markers' lines; -1 without them
@@ -100,7 +102,7 @@ func readTOML(path string) (*tomlFile, error) {
 	if err != nil {
 		return nil, err
 	}
-	f := &tomlFile{path: path, data: map[string]any{}, begin: -1, end: -1}
+	f := &tomlFile{path: path, raw: b, data: map[string]any{}, begin: -1, end: -1}
 	if _, err := toml.Decode(string(b), &f.data); err != nil {
 		return nil, fmt.Errorf("not valid TOML: %v", err)
 	}
@@ -183,10 +185,22 @@ func lineKey(l string) string {
 	return strings.Trim(strings.TrimSpace(k), `"'`)
 }
 
+// SetupMCP adds, updates or removes the entry. Codex writes config.toml
+// itself (trust records): when it did meanwhile, the edit is made again.
 func (a Agent) SetupMCP(o agent.MCPOptions, r *agent.Report) error {
 	if !o.Remove && !o.Want {
 		return nil
 	}
+	for range 3 {
+		err := a.setupOnce(o, r)
+		if !errors.Is(err, fsutil.ErrChanged) {
+			return err
+		}
+	}
+	return fmt.Errorf("%s: %v; left alone, run setup again", a.MCPPath(), fsutil.ErrChanged)
+}
+
+func (a Agent) setupOnce(o agent.MCPOptions, r *agent.Report) error {
 	path := a.MCPPath()
 	f, err := readTOML(path)
 	again := "ctxtra setup"
@@ -204,6 +218,7 @@ func (a Agent) SetupMCP(o agent.MCPOptions, r *agent.Report) error {
 	expect := deepCopy(f.data)
 	if o.Remove {
 		f.lines = slices.Delete(f.lines, f.begin, f.end+1)
+		f.removeRest(f.begin)
 		if f.begin > 0 && f.begin < len(f.lines)+1 && strings.TrimSpace(f.lines[f.begin-1]) == "" &&
 			(f.begin == len(f.lines) || strings.TrimSpace(f.lines[f.begin]) == "") {
 			f.lines = slices.Delete(f.lines, f.begin-1, f.begin)
@@ -248,7 +263,7 @@ func (a Agent) SetupMCP(o agent.MCPOptions, r *agent.Report) error {
 	if _, err := toml.Decode(out, &got); err != nil || !reflect.DeepEqual(normalize(got), normalize(expect)) {
 		return fmt.Errorf("%s: %v; left alone. Restore or delete it, then run %s --agent codex", path, errHandEdited, again)
 	}
-	written, changed, err := fsutil.WriteAtomic(path, []byte(out), paths.BackupDir(), o.DryRun)
+	written, changed, err := fsutil.WriteIfUnchanged(path, f.raw, []byte(out), paths.BackupDir(), o.DryRun)
 	if changed {
 		r.Changes = append(r.Changes, written)
 	}
@@ -362,6 +377,9 @@ func (a Agent) CheckMCP(bin string, o agent.MCPCheck) []string {
 	if t, _ := f.entry()["startup_timeout_sec"].(int64); t < StartupTimeout {
 		out = append(out, "the ctxtra MCP server has a shorter startup_timeout_sec than setup writes; "+repair)
 	}
+	if missing := missingVars(f.entry(), o.EnvPass); o.Want && len(missing) > 0 {
+		out = append(out, fmt.Sprintf("the ctxtra MCP server doesn't pass %s to local servers; %s", strings.Join(missing, ", "), repair))
+	}
 	if r, _ := f.entry()["required"].(bool); !r {
 		out = append(out, "the ctxtra MCP server isn't required, so Codex doesn't wait for its tools; "+repair)
 	}
@@ -393,3 +411,41 @@ func (a Agent) MCPCommand() ([]string, bool) {
 // tool list (measured with Codex 0.166.0); the entry is required, so Codex
 // waits for it up to startup_timeout_sec.
 func (Agent) MCPDeadline() time.Duration { return agent.MCPDeadline }
+
+var reOurTable = regexp.MustCompile(`^\[\[?\s*mcp_servers\s*\.\s*("ctxtra"|'ctxtra'|ctxtra)\s*[.\]]`)
+
+// removeRest removes, from line from on, what still belongs to ctxtra's
+// table once its block is gone: keys the user added after the block, up
+// to the next table, and every [mcp_servers.ctxtra.*] table. Comments and
+// blank lines stay. The check of the result catches what this misses.
+func (f *tomlFile) removeRest(from int) {
+	ours := true // the lines right after the block are in ctxtra's table
+	out := f.lines[:from:from]
+	for _, l := range f.lines[from:] {
+		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "[") {
+			ours = reOurTable.MatchString(t)
+			if ours {
+				continue
+			}
+		}
+		if ours && t != "" && !strings.HasPrefix(t, "#") {
+			continue
+		}
+		out = append(out, l)
+	}
+	f.lines = out
+}
+
+// missingVars are the names of envPass that the entry's env_vars lacks.
+func missingVars(e map[string]any, envPass []string) []string {
+	have, _ := e["env_vars"].([]any)
+	var out []string
+	for _, v := range envPass {
+		if !slices.Contains(have, any(v)) && !slices.Contains(out, v) {
+			out = append(out, v)
+		}
+	}
+	slices.Sort(out)
+	return out
+}

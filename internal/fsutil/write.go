@@ -221,3 +221,25 @@ func WriteFile(path string, data []byte, mode os.FileMode) error {
 	}
 	return replace(path, data, mode, dirMode)
 }
+
+// ErrChanged is the error of WriteIfUnchanged when the file changed.
+var ErrChanged = errors.New("the file changed while it was edited")
+
+// WriteIfUnchanged is WriteAtomic for an edit of the content old, which is
+// nil for a missing file: when the file no longer has that content,
+// because its own program wrote it meanwhile, it writes nothing and
+// returns ErrChanged, so the caller can edit the new content.
+func WriteIfUnchanged(path string, old, data []byte, backupDir string, dryRun bool) (string, bool, error) {
+	cur, err := os.ReadFile(path)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		if old != nil {
+			return path, false, ErrChanged
+		}
+	case err != nil:
+		return path, false, err
+	case old == nil || !bytes.Equal(cur, old):
+		return path, false, ErrChanged
+	}
+	return WriteAtomic(path, data, backupDir, dryRun)
+}

@@ -527,6 +527,9 @@ type MCPOptions struct {
 type MCPCheck struct {
 	Known bool // setup.json lists the entry as set up
 	Want  bool // the config declares MCP servers
+	// EnvPass are the env-pass names of every local server, which the
+	// entry must pass in Codex.
+	EnvPass []string
 }
 
 // MCPEntryName is the name of ctxtra's entry in every agent.
