@@ -635,6 +635,37 @@ that this hook runs is missing; reinstall ctxtra, or run ctxtra setup --agent cl
 a word. `ctxtra doctor` and the [setup notices](#setup-notices) show the missing binary. Setup leaves a config
 alone that has a ctxtra hook changed by hand, and says so, instead of adding a second hook next to it.
 
+## Experimental: MCP servers
+
+> **Experimental, off by default.** ctxtra can give sessions MCP servers, scoped by folder like instructions and
+> skills. It is work in progress: it is on only when `CTXTRA_EXPERIMENTAL_MCP=1` is set, and how the config
+> declares servers and binds them is not decided. Without the variable, ctxtra ignores everything about MCP
+> servers, and a config that declares them is an error like any unknown key.
+
+`ctxtra setup` adds one MCP server named `ctxtra` to each agent. The agent starts it like any local MCP server.
+It gives the session the tools of the MCP servers bound to the session folder, and forwards each call.
+
+### Tool names
+
+A session sees each tool as `<server>__<tool>`. The name uses only `A-Z`, `a-z`, `0-9` and `_`, and is at most
+38 characters: Muse shortens longer tool names and then can't call them, and the strictest model APIs allow 64
+characters, of which Claude Code and Pi use 13 for `mcp__ctxtra__`.
+
+- A server name is 1 to 20 characters of `a-z`, `0-9` and `_`, starts with a letter, and has no `__` and no `_`
+  at the end.
+- A tool name that has other characters, or makes the whole name too long, is shortened: other characters become
+  `_`, the name is cut to fit, and `_` and 6 hex digits of a SHA-256 hash of the server and the tool name are
+  added. The cut never goes into `<server>__`.
+- The name depends only on the server and the tool, so it is the same in every session, agent and machine, and
+  the agents' permission rules keep working. Only when two names in one session would be equal, the shortened
+  ones get longer hashes: 10 digits, then up to 16.
+- A shortened tool's description starts with its server and its own name: `[gh: create-issue] Create an issue.`
+
+| Server | Tool | Session sees |
+|---|---|---|
+| `linear_work` | `list_issues` | `linear_work__list_issues` |
+| `gh` | `create-issue` | `gh__create_issue_ef677c` |
+
 ## Setup compatibility
 
 What `ctxtra setup` writes is a contract between the agents and the `ctxtra` binary: the hook entries
