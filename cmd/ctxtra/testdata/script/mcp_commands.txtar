@@ -1,0 +1,85 @@
+# ctxtra mcp add, list, show and remove, and binding add --mcp: local
+# servers, behind CTXTRA_EXPERIMENTAL_MCP.
+
+# Without the variable: hidden from help, and refused.
+exec ctxtra --help
+! stdout 'mcp'
+! exec ctxtra mcp list
+stderr '^ctxtra mcp list: MCP servers are experimental: set CTXTRA_EXPERIMENTAL_MCP=1 to use them$'
+! exec ctxtra mcp
+stderr 'MCP servers are experimental'
+! exec ctxtra binding add w --dir '~/dev/**' --mcp pg
+stderr '--mcp: MCP servers are experimental'
+exec ctxtra binding add --help
+! stdout 'mcp NAME'
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+exec ctxtra --help
+stdout 'mcp +Add, list, show and remove MCP servers \(experimental\)'
+exec ctxtra mcp add --help
+stdout 'ctxtra mcp add NAME \(URL \| -- COMMAND \[ARG\]...\)'
+stdout '--env-pass NAME'
+
+# Dry run: shows the change, writes and starts nothing.
+exec ctxtra mcp add gh --env TEAM=core --dry-run -- mcptest -tools create-issue
+stdout '^would add the MCP server gh to ~/.config/ctxtra/config.yaml: local, mcptest -tools create-issue$'
+stdout 'nothing changed'
+! exists .config/ctxtra/config.yaml
+
+# Add: writes the config and lists the tools sessions see.
+exec ctxtra mcp add gh --env TEAM=core --notes 'the work account' -- mcptest -tools create-issue
+stdout '^added the MCP server gh to ~/.config/ctxtra/config.yaml: local, mcptest -tools create-issue$'
+stdout '^tools sessions see:$'
+stdout '^  gh__echo$'
+stdout '^  gh__create_issue_[0-9a-f]{6} \(shortened from create-issue\)$'
+stdout 'ctxtra binding add gh --dir .* --mcp gh'
+grep '^  gh:$' .config/ctxtra/config.yaml
+grep '^    env: \{TEAM: core\}$' .config/ctxtra/config.yaml
+
+# A name that exists, a bad name, a relative program: nothing changes.
+cp .config/ctxtra/config.yaml before.yaml
+! exec ctxtra mcp add gh -- mcptest
+stderr 'an MCP server named gh already exists'
+! exec ctxtra mcp add Bad-Name -- mcptest
+stderr 'server name "Bad-Name"'
+! exec ctxtra mcp add rel -- ./bin/mcp
+stderr 'the program must be an absolute path or a name in PATH'
+! exec ctxtra mcp add web https://example.com/mcp
+stderr 'add --no-login'
+cmp .config/ctxtra/config.yaml before.yaml
+
+# A remote server without sign-in, and the list.
+exec ctxtra mcp add linear_work https://mcp.linear.app/mcp --no-login
+exec ctxtra mcp list
+stdout '^gh  local, none needed$'
+stdout '^linear_work  remote, not signed in$'
+exec ctxtra mcp list --json
+stdout '"name": "gh",\s+"kind": "local",\s+"command": \[\s+"mcptest"'
+stdout '"notes": "the work account"'
+
+# show connects, and lists the tools.
+exec ctxtra mcp show gh
+stdout '^gh: local, mcptest -tools create-issue$'
+stdout '^notes: the work account$'
+stdout '^  gh__env$'
+! exec ctxtra mcp show nope
+stderr 'no MCP server "nope"'
+
+# Bind a server to a folder; an undeclared name changes nothing.
+exec ctxtra binding add work --dir '~/dev/**' --mcp gh
+stdout '  MCP servers: gh'
+grep '^    mcp-servers:$' .config/ctxtra/config.yaml
+cp .config/ctxtra/config.yaml before.yaml
+! exec ctxtra binding add typo --dir '~/dev/**' --mcp gh_typo
+stderr 'server gh_typo is not in mcp-servers'
+cmp .config/ctxtra/config.yaml before.yaml
+
+# Remove a bound server: it goes, and the binding now names an unknown one.
+exec ctxtra mcp remove gh --dry-run
+stderr 'the binding work .* names gh, which would be unknown'
+exec ctxtra mcp remove gh
+stdout '^removed the MCP server gh from ~/.config/ctxtra/config.yaml$'
+stderr 'warning: a binding still names gh, which is now unknown'
+! grep '^  gh:$' .config/ctxtra/config.yaml
+! exec ctxtra mcp remove gh
+stderr 'no MCP server "gh" in the config'

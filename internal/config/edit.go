@@ -228,6 +228,7 @@ type NewBinding struct {
 	Global               bool
 	Dirs, Repos          []string // match
 	Instructions, Skills []string
+	MCPServers           []string // provisional, see mcpedit.go
 }
 
 // AddBinding appends b to the config's own bindings. It doesn't check b:
@@ -293,7 +294,7 @@ func (b NewBinding) lists() []bindingList {
 	var out []bindingList
 	for _, l := range []bindingList{
 		{"dirs", b.Dirs, true}, {"repos", b.Repos, true},
-		{"instructions", b.Instructions, false}, {"skills", b.Skills, false},
+		{"instructions", b.Instructions, false}, {"skills", b.Skills, false}, {"mcp-servers", b.MCPServers, false},
 	} {
 		if len(l.vals) > 0 {
 			out = append(out, l)

@@ -94,6 +94,9 @@ type Binding struct {
 	Instructions []string // resolved paths of instruction files
 	Skills       []string // resolved paths of skill folders, each with a SKILL.md
 	MCPServers   []string // names of servers in the config's mcp-servers
+	// MCPListed are the names in mcp-servers as written, also those
+	// skipped, for the review of a source.
+	MCPListed []string
 	// Paths that entries starting with ! removed from Instructions and Skills.
 	ExcludedInstructions, ExcludedSkills []string
 }
@@ -486,6 +489,7 @@ func (c *Config) decodeBinding(n *yaml.Node, file string, in *Source) (Binding, 
 		if b.MCPServers, err = c.mcpNames(v, file, in); err != nil {
 			return Binding{}, err
 		}
+		b.MCPListed, _ = strList(v, "mcp-servers")
 	}
 	return b, nil
 }

@@ -69,6 +69,7 @@ func (s *sources) review(r *source.Repo, src config.Source, commit string, full 
 	u.add(after, newGen)
 
 	s.selectorWarnings(src, before, after, oldGen, newGen)
+	s.mcpWarnings(before, after, oldGen, newGen)
 	// Problems introduced by the proposed source version.
 	for _, p := range after.Problems {
 		if (strings.Contains(p, paths.Tilde(newGen)) || strings.Contains(p, config.Scheme+src.Name+"/")) && !slices.Contains(before.Problems, strings.ReplaceAll(p, paths.Tilde(newGen), paths.Tilde(oldGen))) {
@@ -203,6 +204,46 @@ func (s *sources) selectorWarnings(src config.Source, before, after *config.Conf
 			fmt.Fprintf(s.Out, "warning: binding %s in %s now applies to every session (was: %s)\n", k.name, k.file, prev)
 		default:
 			fmt.Fprintf(s.Out, "warning: binding %s in %s: match changed from %s to %s\n", k.name, k.file, prev, sel)
+		}
+	}
+}
+
+// mcpWarnings lists the MCP servers that the source's bindings name, and
+// warns about each name a binding adds: the user's servers of that name
+// would reach the sessions the binding matches.
+func (s *sources) mcpWarnings(before, after *config.Config, oldGen, newGen string) {
+	type key struct{ file, name string }
+	listed := func(cfg *config.Config, gen string) (map[key][]string, []key) {
+		m := map[key][]string{}
+		var keys []key
+		for _, b := range cfg.Bindings {
+			if r, ok := paths.Rel(gen, b.Source); ok && len(b.MCPListed) > 0 {
+				k := key{r, b.Name}
+				m[k] = b.MCPListed
+				keys = append(keys, k)
+			}
+		}
+		return m, keys
+	}
+	old, _ := listed(before, oldGen)
+	now, keys := listed(after, newGen)
+	sel := map[key]config.Selector{}
+	for _, b := range after.Bindings {
+		if r, ok := paths.Rel(newGen, b.Source); ok {
+			sel[key{r, b.Name}] = b.Selector
+		}
+	}
+	for _, k := range keys {
+		fmt.Fprintf(s.Out, "MCP servers: binding %s in %s names %s\n", k.name, k.file, strings.Join(now[k], ", "))
+		for _, name := range now[k] {
+			if slices.Contains(old[k], name) {
+				continue
+			}
+			where := "for " + sel[k].String()
+			if sel[k].Global {
+				where = "in every session"
+			}
+			fmt.Fprintf(s.Out, "warning: binding %s in %s adds the MCP server %s: a server of yours with that name would be %s\n", k.name, k.file, name, where)
 		}
 	}
 }

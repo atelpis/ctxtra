@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/experimental"
 	"github.com/ctxtra/ctxtra/internal/fsutil"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/resolve"
@@ -26,7 +27,12 @@ func bindingAdd(stdio IO, b config.NewBinding, dryRun bool) error {
 		return errors.New("say which sessions get it: --global, --dir or --repo")
 	case b.Global && (len(b.Dirs) > 0 || len(b.Repos) > 0):
 		return errors.New("--global already matches every session; leave out --dir and --repo")
-	case len(b.Instructions) == 0 && len(b.Skills) == 0:
+	case len(b.MCPServers) > 0 && !experimental.MCP():
+		return fmt.Errorf("--mcp: %v", errMCPOff)
+	case len(b.Instructions) == 0 && len(b.Skills) == 0 && len(b.MCPServers) == 0:
+		if experimental.MCP() {
+			return errors.New("add at least one --instruction, --skill or --mcp")
+		}
 		return errors.New("add at least one --instruction or --skill")
 	}
 	// Paths are relative to the current folder here, and are written
@@ -78,6 +84,9 @@ func bindingAdd(stdio IO, b config.NewBinding, dryRun bool) error {
 	}
 	if len(b.Skills) > 0 {
 		fmt.Fprintf(s.Out, "  skills: %s\n", strings.Join(b.Skills, ", "))
+	}
+	if len(b.MCPServers) > 0 {
+		fmt.Fprintf(s.Out, "  MCP servers: %s\n", strings.Join(b.MCPServers, ", "))
 	}
 	if dryRun {
 		fmt.Fprintln(s.Out, "nothing changed (--dry-run)")

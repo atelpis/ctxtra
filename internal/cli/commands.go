@@ -11,6 +11,7 @@ import (
 	"github.com/ctxtra/ctxtra"
 	"github.com/ctxtra/ctxtra/internal/agent/registry"
 	"github.com/ctxtra/ctxtra/internal/config"
+	"github.com/ctxtra/ctxtra/internal/experimental"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/setup"
 )
@@ -53,7 +54,7 @@ Config: $CTXTRA_CONFIG or ~/.config/ctxtra/config.yaml (format: ctxtra help conf
 	)
 	root.AddCommand(
 		a.onboardCmd(), a.setupCmd(), a.importCmd(),
-		a.sourceCmd(), a.bindingFileCmd(), a.bindingCmd(), a.skillCmd(),
+		a.sourceCmd(), a.bindingFileCmd(), a.bindingCmd(), a.skillCmd(), a.mcpCmd(),
 		a.contextCmd(), a.doctorCmd(), a.checkUpdatesCmd(),
 		a.versionCmd(), hookCmd(),
 	)
@@ -574,6 +575,10 @@ matches x itself.`,
 	f.StringArrayVar(&b.Repos, "repo", nil, "add it to sessions in repositories whose remote matches `PATTERN` (repeatable), such as github.com/acme/**")
 	f.StringArrayVar(&b.Instructions, "instruction", nil, "add the instruction file `FILE` (repeatable); !FILE leaves files out")
 	f.StringArrayVar(&b.Skills, "skill", nil, "add the skill folder `DIR`, with a SKILL.md (repeatable); !DIR leaves skills out")
+	f.StringArrayVar(&b.MCPServers, "mcp", nil, "add the MCP server `NAME` of the config (repeatable; experimental)")
+	if !experimental.MCP() {
+		_ = f.MarkHidden("mcp")
+	}
 	f.BoolVar(&dryRun, "dry-run", false, "check the binding and show it; change nothing")
 	var asJSON bool
 	list := &cobra.Command{
