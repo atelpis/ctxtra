@@ -433,6 +433,9 @@ func (s *Store) updateLocked(srv upstream.Server, create bool, change func(*Reco
 
 // Delete removes srv's record and state file, under its lock.
 func (s *Store) Delete(srv upstream.Server) error {
+	if _, err := os.Stat(s.Dir); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
 	unlock, err := s.lock(srv)
 	if err != nil {
 		return err
@@ -442,15 +445,18 @@ func (s *Store) Delete(srv upstream.Server) error {
 		return err
 	}
 	var errs []error
+	removed := false
 	for _, v := range s.versions(srv.ID) {
-		if err := os.Remove(s.recordPath(srv.ID, v)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		err := os.Remove(s.recordPath(srv.ID, v))
+		removed = removed || err == nil
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			errs = append(errs, err)
 		}
 	}
 	if err := os.Remove(s.statePath(fileID(srv.ID))); err != nil && !errors.Is(err, os.ErrNotExist) {
 		errs = append(errs, err)
 	}
-	if len(errs) == 0 {
+	if removed && len(errs) == 0 {
 		errs = append(errs, syncDir(filepath.Join(s.Dir, "credentials")))
 	}
 	return errors.Join(errs...)
