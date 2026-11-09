@@ -47,6 +47,10 @@ type call struct {
 func decide(api API, body map[string]any, script []Step) *call {
 	var steps []Step
 	for _, s := range script {
+		if strings.HasPrefix(s.kind, "mcp") {
+			steps = append(steps, expandMCP(api, body, s)...)
+			continue
+		}
 		steps = append(steps, s)
 		if s.kind == "subagent" && api == Responses {
 			steps = append(steps, Step{kind: "wait"})
@@ -67,6 +71,16 @@ func decide(api API, body map[string]any, script []Step) *call {
 		step.kind = "read"
 	}
 	switch step.kind {
+	case "tool":
+		args := map[string]any{"note": "probe"}
+		if _, schema, ok := findTool(api, body, step.name); ok && hasParam(schema, "toolSummary") { // Antigravity
+			args["toolSummary"] = "probe"
+		}
+		return &call{namespace: step.path, name: step.name, args: args}
+	case "code":
+		return &call{name: step.name, args: map[string]any{"code": step.path}}
+	case "mcp-generic-call", "mcp-code-call":
+		return genericCall(step)
 	case "read":
 		for _, c := range []call{
 			{name: "Read", args: map[string]any{"file_path": step.path}},                            // Claude
