@@ -30,6 +30,9 @@ import (
 const helperVar = "CTXTRA_CREDS_HELPER"
 
 func TestMain(m *testing.M) {
+	// Never the user's keychain: go-keyring's in-memory one, which each
+	// test sets up.
+	kc = libKeychain{}
 	if task := os.Getenv(helperVar); task != "" {
 		os.Exit(helper(task))
 	}
@@ -64,7 +67,7 @@ func helper(task string) int {
 			fmt.Println("error:", err)
 			return 1
 		}
-		if _, err := s.SaveSignIn(srv, r.Issuer, r.Client, t); err != nil {
+		if _, err := s.SaveSignIn(srv, r.Generation, r.Issuer, r.Client, t); err != nil {
 			fmt.Println("error:", err)
 			return 1
 		}
@@ -110,9 +113,13 @@ func (p *procs) start(task string, n int, extra ...string) {
 	for range n {
 		cmd := p.cmd(task, extra...)
 		p.wg.Go(func() {
-			out, _ := cmd.CombinedOutput()
+			out, err := cmd.CombinedOutput()
+			line := task + ": " + strings.TrimSpace(string(out))
+			if err != nil {
+				line += " (" + err.Error() + ")"
+			}
 			p.mu.Lock()
-			p.outs = append(p.outs, task+": "+strings.TrimSpace(string(out)))
+			p.outs = append(p.outs, line)
 			p.mu.Unlock()
 		})
 	}
@@ -164,7 +171,9 @@ func TestProcessRefreshRacesLogin(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts processes")
 	}
-	fake := oauthtest.New(t, oauthtest.Options{Lifetime: time.Hour, RefreshDelay: 300 * time.Millisecond})
+	started := make(chan struct{}, 10)
+	fake := oauthtest.New(t, oauthtest.Options{Lifetime: time.Hour, RefreshDelay: 300 * time.Millisecond,
+		OnRefresh: func() { started <- struct{}{} }})
 	s, srv := fileKeyStore(t, fake)
 	expireToken(t, s, srv, time.Minute)
 	login := fake.SignIn("app", "read", "write")
@@ -172,12 +181,17 @@ func TestProcessRefreshRacesLogin(t *testing.T) {
 		ExpiresIn: json.Number(itoa(login.ExpiresIn))}, time.Now()))
 	p := newProcs(t, fake, s.Dir)
 	p.start("refresh", 3)
-	time.Sleep(100 * time.Millisecond)
+	// A refresh holds the lock, its request on the way.
+	<-started
 	p.start("login", 1, "CREDS_TOKEN="+string(tok))
-	for _, o := range p.wait() {
-		if strings.Contains(o, "error") {
+	outs := p.wait()
+	for _, o := range outs {
+		if strings.Contains(o, "error") || strings.Contains(o, "exit") {
 			t.Errorf("%s", o)
 		}
+	}
+	if fake.Refreshes() != 1 || len(outs) != 4 {
+		t.Errorf("%d refreshes: %q", fake.Refreshes(), outs)
 	}
 	r, err := s.Load(srv)
 	if err != nil || r.Token.Access != login.AccessToken || r.Generation != 2 {
@@ -197,14 +211,33 @@ func TestProcessRefreshRacesRemove(t *testing.T) {
 	if testing.Short() {
 		t.Skip("starts processes")
 	}
-	fake := oauthtest.New(t, oauthtest.Options{Lifetime: time.Hour, RefreshDelay: 300 * time.Millisecond})
+	started := make(chan struct{}, 10)
+	fake := oauthtest.New(t, oauthtest.Options{Lifetime: time.Hour, RefreshDelay: 300 * time.Millisecond,
+		OnRefresh: func() { started <- struct{}{} }})
 	s, srv := fileKeyStore(t, fake)
 	expireToken(t, s, srv, time.Minute)
 	p := newProcs(t, fake, s.Dir)
 	p.start("refresh", 3)
-	time.Sleep(100 * time.Millisecond)
+	<-started
 	p.start("remove", 1)
-	p.wait()
+	// The refresh that held the lock saved its tokens and used them; the
+	// removal came after it, and the others found nothing to refresh.
+	var ok, gone int
+	for _, o := range p.wait() {
+		switch {
+		case strings.HasPrefix(o, "remove: ") && o != "remove: ":
+			t.Errorf("%s", o)
+		case strings.HasPrefix(o, "refresh: at-"):
+			ok++
+		case strings.Contains(o, "not signed in; run ctxtra mcp login linear_work"):
+			gone++
+		case strings.HasPrefix(o, "refresh: "):
+			t.Errorf("%s", o)
+		}
+	}
+	if ok < 1 || ok+gone != 3 || fake.Refreshes() != 1 {
+		t.Errorf("%d refreshed, %d found it removed, %d refresh requests", ok, gone, fake.Refreshes())
+	}
 	if r, err := s.Load(srv); r != nil || err != nil {
 		t.Errorf("the removed record came back: %+v %v", r, err)
 	}

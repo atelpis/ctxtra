@@ -208,22 +208,22 @@ func mcpAdd(stdio IO, name, url string, command []string, o mcpAddOptions) int {
 		fmt.Fprintln(s.Out, "nothing changed (--dry-run)")
 		return 0
 	}
-	// The values are stored before the config names them, so that a
-	// session never starts the server without them.
 	secrets, err := askSecrets(stdio, o.noInput, name, added.SecretEnv, added.SecretHeaders, o.clientSecret)
 	if err != nil {
 		return fail(err)
 	}
+	// The values are stored under the config's lock, once the edit knows
+	// the name is new, so that a concurrent add of the same name can't
+	// replace or delete them.
 	store := creds.Open()
-	if !secrets.empty() {
-		if err := storeSecrets(s.Err, store, added, secrets); err != nil {
-			return fail(err)
+	commit := func(old []byte) ([]byte, error) {
+		out, err := change(old)
+		if err != nil || secrets.empty() {
+			return out, err
 		}
+		return out, storeSecrets(s.Err, store, added, secrets)
 	}
-	if err := s.edit(change); err != nil {
-		if !secrets.empty() {
-			_ = store.Delete(added)
-		}
+	if err := s.edit(commit); err != nil {
 		return fail(err)
 	}
 	fmt.Fprintf(s.Out, "added the MCP server %s to %s: %s\n", name, paths.Tilde(s.file), describeServer(added))
@@ -448,8 +448,6 @@ func (a *app) mcpRemoveCmd() *cobra.Command {
 		RunE: a.mcpRun(func(_ *cobra.Command, args []string) error {
 			name := args[0]
 			s := newSources(a.IO)
-			// Its credentials go with it; their key is its identity.
-			srv, declared := config.Load(paths.ConfigPath(), newReader()).MCPServer(name)
 			change := func(old []byte) ([]byte, error) { return config.RemoveMCPServer(old, name) }
 			var err error
 			if dryRun {
@@ -468,8 +466,10 @@ func (a *app) mcpRemoveCmd() *cobra.Command {
 				verb = "would remove"
 			}
 			fmt.Fprintf(a.Out, "%s the MCP server %s from %s\n", verb, name, paths.Tilde(s.file))
-			if declared && !dryRun {
-				if err := creds.Open().Delete(srv); err != nil {
+			if !dryRun {
+				// Its credentials go with it, also when its definition was
+				// broken.
+				if err := creds.Open().Delete(upstream.Server{ID: config.MCPServerID(name), Name: name}); err != nil {
 					fmt.Fprintf(a.Err, "warning: couldn't delete the credentials of %s: %v\n", name, err)
 				}
 			}

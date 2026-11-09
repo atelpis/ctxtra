@@ -720,7 +720,9 @@ set secret values or sign in create the key, and they record its place in `key.j
 the proxy use that place and never create or move the key. When the keychain that holds the key can't be
 reached, for example over SSH or without a session bus, ctxtra says so and doesn't fall back to a file. A
 file key stays the key when a keychain becomes usable later. The proxy waits for the keychain at most 3
-seconds and never shows a prompt; when it can't get the key, the servers that need it are left out. When the
+seconds, and on Linux never unlocks a locked Secret Service collection, which would show a prompt. macOS can't
+read a locked keychain without a prompt; the login keychain is unlocked while the user is logged in. When the
+proxy can't get the key, the servers that need it are left out. When the
 key is gone, the credentials can't be read: the next command that creates the key moves them to
 `credentials/unreadable`, and their servers need their values or sign-in again.
 

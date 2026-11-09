@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -168,6 +169,11 @@ func (s *Store) needsLogin(srv upstream.Server, reason string) error {
 	return &LoginError{srv.Name, reason}
 }
 
+// oauthErrors are the error codes of a token endpoint (RFC 6749 5.2,
+// RFC 8707).
+var oauthErrors = []string{"invalid_request", "invalid_client", "unauthorized_client", "unsupported_grant_type",
+	"invalid_scope", "invalid_target", "temporarily_unavailable", "server_error"}
+
 // errInvalidGrant is a refresh token that the authorization server
 // rejected.
 var errInvalidGrant = errors.New("invalid_grant")
@@ -210,10 +216,15 @@ func (s *Store) refresh(ctx context.Context, r *Record) (Token, error) {
 	if basic {
 		req.SetBasicAuth(url.QueryEscape(r.Client.ID), url.QueryEscape(r.Client.Secret))
 	}
-	client := s.HTTP
-	if client == nil {
-		client = http.DefaultClient
+	client := http.DefaultClient
+	if s.HTTP != nil {
+		client = s.HTTP
 	}
+	// A redirect would send the refresh token and client secret on to
+	// another address: never follow one.
+	noRedirect := *client
+	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	client = &noRedirect
 	now := s.now()
 	resp, err := client.Do(req)
 	if err != nil {
@@ -233,10 +244,12 @@ func (s *Store) refresh(ctx context.Context, r *Record) (Token, error) {
 		if tr.Error == "invalid_grant" {
 			return Token{}, errInvalidGrant
 		}
-		if tr.Error != "" {
+		// Only known codes: the text is the provider's, and can repeat
+		// what was sent.
+		if slices.Contains(oauthErrors, tr.Error) {
 			return Token{}, fmt.Errorf("the token endpoint answered %s", tr.Error)
 		}
-		return Token{}, fmt.Errorf("the token endpoint answered %s", resp.Status)
+		return Token{}, fmt.Errorf("the token endpoint answered HTTP %d", resp.StatusCode)
 	}
 	if tr.AccessToken == "" {
 		return Token{}, errors.New("the token endpoint's answer has no access token")

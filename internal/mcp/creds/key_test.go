@@ -1,6 +1,7 @@
 package creds
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
@@ -265,5 +266,75 @@ func TestNoKeyYet(t *testing.T) {
 	}
 	if _, err := os.Stat(s.Dir + "/key.json"); !os.IsNotExist(err) {
 		t.Error("a reader created a key")
+	}
+}
+
+// A key file that exists but can't be read is never replaced.
+func TestUnreadableKeyFile(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root reads any file")
+	}
+	keyring.MockInitWithError(errNoKeychain)
+	dir := t.TempDir()
+	s := &Store{Dir: dir}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, s, local, "pw")
+	os.Remove(filepath.Join(dir, "key.json"))
+	key := filepath.Join(dir, "key")
+	before, _ := os.ReadFile(key)
+	os.Chmod(key, 0)
+	defer os.Chmod(key, 0o600)
+	if _, err := (&Store{Dir: dir}).EnsureKey(); err == nil {
+		t.Error("EnsureKey made a new key")
+	}
+	os.Chmod(key, 0o600)
+	if after, _ := os.ReadFile(key); !bytes.Equal(before, after) {
+		t.Error("the key file changed")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "credentials", "pg.v1.age")); err != nil {
+		t.Errorf("the record was moved: %v", err)
+	}
+}
+
+// Without key.json, a keychain that can't be reached may hold the key of
+// the stored credentials: no new key is made.
+func TestAdoptWithUnreachableKeychain(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	s := &Store{Dir: dir}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, s, local, "pw")
+	os.Remove(filepath.Join(dir, "key.json"))
+	keyring.MockInitWithError(errNoKeychain)
+	var kerr *KeychainError
+	if _, err := (&Store{Dir: dir}).EnsureKey(); !errors.As(err, &kerr) {
+		t.Errorf("EnsureKey: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "key")); !os.IsNotExist(err) {
+		t.Errorf("a key file was made: %v", err)
+	}
+}
+
+// A process that read the key before it was replaced saves with the new
+// one.
+func TestKeyReplacedWhileRunning(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	a := &Store{Dir: dir}
+	if _, err := a.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, a, local, "old")
+	keyring.Delete(keyService, keyAccount)
+	if _, err := (&Store{Dir: dir}).EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, a, local, "new")
+	if v, err := secret(t, &Store{Dir: dir}, local); err != nil || v != "new" {
+		t.Errorf("secret: %q %v", v, err)
 	}
 }

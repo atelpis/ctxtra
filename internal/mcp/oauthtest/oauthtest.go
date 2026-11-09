@@ -60,8 +60,10 @@ type Options struct {
 	// Scopes are the scopes_supported, in both metadata documents.
 	Scopes []string
 	// RefreshDelay is how long the token endpoint waits before it answers
-	// a refresh.
+	// a refresh. OnRefresh is called when a refresh request arrives,
+	// before that wait.
 	RefreshDelay time.Duration
+	OnRefresh    func()
 	// Resource serves requests with a valid token at /mcp; nil answers
 	// 200 with {"ok":true}.
 	Resource http.Handler
@@ -409,6 +411,9 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		writeJSON(w, http.StatusOK, out)
 	case "refresh_token":
+		if s.o.OnRefresh != nil {
+			s.o.OnRefresh()
+		}
 		time.Sleep(s.o.RefreshDelay)
 		s.mu.Lock()
 		defer s.mu.Unlock()

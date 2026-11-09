@@ -108,6 +108,8 @@ func (s *Store) statePath(fid string) string {
 	return filepath.Join(s.Dir, "state", fid+".json")
 }
 
+func (s *Store) storeLockPath() string { return filepath.Join(s.Dir, "locks", "store.lock") }
+
 func (s *Store) lockPath(fid string) string {
 	return filepath.Join(s.Dir, "locks", fid+".lock")
 }
@@ -269,26 +271,43 @@ func (s *Store) load(id string) (*Record, error) {
 		return nil, err
 	}
 	defer f.Close()
-	key, err := s.key()
-	if errors.Is(err, ErrNoKey) || errors.Is(err, errKeyGone) {
-		return nil, errUnreadable
-	}
+	enc, err := io.ReadAll(io.LimitReader(f, maxRecord))
 	if err != nil {
 		return nil, err
 	}
-	dec, err := age.Decrypt(io.LimitReader(f, maxRecord), key)
+	data, err := s.decrypt(enc)
 	if err != nil {
-		return nil, errUnreadable
-	}
-	data, err := io.ReadAll(io.LimitReader(dec, maxRecord))
-	if err != nil {
-		return nil, errUnreadable
+		return nil, err
 	}
 	r := &Record{raw: data}
 	if err := json.Unmarshal(data, r); err != nil {
 		return nil, errUnreadable
 	}
 	return r, nil
+}
+
+// decrypt decrypts a record with the key, read again when the one this
+// process kept doesn't fit: the key may have been replaced since.
+func (s *Store) decrypt(enc []byte) ([]byte, error) {
+	for range 2 {
+		key, err := s.key()
+		if errors.Is(err, ErrNoKey) || errors.Is(err, errKeyGone) {
+			return nil, errUnreadable
+		}
+		if err != nil {
+			return nil, err
+		}
+		dec, err := age.Decrypt(bytes.NewReader(enc), key)
+		if err == nil {
+			data, err := io.ReadAll(io.LimitReader(dec, maxRecord))
+			if err != nil {
+				return nil, errUnreadable
+			}
+			return data, nil
+		}
+		s.forgetKey()
+	}
+	return nil, errUnreadable
 }
 
 // errUnreadable is a record the key can't read.
@@ -336,16 +355,28 @@ func (s *Store) save(r *Record) error {
 	return nil
 }
 
-// lock takes the lock of srv's record and state.
+// lock takes the lock of srv's record and state. It holds the store's
+// lock too, shared, so that the key can't change until it is released,
+// and the key is read again: one this process read earlier may have been
+// replaced.
 func (s *Store) lock(srv upstream.Server) (func(), error) {
 	if err := s.mkdir("locks"); err != nil {
 		return nil, err
 	}
+	unlockStore, err := fsutil.LockShared(s.storeLockPath(), s.lockTimeout())
+	if err != nil {
+		return nil, s.lockError("the credential store", err)
+	}
 	unlock, err := fsutil.LockTimeout(s.lockPath(fileID(srv.ID)), s.lockTimeout())
 	if err != nil {
+		unlockStore()
 		return nil, s.lockError("the credentials of "+srv.Name, err)
 	}
-	return unlock, nil
+	s.forgetKey()
+	return func() {
+		unlock()
+		unlockStore()
+	}, nil
 }
 
 func (s *Store) lockError(what string, err error) error {
@@ -428,21 +459,23 @@ func (s *Store) Delete(srv upstream.Server) error {
 // readsAny reports whether key reads one of the stored records.
 func (s *Store) readsAny(key *age.X25519Identity) bool {
 	for _, path := range s.recordFiles() {
-		if readable(path, key) {
+		if ok, _ := readable(path, key); ok {
 			return true
 		}
 	}
 	return false
 }
 
-func readable(path string, key *age.X25519Identity) bool {
+// readable reports whether key decrypts the record at path. A record that
+// can't be opened is an error, not an unreadable record.
+func readable(path string, key *age.X25519Identity) (bool, error) {
 	f, err := fsutil.OpenRegular(path, os.O_RDONLY, 0)
 	if err != nil {
-		return false
+		return false, err
 	}
 	defer f.Close()
 	_, err = age.Decrypt(io.LimitReader(f, maxRecord), key)
-	return err == nil
+	return err == nil, nil
 }
 
 // recordFiles are the records of this format version.
@@ -456,8 +489,14 @@ func (s *Store) recordFiles() []string {
 // server's state says it needs sign-in.
 func (s *Store) moveUnreadable(key *age.X25519Identity) error {
 	for _, path := range s.recordFiles() {
-		if key != nil && readable(path, key) {
-			continue
+		if key != nil {
+			ok, err := readable(path, key)
+			if errors.Is(err, os.ErrNotExist) || ok {
+				continue
+			}
+			if err != nil {
+				return err
+			}
 		}
 		if err := s.moveAside(path); err != nil {
 			return err
@@ -503,8 +542,8 @@ var (
 
 // writeDurable replaces path with data, mode 0600, so that a reader never
 // sees a partial file and the new content is on disk before it returns:
-// the file is synced before the rename and its folder after it. A failed
-// sync fails the write.
+// the file is synced before the rename, and its folder and the folder's
+// parent after it. A failed sync fails the write.
 func writeDurable(path string, data []byte) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -529,5 +568,9 @@ func writeDurable(path string, data []byte) error {
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return err
 	}
-	return syncDir(dir)
+	if err := syncDir(dir); err != nil {
+		return err
+	}
+	// The folder may be new: its own entry must reach the disk too.
+	return syncDir(filepath.Dir(dir))
 }

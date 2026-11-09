@@ -7,18 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"filippo.io/age"
 	"github.com/zalando/go-keyring"
 
 	"github.com/ctxtra/ctxtra/internal/fsutil"
-)
-
-// The key's item in the OS keychain.
-const (
-	keyService = "ctxtra"
-	keyAccount = "mcp-credentials"
 )
 
 // Where key.json says the key is.
@@ -53,34 +46,6 @@ func (e *KeychainError) Error() string {
 
 func (e *KeychainError) Unwrap() error { return e.Err }
 
-// getKey reads the key's keychain item; tests replace it.
-var getKey = func() (string, error) { return keyring.Get(keyService, keyAccount) }
-
-// keychainGet reads the key from the keychain, waiting at most timeout
-// (0: no limit). A keychain that would ask the user is an error after
-// timeout; the request it started is abandoned.
-func keychainGet(timeout time.Duration) (string, error) {
-	if timeout <= 0 {
-		return getKey()
-	}
-	type result struct {
-		v   string
-		err error
-	}
-	ch := make(chan result, 1)
-	get := getKey
-	go func() {
-		v, err := get()
-		ch <- result{v, err}
-	}()
-	select {
-	case r := <-ch:
-		return r.v, r.err
-	case <-time.After(timeout):
-		return "", fmt.Errorf("no answer after %s", timeout)
-	}
-}
-
 func (s *Store) keyInfoPath() string { return filepath.Join(s.Dir, "key.json") }
 func (s *Store) keyPath() string     { return filepath.Join(s.Dir, "key") }
 
@@ -104,7 +69,7 @@ func (s *Store) loadKey(info *keyInfo) (*age.X25519Identity, error) {
 	var v string
 	switch info.Location {
 	case inKeychain:
-		got, err := keychainGet(s.KeyTimeout)
+		got, err := kc.get(s.KeyTimeout)
 		if errors.Is(err, keyring.ErrNotFound) {
 			return nil, errKeyGone
 		}
@@ -129,7 +94,15 @@ func (s *Store) loadKey(info *keyInfo) (*age.X25519Identity, error) {
 	return id, nil
 }
 
-// key is the store's key. It never creates one.
+// forgetKey makes the next use of the key read it again: it may have been
+// replaced since.
+func (s *Store) forgetKey() {
+	s.mu.Lock()
+	s.id = nil
+	s.mu.Unlock()
+}
+
+// key is the store's key, read once and kept. It never creates one.
 func (s *Store) key() (*age.X25519Identity, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -166,14 +139,12 @@ func (s *Store) EnsureKey() (fileKey bool, err error) {
 	if err := s.mkdir(""); err != nil {
 		return false, err
 	}
-	unlock, err := fsutil.LockTimeout(filepath.Join(s.Dir, "locks", "store.lock"), s.lockTimeout())
+	unlock, err := fsutil.LockTimeout(s.storeLockPath(), s.lockTimeout())
 	if err != nil {
 		return false, s.lockError("the credential store", err)
 	}
 	defer unlock()
-	s.mu.Lock()
-	s.id = nil
-	s.mu.Unlock()
+	s.forgetKey()
 
 	info, err := s.readKeyInfo()
 	switch {
@@ -204,7 +175,10 @@ func (s *Store) EnsureKey() (fileKey bool, err error) {
 		return false, err
 	}
 
-	loc, id := s.adoptKey()
+	loc, id, err := s.adoptKey()
+	if err != nil {
+		return false, err
+	}
 	if id == nil {
 		if err := s.moveUnreadable(nil); err != nil {
 			return false, err
@@ -228,32 +202,50 @@ func (s *Store) setKey(id *age.X25519Identity) {
 
 // adoptKey finds a key that a run which stopped before writing key.json
 // left: the one that reads stored credentials, else the keychain's, else
-// the file. nil when there is none.
-func (s *Store) adoptKey() (string, *age.X25519Identity) {
+// the file. nil when there is none. A key that exists but can't be read is
+// an error, never a reason to make another: that could lose the
+// credentials it reads. So is a keychain that can't be reached while
+// credentials exist, since it may hold their key.
+func (s *Store) adoptKey() (string, *age.X25519Identity, error) {
 	type found struct {
 		loc string
 		id  *age.X25519Identity
 	}
 	var keys []found
-	if v, err := keychainGet(s.KeyTimeout); err == nil {
-		if id, err := age.ParseX25519Identity(strings.TrimSpace(v)); err == nil {
-			keys = append(keys, found{inKeychain, id})
+	v, kerr := kc.get(s.KeyTimeout)
+	switch {
+	case kerr == nil:
+		id, err := age.ParseX25519Identity(strings.TrimSpace(v))
+		if err != nil {
+			return "", nil, fmt.Errorf("the keychain item %s/%s is not a ctxtra key; delete it and try again", keyService, keyAccount)
 		}
+		keys = append(keys, found{inKeychain, id})
+	case errors.Is(kerr, keyring.ErrNotFound):
+		kerr = nil
 	}
-	if data, err := fsutil.ReadBounded(s.keyPath(), 1024); err == nil {
-		if id, err := age.ParseX25519Identity(strings.TrimSpace(string(data))); err == nil {
-			keys = append(keys, found{inFile, id})
+	data, err := fsutil.ReadBounded(s.keyPath(), 1024)
+	switch {
+	case err == nil:
+		id, err := age.ParseX25519Identity(strings.TrimSpace(string(data)))
+		if err != nil {
+			return "", nil, fmt.Errorf("%s is not a ctxtra key; move it away and try again", s.keyPath())
 		}
-	}
-	if len(keys) == 0 {
-		return "", nil
+		keys = append(keys, found{inFile, id})
+	case !errors.Is(err, os.ErrNotExist):
+		return "", nil, err
 	}
 	for _, k := range keys {
 		if s.readsAny(k.id) {
-			return k.loc, k.id
+			return k.loc, k.id, nil
 		}
 	}
-	return keys[0].loc, keys[0].id
+	if kerr != nil && len(s.recordFiles()) > 0 {
+		return "", nil, &KeychainError{kerr}
+	}
+	if len(keys) == 0 {
+		return "", nil, nil
+	}
+	return keys[0].loc, keys[0].id, nil
 }
 
 // createKey makes a new key: in the keychain when keychain is set and it
@@ -264,13 +256,17 @@ func (s *Store) createKey(keychain bool) (string, *age.X25519Identity, error) {
 		return "", nil, err
 	}
 	if keychain {
-		if err := keyring.Set(keyService, keyAccount, id.String()); err == nil {
+		if err := kc.set(id.String()); err == nil {
 			// Read it back: a keychain that accepts a value but can't
 			// return it is no place for the key.
-			if v, err := keychainGet(s.KeyTimeout); err == nil && strings.TrimSpace(v) == id.String() {
+			if v, err := kc.get(s.KeyTimeout); err == nil && strings.TrimSpace(v) == id.String() {
 				return inKeychain, id, nil
 			}
 		}
+	}
+	// Never over a key file: it may still read credentials.
+	if _, err := os.Lstat(s.keyPath()); err == nil {
+		return "", nil, fmt.Errorf("%s exists; move it away and try again", s.keyPath())
 	}
 	if err := writeDurable(s.keyPath(), []byte(id.String()+"\n")); err != nil {
 		return "", nil, err

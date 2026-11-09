@@ -22,10 +22,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/rogpeppe/go-internal/testscript"
-	"github.com/zalando/go-keyring"
 
 	"github.com/ctxtra/ctxtra/internal/cli"
 	"github.com/ctxtra/ctxtra/internal/jsonorder"
+	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/mcp/mcptest"
 	"github.com/ctxtra/ctxtra/internal/testenv"
 )
@@ -34,7 +34,7 @@ import (
 // commands that ask only there. Neither uses the user's keychain: the
 // credential store's key is a file in the script's HOME.
 func TestMain(m *testing.M) {
-	noKeychain := func() { keyring.MockInitWithError(errors.New("no keychain in tests")) }
+	noKeychain := func() { creds.MockKeychain(errors.New("no keychain in tests")) }
 	testscript.Main(m, map[string]func(){
 		"ctxtra": func() {
 			noKeychain()

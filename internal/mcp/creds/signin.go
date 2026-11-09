@@ -10,15 +10,45 @@ import (
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 )
 
+// ErrSignInChanged is a sign-in result that came too late: another
+// sign-in or a removal of the server finished while it ran.
+var ErrSignInChanged = errors.New("another sign-in or a removal of the server finished meanwhile; nothing was saved")
+
+// Generation is the sign-in generation of srv's credentials, 0 without
+// any. A sign-in reads it before it starts and gives it to SaveSignIn.
+func (s *Store) Generation(srv upstream.Server) (int, error) {
+	r, err := s.Load(srv)
+	if errors.Is(err, errUnreadable) || r == nil {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return r.Generation, nil
+}
+
 // SaveSignIn stores a new sign-in of srv under its lock, as the next
 // generation: the issuer, the client and the tokens. Secret values stay.
-// The caller made sure the store has a key.
-func (s *Store) SaveSignIn(srv upstream.Server, issuer string, c Client, t Token) (*Record, error) {
+// It saves nothing and returns ErrSignInChanged when the credentials are
+// no longer at generation gen, which the sign-in started from. The caller
+// made sure the store has a key.
+func (s *Store) SaveSignIn(srv upstream.Server, gen int, issuer string, c Client, t Token) (*Record, error) {
 	unlock, err := s.lock(srv)
 	if err != nil {
 		return nil, err
 	}
 	defer unlock()
+	if err := s.checkVersion(srv.ID, srv.Name); err != nil {
+		return nil, err
+	}
+	cur, err := s.load(srv.ID)
+	switch {
+	case errors.Is(err, errUnreadable):
+	case err != nil:
+		return nil, err
+	case cur == nil && gen != 0, cur != nil && cur.Generation != gen:
+		return nil, ErrSignInChanged
+	}
 	r, err := s.updateLocked(srv, true, func(r *Record) error {
 		r.Issuer, r.Client, r.Token = issuer, c, t
 		r.Generation++

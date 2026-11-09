@@ -3,8 +3,11 @@ package creds
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,7 +42,11 @@ func saveSignIn(t *testing.T, s *Store, srv upstream.Server, fake *oauthtest.Ser
 	tr := tokenResponse{AccessToken: tok.AccessToken, RefreshToken: tok.RefreshToken, TokenType: tok.TokenType,
 		ExpiresIn: json.Number(itoa(tok.ExpiresIn)), Scope: tok.Scope}
 	c := Client{ID: "app", AuthMethod: "none", TokenURL: fake.TokenURL()}
-	if _, err := s.SaveSignIn(srv, fake.URL, c, newToken(tr, time.Now())); err != nil {
+	gen, err := s.Generation(srv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveSignIn(srv, gen, fake.URL, c, newToken(tr, time.Now())); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -469,5 +476,77 @@ func TestHTTPTokenEndpoint(t *testing.T) {
 	}
 	if err := checkEndpoint("http://127.0.0.1:9/token", "http://127.0.0.1:8/mcp"); err != nil {
 		t.Errorf("loopback: %v", err)
+	}
+}
+
+func TestStaleSignIn(t *testing.T) {
+	fake := oauthtest.New(t, oauthtest.Options{Lifetime: time.Hour})
+	s, srv, _ := signedInStore(t, fake, t.TempDir())
+	c := Client{ID: "app", AuthMethod: "none", TokenURL: fake.TokenURL()}
+	// Two sign-ins start from generation 1; the second to finish is too
+	// late.
+	first, second := fake.SignIn("app"), fake.SignIn("app")
+	if _, err := s.SaveSignIn(srv, 1, fake.URL, c, Token{Access: first.AccessToken}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveSignIn(srv, 1, fake.URL, c, Token{Access: second.AccessToken}); !errors.Is(err, ErrSignInChanged) {
+		t.Errorf("stale sign-in: %v", err)
+	}
+	if r, _ := s.Load(srv); r.Token.Access != first.AccessToken || r.Generation != 2 {
+		t.Errorf("record: %+v", r)
+	}
+	// A removal while a sign-in runs: it isn't recreated.
+	if err := s.Delete(srv); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveSignIn(srv, 2, fake.URL, c, Token{Access: second.AccessToken}); !errors.Is(err, ErrSignInChanged) {
+		t.Errorf("sign-in after removal: %v", err)
+	}
+	if r, err := s.Load(srv); r != nil || err != nil {
+		t.Errorf("recreated: %+v %v", r, err)
+	}
+}
+
+func TestRefreshRefusesRedirects(t *testing.T) {
+	fake := oauthtest.New(t, oauthtest.Options{Lifetime: time.Hour})
+	s, srv, _ := signedInStore(t, fake, t.TempDir())
+	redirect := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, fake.TokenURL(), http.StatusTemporaryRedirect)
+	}))
+	defer redirect.Close()
+	s.Update(srv, false, func(r *Record) error {
+		r.Client.TokenURL = redirect.URL + "/token"
+		return nil
+	})
+	expireToken(t, s, srv, time.Minute)
+	s.HTTP = &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}}
+	if _, err := s.Token(context.Background(), srv); err == nil || !strings.Contains(err.Error(), "HTTP 307") {
+		t.Errorf("Token: %v", err)
+	}
+	if fake.Refreshes() != 0 {
+		t.Error("the redirect was followed")
+	}
+}
+
+func TestRefreshErrorsQuoteNoProviderText(t *testing.T) {
+	keyring.MockInit()
+	srvHTTP := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "bad token " + r.PostForm.Get("refresh_token")})
+	}))
+	defer srvHTTP.Close()
+	s := &Store{Dir: t.TempDir(), HTTP: srvHTTP.Client()}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	srv := upstream.Server{ID: "x", Name: "x", URL: "https://mcp.example/mcp"}
+	c := Client{ID: "app", TokenURL: srvHTTP.URL + "/token"}
+	if _, err := s.SaveSignIn(srv, 0, srvHTTP.URL, c, Token{Access: "a", Refresh: "CTXMARK-RT", Expiry: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.Token(context.Background(), srv)
+	if err == nil || strings.Contains(err.Error(), "CTXMARK") || !strings.Contains(err.Error(), "HTTP 400") {
+		t.Errorf("Token: %v", err)
 	}
 }
