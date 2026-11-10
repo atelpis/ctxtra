@@ -263,6 +263,7 @@ type report struct {
 	rec     status.Record
 	write   func(status.Record)
 	written bool
+	ended   map[string]bool // servers that ended: later startup news doesn't revive them
 }
 
 func newReport(o Options, servers []upstream.Server) *report {
@@ -278,13 +279,43 @@ func newReport(o Options, servers []upstream.Server) *report {
 	return r
 }
 
-// set records what happened to the server name.
+// set records what happened to the server name. A server that ended stays
+// missing, whatever its start reports after that.
 func (r *report) set(name, state, reason string, ms int64) {
+	r.update(name, state, reason, ms, false)
+}
+
+// ended records that name ended during the session.
+func (r *report) end(name, reason string) {
+	r.update(name, status.Missing, reason, 0, true)
+}
+
+// restart records a server that connected again, after a sign-in.
+func (r *report) restart(name, reason string, ms int64) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	delete(r.ended, name)
+	r.mu.Unlock()
+	r.set(name, status.Late, reason, ms)
+}
+
+func (r *report) update(name, state, reason string, ms int64, ended bool) {
 	if r == nil || r.write == nil {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.ended[name] && !ended {
+		return
+	}
+	if ended {
+		if r.ended == nil {
+			r.ended = map[string]bool{}
+		}
+		r.ended[name] = true
+	}
 	for i := range r.rec.Servers {
 		if r.rec.Servers[i].Name == name {
 			r.rec.Servers[i] = status.Server{Name: name, State: state, Reason: reason, Ms: ms}
@@ -508,7 +539,7 @@ func (p *proxy) awaitSignIn(ctx context.Context, s upstream.Server) {
 		}
 		p.wg.Go(func() { p.watchExit(up) })
 		p.o.Log(Record{Event: "signed-in", Server: s.Name, Tools: len(tools)})
-		p.report.set(s.Name, status.Late, "signed in during the session", time.Since(p.o.Start).Milliseconds())
+		p.report.restart(s.Name, "signed in during the session", time.Since(p.o.Start).Milliseconds())
 		select {
 		case <-p.ready:
 		case <-ctx.Done():
@@ -860,7 +891,7 @@ func (p *proxy) watchExit(up *Upstream) {
 		st = "connection closed"
 	}
 	p.o.Log(Record{Event: "server ended", Server: up.Server.Name, Error: st})
-	p.report.set(up.Server.Name, status.Missing, "ended during the session: "+st, 0)
+	p.report.end(up.Server.Name, "ended during the session: "+st)
 	// A remote server whose sign-in ended with it comes back after a login.
 	if !up.Server.Local() && p.o.SignInState != nil {
 		if _, ok := p.o.SignInState(up.Server); !ok {

@@ -1,6 +1,8 @@
 package status
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -42,5 +44,23 @@ func TestNewerSessionWins(t *testing.T) {
 	}
 	if got, _, _ := Read("/d"); got.Agent != "claude" {
 		t.Errorf("record: %+v", got)
+	}
+}
+
+// A folder reached through a symlink has the record of its real path.
+func TestSymlinkedFolder(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	real := filepath.Join(home, "real")
+	os.Mkdir(real, 0o755)
+	link := filepath.Join(home, "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skip(err)
+	}
+	if err := Write(Record{Dir: real, Agent: "claude", Started: time.Now().UTC()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := Read(link); !ok || err != nil {
+		t.Errorf("through the symlink: %v %v", ok, err)
 	}
 }

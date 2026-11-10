@@ -54,7 +54,8 @@ func Dir() string { return filepath.Join(paths.StateDir(), "mcp", "status") }
 // path is the record of the session folder dir: one file per folder, so
 // sessions in other folders never touch it.
 func path(dir string) string {
-	sum := sha256.Sum256([]byte(dir))
+	// The folder without symlinks, as bindings see it.
+	sum := sha256.Sum256([]byte(paths.Real(dir)))
 	return filepath.Join(Dir(), hex.EncodeToString(sum[:16])+".json")
 }
 
@@ -95,7 +96,7 @@ func Read(dir string) (Record, bool, error) {
 	if err := json.Unmarshal(data, &r); err != nil {
 		return Record{}, false, err
 	}
-	if r.Version > version || r.Dir != dir {
+	if r.Version > version || paths.Real(r.Dir) != paths.Real(dir) {
 		return Record{}, false, nil
 	}
 	return r, true, nil

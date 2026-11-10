@@ -1065,3 +1065,20 @@ func TestServerEndsBeforeFirstList(t *testing.T) {
 		t.Errorf("tools %v", got)
 	}
 }
+
+// A server that ended stays missing in the record, also when its start's
+// result is recorded after its end.
+func TestReportKeepsEnd(t *testing.T) {
+	var last status.Record
+	r := newReport(Options{Report: func(rec status.Record) { last = rec }}, []upstream.Server{{Name: "pg"}})
+	r.flush()
+	r.end("pg", "ended during the session: exit status 1")
+	r.set("pg", status.Ready, "", 10)
+	if last.Servers[0].State != status.Missing {
+		t.Errorf("record: %+v", last.Servers)
+	}
+	r.restart("pg", "signed in during the session", 20)
+	if last.Servers[0].State != status.Late {
+		t.Errorf("after a restart: %+v", last.Servers)
+	}
+}
