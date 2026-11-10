@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -111,6 +112,9 @@ func (s *Store) Token(ctx context.Context, srv upstream.Server) (string, error) 
 // holds it then, so the record read is on the disk, synced, and its
 // tokens can be used.
 func (s *Store) loadShared(srv upstream.Server) (*Record, error) {
+	if _, err := os.Stat(s.Dir); errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
 	if err := s.mkdir("locks"); err != nil {
 		return nil, err
 	}

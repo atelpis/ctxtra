@@ -107,7 +107,7 @@ func (s *Store) Secrets(srv upstream.Server) (env, headers map[string]string, er
 	if len(srv.SecretEnv) == 0 && len(srv.SecretHeaders) == 0 {
 		return nil, nil, nil
 	}
-	r, err := s.Load(srv)
+	r, err := s.loadShared(srv)
 	switch {
 	case errors.Is(err, errUnreadable):
 		return nil, nil, &LoginError{srv.Name, "its secret values can't be read"}

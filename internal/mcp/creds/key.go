@@ -145,6 +145,12 @@ func (s *Store) EnsureKey() (fileKey bool, err error) {
 	}
 	defer unlock()
 	s.forgetKey()
+	// A temporary file that a stopped key write left can hold a key.
+	if tmps, _ := filepath.Glob(filepath.Join(s.Dir, ".tmp-*")); len(tmps) > 0 {
+		for _, t := range tmps {
+			_ = os.Remove(t)
+		}
+	}
 
 	info, err := s.readKeyInfo()
 	if err != nil {
@@ -243,6 +249,15 @@ func (s *Store) adoptKey() (string, *age.X25519Identity, error) {
 		keys = append(keys, found{inFile, id})
 	case !errors.Is(err, os.ErrNotExist):
 		return "", nil, err
+	}
+	// The same key in both places: a keychain write that couldn't be read
+	// back left a file too. The keychain is the place; the file goes, so
+	// no backup copies the key in clear text.
+	if len(keys) == 2 && keys[0].id.String() == keys[1].id.String() {
+		if err := os.Remove(s.keyPath()); err != nil {
+			return "", nil, err
+		}
+		return inKeychain, keys[0].id, nil
 	}
 	for _, k := range keys {
 		if s.readsAny(k.id) {

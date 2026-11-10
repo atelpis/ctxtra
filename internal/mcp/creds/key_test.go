@@ -352,3 +352,42 @@ func TestRecoveryWithNewerRecords(t *testing.T) {
 		t.Errorf("a key was made: %v", err)
 	}
 }
+
+// A key in both the keychain and a file, without key.json: the keychain
+// keeps it, and the file goes.
+func TestAdoptDuplicateKey(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	s := &Store{Dir: dir}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, s, local, "pw")
+	v, _ := keyring.Get(keyService, keyAccount)
+	os.WriteFile(filepath.Join(dir, "key"), []byte(v+"\n"), 0o600)
+	os.Remove(filepath.Join(dir, "key.json"))
+	s = &Store{Dir: dir}
+	if fileKey, err := s.EnsureKey(); err != nil || fileKey {
+		t.Fatalf("EnsureKey: %v %v", fileKey, err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "key")); !os.IsNotExist(err) {
+		t.Errorf("the key file stayed: %v", err)
+	}
+	if v, err := secret(t, s, local); err != nil || v != "pw" {
+		t.Errorf("secret: %q %v", v, err)
+	}
+}
+
+func TestEnsureKeyRemovesLeftoverTempFiles(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	os.MkdirAll(dir, 0o700)
+	tmp := filepath.Join(dir, ".tmp-123")
+	os.WriteFile(tmp, []byte("AGE-SECRET-KEY-1..."), 0o600)
+	if _, err := (&Store{Dir: dir}).EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Errorf("the temporary file stayed: %v", err)
+	}
+}

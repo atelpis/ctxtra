@@ -653,3 +653,92 @@ func TestReaderWaitsForSave(t *testing.T) {
 	unlock()
 	<-done
 }
+
+// A save whose folder can't be synced puts the old record back.
+func TestFailedFolderSync(t *testing.T) {
+	keyring.MockInit()
+	s := &Store{Dir: t.TempDir()}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, s, local, "old")
+	old := syncDir
+	t.Cleanup(func() { syncDir = old })
+	syncDir = func(string) error { return errors.New("I/O error") }
+	if err := s.SetSecrets(local, map[string]string{"PGPASSWORD": "new"}, nil); err == nil {
+		t.Error("the save didn't fail")
+	}
+	syncDir = old
+	if v, err := secret(t, s, local); err != nil || v != "old" {
+		t.Errorf("secret: %q %v", v, err)
+	}
+}
+
+func TestRecordTooLarge(t *testing.T) {
+	keyring.MockInit()
+	s := &Store{Dir: t.TempDir()}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, s, local, "old")
+	if err := s.SetSecrets(local, map[string]string{"PGPASSWORD": strings.Repeat("x", maxRecord)}, nil); err == nil {
+		t.Error("a record too large to read was saved")
+	}
+	if v, err := secret(t, s, local); err != nil || v != "old" {
+		t.Errorf("secret: %q %v", v, err)
+	}
+}
+
+// Secret values are read under the shared lock too.
+func TestSecretsWaitForSave(t *testing.T) {
+	keyring.MockInit()
+	s := &Store{Dir: t.TempDir()}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, s, local, "pw")
+	unlock, err := fsutil.Lock(s.lockPath(fileID(local.ID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		(&Store{Dir: s.Dir}).Secrets(local)
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Error("the reader didn't wait for the lock")
+	case <-time.After(200 * time.Millisecond):
+	}
+	unlock()
+	<-done
+}
+
+// When the old record can't be put back either, there is none.
+func TestFailedRestore(t *testing.T) {
+	keyring.MockInit()
+	s := &Store{Dir: t.TempDir()}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, s, local, "old")
+	oldDir, oldFile := syncDir, syncFile
+	t.Cleanup(func() { syncDir, syncFile = oldDir, oldFile })
+	calls := 0
+	syncDir = func(string) error { return errors.New("I/O error") }
+	syncFile = func(f *os.File) error {
+		calls++
+		if calls > 1 {
+			return errors.New("I/O error")
+		}
+		return oldFile(f)
+	}
+	if err := s.SetSecrets(local, map[string]string{"PGPASSWORD": "new"}, nil); err == nil {
+		t.Error("the save didn't fail")
+	}
+	syncDir, syncFile = oldDir, oldFile
+	if v, err := secret(t, s, local); err == nil || v == "new" {
+		t.Errorf("secret: %q %v", v, err)
+	}
+}
