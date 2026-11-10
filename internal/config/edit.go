@@ -36,6 +36,17 @@ func Edit(path string, fn func(old []byte) ([]byte, error)) error {
 	return EditThen(path, fn, nil)
 }
 
+// WithLock runs fn under the config's lock, the one Edit takes: no edit
+// of any config comes in between.
+func WithLock(fn func() error) error {
+	unlock, err := fsutil.Lock(filepath.Join(paths.StateDir(), "config.lock"))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return fn()
+}
+
 // EditThen is Edit that runs then after the config was written, still
 // under the config's lock, so that no other edit comes in between.
 func EditThen(path string, fn func(old []byte) ([]byte, error), then func() error) error {

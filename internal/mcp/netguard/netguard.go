@@ -28,6 +28,9 @@ import (
 
 // Policy is what one remote server may reach.
 type Policy struct {
+	// Host is the configured server's host. Through a proxy, it may be a
+	// name that only the proxy resolves; other hosts must resolve here.
+	Host string
 	// Private allows private addresses: RFC 1918, CGNAT and ULA.
 	Private bool
 	// Loopback allows loopback addresses and plain HTTP to them.
@@ -46,9 +49,14 @@ func For(ctx context.Context, serverURL string) (Policy, error) {
 	}
 	addrs, err := lookup(ctx, u.Hostname())
 	if err != nil {
+		if proxied, perr := proxyFunc()(u); perr == nil && proxied != nil {
+			// Only the proxy resolves it: a public server, as far as this
+			// machine can tell.
+			return Policy{Host: strings.ToLower(u.Hostname())}, nil
+		}
 		return Policy{}, fmt.Errorf("can't resolve %s: %w", u.Hostname(), err)
 	}
-	var p Policy
+	p := Policy{Host: strings.ToLower(u.Hostname())}
 	for _, a := range addrs {
 		switch kind(a) {
 		case loopbackAddr:
@@ -199,11 +207,16 @@ func (g *guard) check(req *http.Request) error {
 		return fmt.Errorf("%w: %s", ErrRefused, Origin(u))
 	}
 	// Through a proxy, ctxtra connects only to the proxy: the target's
-	// addresses are checked here, as this host resolves them.
+	// addresses are checked here, as this host resolves them. A host that
+	// only the proxy can resolve is allowed only when it is the configured
+	// server's own; the proxy may still resolve a name differently.
 	if proxied, err := g.proxy(u); err == nil && proxied != nil {
 		addrs, err := lookup(req.Context(), u.Hostname())
 		if err != nil {
-			return nil // the proxy resolves it
+			if strings.EqualFold(u.Hostname(), g.p.Host) {
+				return nil
+			}
+			return fmt.Errorf("%w: %s doesn't resolve here, through a proxy", ErrRefused, u.Hostname())
 		}
 		for _, a := range addrs {
 			if !g.p.allows(a) {

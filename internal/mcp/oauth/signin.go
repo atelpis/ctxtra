@@ -52,7 +52,11 @@ type SignIn struct {
 	ClientSecret string
 	// Scopes are asked for besides the server's own: an earlier sign-in's,
 	// and those a 403 asked for.
-	Scopes  []string
+	Scopes []string
+	// Commit runs save, which stores the sign-in; nil runs it as it is.
+	// The caller can check there, under its own lock, that the server is
+	// still what the sign-in was for.
+	Commit  func(save func() error) error
 	Timeout time.Duration
 }
 
@@ -179,7 +183,17 @@ func (f *SignIn) Run(ctx context.Context, ch *Challenge) (*Result, error) {
 	if len(tok.Scopes) == 0 {
 		tok.Scopes = scopes
 	}
-	r, err := f.Store.SaveSignIn(f.Server, gen, issuer, client, tok)
+	var r *creds.Record
+	save := func() error {
+		var err error
+		r, err = f.Store.SaveSignIn(f.Server, gen, issuer, client, tok)
+		return err
+	}
+	if f.Commit != nil {
+		err = f.Commit(save)
+	} else {
+		err = save()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -219,7 +233,8 @@ func (f *SignIn) client(ctx context.Context, m *Metadata, redirect string) (cred
 		ClientName:              "ctxtra",
 	}, f.HTTP)
 	if err != nil {
-		return creds.Client{}, fmt.Errorf("registering ctxtra with the authorization server failed: %w", err)
+		// Not the error's text: it can quote the answer, client secret too.
+		return creds.Client{}, errors.New("registering ctxtra with the authorization server failed")
 	}
 	c := creds.Client{ID: reg.ClientID, Secret: reg.ClientSecret, AuthMethod: reg.TokenEndpointAuthMethod,
 		TokenURL: tokenURL, Redirect: redirect, Registered: true}

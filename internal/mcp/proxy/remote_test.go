@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -138,6 +139,16 @@ func TestRemoteStepUp(t *testing.T) {
 	if st, _ := r.store.State(r.srv); !slices.Equal(st.Scopes, []string{"admin", "read"}) {
 		t.Errorf("state scopes: %v", st.Scopes)
 	}
+	// A 401, a refresh, then a 403: the scopes are recorded too.
+	r.fake.Require("write")
+	tok, _ := r.store.Token(context.Background(), r.srv)
+	r.fake.Revoke(tok)
+	if out, err := s.call(t, "linear__echo", nil); err == nil || !strings.Contains(out, "needs more permissions") {
+		t.Errorf("call after a refresh: %q %v", out, err)
+	}
+	if st, _ := r.store.State(r.srv); !slices.Contains(st.Scopes, "write") {
+		t.Errorf("state scopes after a refresh: %v", st.Scopes)
+	}
 }
 
 // A server that needs sign-in at the start gets its tools once the user
@@ -193,6 +204,13 @@ func TestRemoteSSEWithSecretHeader(t *testing.T) {
 	if !slices.Contains(auth, "k") || slices.Contains(auth, "") {
 		t.Errorf("headers: %v", auth)
 	}
+	// After a logout, the running session sends the key no more.
+	if err := store.Logout(rs); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := s.call(t, "old__echo", nil); err == nil || !strings.Contains(out, "run ctxtra mcp login old") {
+		t.Errorf("call after logout: %q %v", out, err)
+	}
 }
 
 // Nothing goes to another origin: not after a redirect, not to an SSE
@@ -200,40 +218,54 @@ func TestRemoteSSEWithSecretHeader(t *testing.T) {
 func TestRemoteOtherOrigins(t *testing.T) {
 	creds.MockKeychain(nil)
 	var hits []string
+	var mu sync.Mutex
 	other := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
 		hits = append(hits, r.Method+" "+r.URL.Path+" "+r.Header.Get("X-Api-Key"))
+		mu.Unlock()
 		w.WriteHeader(http.StatusTeapot)
 	}))
 	t.Cleanup(other.Close)
 	redirect := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Header().Set("Content-Type", "text/event-stream")
-			fmt.Fprintf(w, "event: endpoint\ndata: %s/messages\n\n", other.URL)
-			w.(http.Flusher).Flush()
-			<-r.Context().Done()
-			return
-		}
 		http.Redirect(w, r, other.URL+"/mcp", http.StatusTemporaryRedirect)
 	}))
 	t.Cleanup(redirect.Close)
-	trustCert(t, redirect)
-	store := &creds.Store{Dir: t.TempDir()}
-	store.EnsureKey()
-	rs := upstream.Server{ID: "r", Name: "r", URL: redirect.URL + "/mcp", SecretHeaders: []string{"X-Api-Key"}}
-	store.SetSecrets(rs, nil, map[string]string{"X-Api-Key": "k"})
-	s := startWith(t, t.TempDir(), 5*time.Second, func(o *Options) { o.Tokens, o.Secrets = store, store }, rs)
-	if got := s.tools(t); len(got) != 0 {
-		t.Errorf("tools %v", toolNames(got))
+	sse := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			// Not a streamable HTTP server: the proxy tries SSE.
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprintf(w, "event: endpoint\ndata: %s/messages\n\n", other.URL)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	t.Cleanup(sse.Close)
+	for _, srv := range []*httptest.Server{redirect, sse} {
+		trustCert(t, srv)
+		store := &creds.Store{Dir: t.TempDir()}
+		store.EnsureKey()
+		rs := upstream.Server{ID: "r", Name: "r", URL: srv.URL + "/mcp", SecretHeaders: []string{"X-Api-Key"}}
+		store.SetSecrets(rs, nil, map[string]string{"X-Api-Key": "k"})
+		s := startWith(t, t.TempDir(), 5*time.Second, func(o *Options) { o.Tokens, o.Secrets = store, store }, rs)
+		if got := s.tools(t); len(got) != 0 {
+			t.Errorf("tools %v", toolNames(got))
+		}
+		refused := false
+		for _, rec := range s.records() {
+			refused = refused || rec.Event == "connect" && rec.Error == "refused by ctxtra's network rules"
+		}
+		// The SDK wraps the SSE endpoint's error as text: the requests
+		// that reached the other origin, none, show the refusal there.
+		if !refused && srv == redirect {
+			t.Errorf("%s: log: %+v", srv.URL, s.records())
+		}
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if len(hits) > 0 {
 		t.Errorf("requests reached another origin: %v", hits)
-	}
-	refused := false
-	for _, rec := range s.records() {
-		refused = refused || rec.Event == "connect" && rec.Error == "refused by ctxtra's network rules"
-	}
-	if !refused {
-		t.Errorf("log: %+v", s.records())
 	}
 }
 

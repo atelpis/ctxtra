@@ -76,8 +76,10 @@ func (s *Store) SetSecrets(srv upstream.Server, env, headers map[string]string) 
 		return err
 	}
 	defer unlock()
+	// A new generation, so a session waiting for these values sees them.
 	r, err := s.updateLocked(srv, true, func(r *Record) error {
 		r.Secrets = Secrets{Env: maps.Clone(env), Headers: maps.Clone(headers)}
+		r.Generation = s.nextGeneration(r.Generation)
 		return nil
 	})
 	if err != nil {
@@ -166,8 +168,11 @@ func (s *Store) Logout(srv upstream.Server) error {
 		return err
 	}
 	defer unlock()
+	// A new generation: a sign-in that started before the logout can't
+	// save.
 	_, err = s.updateLocked(srv, false, func(r *Record) error {
 		r.Token, r.Secrets = Token{}, Secrets{}
+		r.Generation = s.nextGeneration(r.Generation)
 		return nil
 	})
 	if errors.Is(err, ErrDeleted) {

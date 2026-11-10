@@ -47,6 +47,7 @@ func TestFor(t *testing.T) {
 		"93.184.216.34": {},
 	} {
 		got, err := For(context.Background(), "https://"+host+"/mcp")
+		got.Host = ""
 		if err != nil || got != want {
 			t.Errorf("%s: %+v %v, want %+v", host, got, err, want)
 		}
@@ -128,17 +129,33 @@ func TestProxy(t *testing.T) {
 	t.Setenv("ALL_PROXY", proxy.URL)
 	t.Setenv("NO_PROXY", "")
 	// The proxy is on loopback, which a public server's policy refuses:
-	// the proxy's own address isn't checked.
-	_ = get(Policy{}.Client(), "https://mcp.example.invalid/mcp")
+	// the proxy's own address isn't checked. The configured server's name
+	// may resolve only at the proxy.
+	p, err := For(context.Background(), "https://mcp.example.invalid/mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = get(p.Client(), "https://mcp.example.invalid/mcp")
 	mu.Lock()
 	got := strings.Join(seen, ",")
 	mu.Unlock()
 	if got != "CONNECT mcp.example.invalid:443" {
 		t.Errorf("the proxy saw %q", got)
 	}
-	// Through a proxy, a target at a refused address is refused here.
+	// Through a proxy, a target at a refused address is refused here, and
+	// so is another name that doesn't resolve here, such as one from
+	// discovered metadata.
 	if err := get(Policy{}.Client(), "https://169.254.169.254/"); !errors.Is(err, ErrRefused) {
 		t.Errorf("a proxied request to the metadata address: %v", err)
+	}
+	if err := get(p.Client(), "https://internal.example.invalid/token"); !errors.Is(err, ErrRefused) {
+		t.Errorf("a proxied request to another name that doesn't resolve: %v", err)
+	}
+	mu.Lock()
+	got = strings.Join(seen, ",")
+	mu.Unlock()
+	if strings.Contains(got, "internal.example.invalid") {
+		t.Errorf("the proxy saw %q", got)
 	}
 }
 

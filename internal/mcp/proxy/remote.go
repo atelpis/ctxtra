@@ -34,21 +34,8 @@ type Tokens interface {
 // older SSE transport when that fails. Every request goes through ctxtra's
 // network rules, and to the server's origin only.
 func (d Dialer) dialRemote(ctx context.Context, s upstream.Server, c *mcp.Client) (*Upstream, error) {
-	headers := map[string]string{}
-	for k, v := range s.Headers {
-		headers[k] = v
-	}
-	if len(s.SecretHeaders) > 0 {
-		if d.Secrets == nil {
-			return nil, ErrSecrets
-		}
-		_, secret, err := d.Secrets.Secrets(s)
-		if err != nil {
-			return nil, secretsError{err}
-		}
-		for k, v := range secret {
-			headers[k] = v
-		}
+	if len(s.SecretHeaders) > 0 && d.Secrets == nil {
+		return nil, ErrSecrets
 	}
 	policy, err := netguard.For(ctx, s.URL)
 	if err != nil {
@@ -59,7 +46,7 @@ func (d Dialer) dialRemote(ctx context.Context, s upstream.Server, c *mcp.Client
 		return nil, err
 	}
 	hc := policy.Client(netguard.Origin(u))
-	hc.Transport = &authTransport{base: hc.Transport, srv: s, tokens: d.Tokens, headers: headers}
+	hc.Transport = &authTransport{base: hc.Transport, srv: s, tokens: d.Tokens, secrets: d.Secrets}
 	cs, err := c.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: s.URL, HTTPClient: hc}, nil)
 	if err != nil {
 		var lerr *creds.LoginError
@@ -68,6 +55,10 @@ func (d Dialer) dialRemote(ctx context.Context, s upstream.Server, c *mcp.Client
 		}
 		sse, serr := c.Connect(ctx, &mcp.SSEClientTransport{Endpoint: s.URL, HTTPClient: hc}, nil)
 		if serr != nil {
+			// The SSE server's own reason, when it is one ctxtra can act on.
+			if errors.As(serr, &lerr) || errors.Is(serr, netguard.ErrRefused) {
+				return nil, serr
+			}
 			return nil, err
 		}
 		cs = sse
@@ -83,10 +74,26 @@ type authTransport struct {
 	base    http.RoundTripper
 	srv     upstream.Server
 	tokens  Tokens
-	headers map[string]string
+	secrets Secrets
 }
 
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Secret headers are read for each request, so a logout or a new
+	// value applies to running sessions too.
+	headers := map[string]string{}
+	for k, v := range t.srv.Headers {
+		headers[k] = v
+	}
+	if len(t.srv.SecretHeaders) > 0 {
+		_, secret, err := t.secrets.Secrets(t.srv)
+		if err != nil {
+			closeBody(req)
+			return nil, secretsError{err}
+		}
+		for k, v := range secret {
+			headers[k] = v
+		}
+	}
 	token := ""
 	if t.tokens != nil {
 		tok, err := t.tokens.Token(req.Context(), t.srv)
@@ -104,17 +111,12 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err := t.send(req, body, token)
+	resp, err := t.send(req, body, headers, token)
 	if err != nil || resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
 		return resp, err
 	}
 	if resp.StatusCode == http.StatusForbidden {
-		ch := oauth.ParseChallenge(resp.Header.Values("WWW-Authenticate"))
-		if t.tokens == nil || !insufficientScope(resp) {
-			return resp, nil
-		}
-		drain(resp)
-		return nil, t.tokens.StepUp(t.srv, ch.Scopes)
+		return t.forbidden(resp)
 	}
 	drain(resp)
 	if t.tokens == nil {
@@ -127,21 +129,40 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	resp, err = t.send(req, body, token)
-	if err != nil || resp.StatusCode != http.StatusUnauthorized {
-		return resp, err
+	resp, err = t.send(req, body, headers, token)
+	switch {
+	case err != nil:
+		return nil, err
+	case resp.StatusCode == http.StatusForbidden:
+		return t.forbidden(resp)
+	case resp.StatusCode != http.StatusUnauthorized:
+		return resp, nil
 	}
 	drain(resp)
 	return nil, t.tokens.NeedsLogin(t.srv, "the server rejected the sign-in")
 }
 
-func (t *authTransport) send(req *http.Request, body []byte, token string) (*http.Response, error) {
+// forbidden handles a 403: insufficient_scope records the scopes it asks
+// for and fails with the login hint; any other 403 is the server's answer.
+func (t *authTransport) forbidden(resp *http.Response) (*http.Response, error) {
+	if t.tokens == nil || !insufficientScope(resp) {
+		return resp, nil
+	}
+	var scopes []string
+	if ch := oauth.ParseChallenge(resp.Header.Values("WWW-Authenticate")); ch != nil {
+		scopes = ch.Scopes
+	}
+	drain(resp)
+	return nil, t.tokens.StepUp(t.srv, scopes)
+}
+
+func (t *authTransport) send(req *http.Request, body []byte, headers map[string]string, token string) (*http.Response, error) {
 	r := req.Clone(req.Context())
 	if body != nil {
 		r.Body = io.NopCloser(bytes.NewReader(body))
 		r.GetBody = func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(body)), nil }
 	}
-	for k, v := range t.headers {
+	for k, v := range headers {
 		r.Header.Set(k, v)
 	}
 	if token != "" {

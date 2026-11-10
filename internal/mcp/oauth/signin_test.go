@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"regexp"
@@ -396,3 +398,55 @@ func freePort(t *testing.T) int {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// A 401 without a Bearer challenge is about the server's own key: no
+// OAuth. An SSE server is probed with GET.
+func TestDetectKinds(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/basic":
+			w.Header().Set("WWW-Authenticate", `Basic realm="x"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		case r.URL.Path == "/sse" && r.Method == http.MethodPost:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		case r.URL.Path == "/sse":
+			w.Header().Set("WWW-Authenticate", `Bearer resource_metadata="https://x/.well-known/oauth-protected-resource"`)
+			w.WriteHeader(http.StatusUnauthorized)
+		}
+	}))
+	defer srv.Close()
+	if ch, err := Detect(context.Background(), srv.Client(), srv.URL+"/basic", nil); ch != nil || err != nil {
+		t.Errorf("Basic: %+v %v", ch, err)
+	}
+	if ch, err := Detect(context.Background(), srv.Client(), srv.URL+"/sse", nil); ch == nil || err != nil || ch.ResourceMetadata == "" {
+		t.Errorf("SSE: %+v %v", ch, err)
+	}
+}
+
+// A registration answer that can't be read doesn't reach the error text.
+func TestRegistrationErrorQuotesNothing(t *testing.T) {
+	reg := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		io.WriteString(w, `{"client_id": 7, "client_secret": "CTXMARK-SECRET"}`)
+	}))
+	defer reg.Close()
+	f := &SignIn{Server: upstream.Server{ID: "x", Name: "x", URL: "https://mcp.example/mcp"}, Store: &creds.Store{Dir: t.TempDir()}, HTTP: reg.Client()}
+	m := &Metadata{Server: &oauthex.AuthServerMeta{RegistrationEndpoint: reg.URL + "/register", TokenEndpoint: reg.URL + "/token"}}
+	_, err := f.client(context.Background(), m, "http://127.0.0.1:1/callback")
+	if err == nil || strings.Contains(err.Error(), "CTXMARK") {
+		t.Errorf("client: %v", err)
+	}
+}
+
+// A sign-in whose server was removed meanwhile saves nothing.
+func TestCommitRefuses(t *testing.T) {
+	_, f := setup(t, oauthtest.Options{})
+	f.Commit = func(func() error) error { return errors.New("linear_work was removed") }
+	if _, err := f.Run(context.Background(), challenge(t, f)); err == nil {
+		t.Error("Run succeeded")
+	}
+	if r := stored(t, f); r != nil {
+		t.Errorf("stored: %+v", r)
+	}
+}

@@ -312,7 +312,9 @@ func (p *proxy) start(ctx context.Context) {
 // says it was signed in again, and adds its tools with a list change.
 // The session's set of servers doesn't change: s is one of them.
 func (p *proxy) awaitSignIn(ctx context.Context, s upstream.Server) {
-	gen, _ := p.o.SignInState(s)
+	// A sign-in may have finished between the failed connection and now:
+	// the first check connects whenever the state says signed in.
+	gen := int64(-1)
 	tick := time.NewTicker(p.o.SignInPoll)
 	defer tick.Stop()
 	for {
@@ -322,10 +324,14 @@ func (p *proxy) awaitSignIn(ctx context.Context, s upstream.Server) {
 		case <-tick.C:
 		}
 		g, ok := p.o.SignInState(s)
-		if !ok || g == gen {
+		if g == gen || !ok && gen != -1 {
 			continue
 		}
+		first := gen == -1
 		gen = g
+		if !ok && first {
+			continue
+		}
 		up, tools, err := p.connect(ctx, s)
 		var login *creds.LoginError
 		if errors.As(err, &login) {

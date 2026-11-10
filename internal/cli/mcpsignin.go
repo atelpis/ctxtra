@@ -93,7 +93,8 @@ func signInTo(ctx context.Context, stdio IO, store *creds.Store, s upstream.Serv
 	}
 	scopes = append(scopes, st.Scopes...)
 	f := &oauth.SignIn{Server: s, Store: store, HTTP: p.Client(), Out: stdio.Err, In: stdio.In,
-		OpenBrowser: openBrowser, NoBrowser: o.noBrowser, CallbackPort: port, ClientSecret: secret, Scopes: scopes}
+		OpenBrowser: openBrowser, NoBrowser: o.noBrowser, CallbackPort: port, ClientSecret: secret, Scopes: scopes,
+		Commit: stillDeclared(s)}
 	res, err := f.Run(ctx, ch)
 	if err != nil {
 		return err
@@ -109,6 +110,21 @@ func signInTo(ctx context.Context, stdio IO, store *creds.Store, s upstream.Serv
 		fmt.Fprintf(stdio.Out, "The provider gave no refresh token: when this sign-in expires, run ctxtra mcp login %s again.\n", s.Name)
 	}
 	return nil
+}
+
+// stillDeclared saves a sign-in only while the config still has s as it
+// was when the sign-in started, under the config's lock: a server removed
+// or changed meanwhile gets no credentials.
+func stillDeclared(s upstream.Server) func(save func() error) error {
+	return func(save func() error) error {
+		return config.WithLock(func() error {
+			cur, ok := config.Load(paths.ConfigPath(), newReader()).MCPServer(s.Name)
+			if !ok || cur.ID != s.ID || creds.CanonicalURL(cur.URL) != creds.CanonicalURL(s.URL) {
+				return fmt.Errorf("%s was removed or changed while you signed in; nothing was saved", s.Name)
+			}
+			return save()
+		})
+	}
 }
 
 // openBrowser opens u in the user's browser: $BROWSER if set, else the
@@ -171,7 +187,7 @@ func (a *app) mcpLogin(name string, withSecrets bool, o signInOptions) int {
 	ctx, stop := signalContext()
 	defer stop()
 	ask := func() error {
-		v, err := askSecrets(a.IO, a.noInput, name, s.SecretEnv, s.SecretHeaders, false)
+		v, err := askSecrets(a.IO, a.noInput, name, s.SecretEnv, s.SecretHeaders, s.ClientID != "")
 		if err != nil || v.empty() {
 			return err
 		}

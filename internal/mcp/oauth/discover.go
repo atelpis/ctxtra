@@ -9,7 +9,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"slices"
@@ -49,30 +48,55 @@ func Detect(ctx context.Context, c *http.Client, serverURL string, headers map[s
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusMethodNotAllowed || resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusBadRequest {
+		// An older SSE server: it is opened with GET.
+		if resp, err = sseProbe(ctx, c, serverURL, headers); err != nil {
+			return nil, err
+		}
+	}
 	if resp.StatusCode != http.StatusUnauthorized {
 		return nil, nil
 	}
+	// A 401 without a Bearer challenge is about the server's own headers,
+	// such as an API key, not OAuth.
 	return ParseChallenge(resp.Header.Values("WWW-Authenticate")), nil
 }
 
-// ParseChallenge reads the Bearer challenge of a 401 or 403 answer; an
-// unreadable one is a challenge without parameters.
+// sseProbe opens the SSE stream at serverURL without a token, and closes
+// it at once: only the status and headers matter.
+func sseProbe(ctx context.Context, c *http.Client, serverURL string, headers map[string]string) (*http.Response, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, serverURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "text/event-stream")
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	resp.Body.Close()
+	return resp, nil
+}
+
+// ParseChallenge reads the Bearer challenge of a 401 or 403 answer: nil
+// without one.
 func ParseChallenge(headers []string) *Challenge {
-	ch := &Challenge{}
 	challenges, err := oauthex.ParseWWWAuthenticate(headers)
 	if err != nil {
-		return ch
+		return nil
 	}
 	for _, c := range challenges {
-		if c.Scheme != "bearer" {
-			continue
+		if c.Scheme == "bearer" {
+			return &Challenge{ResourceMetadata: c.Params["resource_metadata"], Scopes: strings.Fields(c.Params["scope"])}
 		}
-		ch.ResourceMetadata = c.Params["resource_metadata"]
-		ch.Scopes = strings.Fields(c.Params["scope"])
 	}
-	return ch
+	return nil
 }
 
 // Metadata is what discovery found for a server.

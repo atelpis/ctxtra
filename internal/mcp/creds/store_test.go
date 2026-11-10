@@ -742,3 +742,21 @@ func TestFailedRestore(t *testing.T) {
 		t.Errorf("secret: %q %v", v, err)
 	}
 }
+
+// A sign-in that started before a logout doesn't bring the credentials
+// back.
+func TestLogoutCancelsPendingSignIn(t *testing.T) {
+	fake := oauthtest.New(t, oauthtest.Options{})
+	s, srv, _ := signedInStore(t, fake, t.TempDir())
+	gen, _ := s.Generation(srv)
+	if err := s.Logout(srv); err != nil {
+		t.Fatal(err)
+	}
+	c := Client{ID: "app", AuthMethod: "none", TokenURL: fake.TokenURL()}
+	if _, err := s.SaveSignIn(srv, gen, fake.URL, c, Token{Access: "late"}); !errors.Is(err, ErrSignInChanged) {
+		t.Errorf("SaveSignIn: %v", err)
+	}
+	if _, err := s.Token(context.Background(), srv); err == nil {
+		t.Error("signed in after logout")
+	}
+}
