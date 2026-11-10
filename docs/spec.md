@@ -706,13 +706,13 @@ reads them from stdin, one per line.
 |---|---|
 | `credentials/<server>.v1.age` | The server's credentials, encrypted. `v1` is the format version. |
 | `state/<server>.json` | No secrets: whether the server is signed in, and why it needs sign-in. |
-| `locks/<server>.lock`, `locks/store.lock` | Locks for changes of one server's files, and for creating the key. |
+| `locks/<server>.lock`, `locks/.store.lock` | Locks for changes of one server's files, and for creating the key. |
 | `key.json` | No secrets: where the key is, `keychain` or `file`. |
 | `key` | The key, only when `key.json` says `file`. |
 
 The folder is readable by the user only (0700), and the files too (0600). Every save replaces the file in one
-step and is synced to the disk before the command or session that made it uses the new values: a failed save
-fails the command or the call.
+step and is synced to the disk before ctxtra uses the new values: a failed save fails the command or the
+call.
 
 The key is an [age](https://age-encryption.org) X25519 key in the OS keychain: the login keychain on macOS, the
 Secret Service on Linux (service `ctxtra`, account `mcp-credentials`). Without a usable keychain, the key is the

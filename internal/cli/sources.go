@@ -62,7 +62,13 @@ func (s *sources) current() (*config.Config, error) {
 
 // edit changes the config, and says so when it creates it.
 func (s *sources) edit(fn func(old []byte) ([]byte, error)) error {
-	created, err := s.change(fn)
+	return s.editThen(fn, nil)
+}
+
+// editThen is edit that runs then after the config was written, under the
+// config's lock.
+func (s *sources) editThen(fn func(old []byte) ([]byte, error), then func() error) error {
+	created, err := s.change(fn, then)
 	if created {
 		term.Fprintf(s.Out, term.Green, "created %s\n", paths.Tilde(s.file))
 	}
@@ -71,9 +77,9 @@ func (s *sources) edit(fn func(old []byte) ([]byte, error)) error {
 
 // change changes the config, and reports whether it created it. The config
 // is registered, so that cleaning the store keeps its accepted commits.
-func (s *sources) change(fn func(old []byte) ([]byte, error)) (created bool, err error) {
+func (s *sources) change(fn func(old []byte) ([]byte, error), then func() error) (created bool, err error) {
 	existed := source.Exists(s.file)
-	if err := config.Edit(s.file, fn); err != nil {
+	if err := config.EditThen(s.file, fn, then); err != nil {
 		return false, err
 	}
 	s.register()

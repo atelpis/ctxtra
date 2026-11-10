@@ -108,7 +108,9 @@ func (s *Store) statePath(fid string) string {
 	return filepath.Join(s.Dir, "state", fid+".json")
 }
 
-func (s *Store) storeLockPath() string { return filepath.Join(s.Dir, "locks", "store.lock") }
+// storeLockPath is the store-wide lock. Its name starts with a dot, which
+// a server's file ID never does.
+func (s *Store) storeLockPath() string { return filepath.Join(s.Dir, "locks", ".store.lock") }
 
 func (s *Store) lockPath(fid string) string {
 	return filepath.Join(s.Dir, "locks", fid+".lock")

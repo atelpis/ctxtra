@@ -448,18 +448,15 @@ func (a *app) mcpRemoveCmd() *cobra.Command {
 		RunE: a.mcpRun(func(_ *cobra.Command, args []string) error {
 			name := args[0]
 			s := newSources(a.IO)
+			change := func(old []byte) ([]byte, error) { return config.RemoveMCPServer(old, name) }
 			// Its credentials go with it, also when its definition was
-			// broken, under the config's lock: a later add of the same
-			// name keeps its own.
-			change := func(old []byte) ([]byte, error) {
-				out, err := config.RemoveMCPServer(old, name)
-				if err != nil || dryRun {
-					return out, err
-				}
+			// broken: after the config is written, under its lock, so a
+			// later add of the same name keeps its own.
+			deleteCreds := func() error {
 				if err := creds.Open().Delete(upstream.Server{ID: config.MCPServerID(name), Name: name}); err != nil {
-					return nil, fmt.Errorf("couldn't delete its credentials: %w", err)
+					return fmt.Errorf("removed it from the config, but couldn't delete its credentials: %w", err)
 				}
-				return out, nil
+				return nil
 			}
 			var err error
 			if dryRun {
@@ -468,7 +465,7 @@ func (a *app) mcpRemoveCmd() *cobra.Command {
 					_, err = change(old)
 				}
 			} else {
-				err = s.edit(change)
+				err = s.editThen(change, deleteCreds)
 			}
 			if err != nil {
 				return exitCode(s.fail("mcp remove", err))

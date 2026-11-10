@@ -426,7 +426,12 @@ func TestInvalidGrant(t *testing.T) {
 func TestTokensWithoutRefreshToken(t *testing.T) {
 	fake := oauthtest.New(t, oauthtest.Options{NoRefresh: true, Lifetime: time.Hour})
 	s, srv, tok := signedInStore(t, fake, t.TempDir())
+	// Within the refresh margin, the token is used until it expires.
 	expireToken(t, s, srv, time.Minute)
+	if got, err := s.Token(context.Background(), srv); err != nil || got != tok.AccessToken {
+		t.Errorf("Token before expiry: %q %v", got, err)
+	}
+	expireToken(t, s, srv, -time.Second)
 	if _, err := s.Token(context.Background(), srv); err == nil || !strings.Contains(err.Error(), "the sign-in expired; run ctxtra mcp login") {
 		t.Errorf("Token: %v", err)
 	}
@@ -586,4 +591,65 @@ func TestRefreshErrorsQuoteNoProviderText(t *testing.T) {
 	if err == nil || strings.Contains(err.Error(), "CTXMARK") || !strings.Contains(err.Error(), "HTTP 400") {
 		t.Errorf("Token: %v", err)
 	}
+}
+
+// A server may be called store: its lock is its own.
+func TestServerNamedStore(t *testing.T) {
+	keyring.MockInit()
+	s := &Store{Dir: t.TempDir(), LockTimeout: time.Second}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	srv := local
+	srv.ID, srv.Name = "store", "store"
+	setSecret(t, s, srv, "pw")
+	if err := s.Delete(srv); err != nil {
+		t.Error(err)
+	}
+}
+
+// A transport error doesn't quote what the answer had.
+func TestRefreshTransportErrors(t *testing.T) {
+	keyring.MockInit()
+	srvHTTP := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		w.Header().Set("Location", "http://[CTXMARK"+r.PostForm.Get("refresh_token"))
+		w.WriteHeader(http.StatusFound)
+	}))
+	defer srvHTTP.Close()
+	s := &Store{Dir: t.TempDir(), HTTP: srvHTTP.Client()}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	srv := upstream.Server{ID: "x", Name: "x", URL: "https://mcp.example/mcp"}
+	c := Client{ID: "app", TokenURL: srvHTTP.URL + "/token"}
+	if _, err := s.SaveSignIn(srv, 0, srvHTTP.URL, c, Token{Access: "a", Refresh: "RT", Expiry: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Token(context.Background(), srv); err == nil || strings.Contains(err.Error(), "CTXMARK") {
+		t.Errorf("Token: %v", err)
+	}
+}
+
+// A lock-free reader waits while a refresh holds the lock, so it never
+// uses tokens before their save is complete.
+func TestReaderWaitsForSave(t *testing.T) {
+	fake := oauthtest.New(t, oauthtest.Options{Lifetime: time.Hour})
+	s, srv, _ := signedInStore(t, fake, t.TempDir())
+	unlock, err := fsutil.Lock(s.lockPath(fileID(srv.ID)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		(&Store{Dir: s.Dir}).Token(context.Background(), srv)
+		close(done)
+	}()
+	select {
+	case <-done:
+		t.Error("the reader didn't wait for the lock")
+	case <-time.After(200 * time.Millisecond):
+	}
+	unlock()
+	<-done
 }

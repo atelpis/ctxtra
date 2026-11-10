@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ctxtra/ctxtra/internal/fsutil"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 )
 
@@ -96,27 +97,42 @@ func usable(srv upstream.Server, r *Record, err error) error {
 // are returned. A token without an expiry is used until the server
 // rejects it.
 func (s *Store) Token(ctx context.Context, srv upstream.Server) (string, error) {
-	r, err := s.Load(srv)
+	r, err := s.loadShared(srv)
 	if err := usable(srv, r, err); err != nil {
 		return "", err
 	}
 	if s.fresh(r) {
 		return r.Token.Access, nil
 	}
-	return s.refreshLocked(ctx, srv, func(cur *Record) bool { return s.fresh(cur) })
+	return s.refreshLocked(ctx, srv, false, func(cur *Record) bool { return s.fresh(cur) })
+}
+
+// loadShared reads srv's record under its lock taken shared: no refresh
+// holds it then, so the record read is on the disk, synced, and its
+// tokens can be used.
+func (s *Store) loadShared(srv upstream.Server) (*Record, error) {
+	if err := s.mkdir("locks"); err != nil {
+		return nil, err
+	}
+	unlock, err := fsutil.LockShared(s.lockPath(fileID(srv.ID)), s.lockTimeout())
+	if err != nil {
+		return nil, s.lockError("the credentials of "+srv.Name, err)
+	}
+	defer unlock()
+	return s.Load(srv)
 }
 
 // Rejected is Token after srv rejected the access token with 401: it
 // refreshes once under the lock, unless another process stored a new
 // token since, and returns the token to retry with.
 func (s *Store) Rejected(ctx context.Context, srv upstream.Server, rejected string) (string, error) {
-	return s.refreshLocked(ctx, srv, func(cur *Record) bool { return cur.Token.Access != rejected && s.fresh(cur) })
+	return s.refreshLocked(ctx, srv, true, func(cur *Record) bool { return cur.Token.Access != rejected && s.fresh(cur) })
 }
 
 // refreshLocked takes srv's lock, reads the record again, and returns its
 // token when done says another process already refreshed it; otherwise it
-// refreshes and saves.
-func (s *Store) refreshLocked(ctx context.Context, srv upstream.Server, done func(*Record) bool) (string, error) {
+// refreshes and saves. rejected says the server rejected the stored token.
+func (s *Store) refreshLocked(ctx context.Context, srv upstream.Server, rejected bool, done func(*Record) bool) (string, error) {
 	unlock, err := s.lock(srv)
 	if err != nil {
 		return "", err
@@ -133,6 +149,10 @@ func (s *Store) refreshLocked(ctx context.Context, srv upstream.Server, done fun
 		return r.Token.Access, nil
 	}
 	if r.Token.Refresh == "" {
+		// Without a refresh token, the token is used until it expires.
+		if !rejected && (r.Token.Expiry.IsZero() || s.now().Before(r.Token.Expiry)) {
+			return r.Token.Access, nil
+		}
 		reason := "the sign-in expired"
 		if r.Token.Expiry.IsZero() {
 			reason = "the server rejected the sign-in"
@@ -228,12 +248,12 @@ func (s *Store) refresh(ctx context.Context, r *Record) (Token, error) {
 	now := s.now()
 	resp, err := client.Do(req)
 	if err != nil {
-		var uerr *url.Error
-		if errors.As(err, &uerr) {
-			// Not the URL: it can have a query.
-			err = uerr.Err
+		// Not the error's text: it can quote the URL, or a header of the
+		// answer.
+		if errors.Is(err, context.DeadlineExceeded) {
+			return Token{}, fmt.Errorf("the token endpoint %s didn't answer in time", req.URL.Host)
 		}
-		return Token{}, err
+		return Token{}, fmt.Errorf("can't reach the token endpoint %s", req.URL.Host)
 	}
 	defer resp.Body.Close()
 	var tr tokenResponse
