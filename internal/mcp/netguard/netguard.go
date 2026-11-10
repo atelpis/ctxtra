@@ -126,7 +126,7 @@ func (p Policy) Client(origins ...string) *http.Client {
 	proxy := proxyFunc()
 	base := &http.Transport{
 		Proxy:                 func(r *http.Request) (*url.URL, error) { return proxy(r.URL) },
-		DialContext:           p.dialer(proxy),
+		DialContext:           p.dialer(),
 		TLSClientConfig:       tlsConfig(),
 		ForceAttemptHTTP2:     true,
 		MaxIdleConns:          10,
@@ -189,8 +189,16 @@ func (g *guard) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 		return nil, err
 	}
+	// The dialer connects unchecked only to the proxy that this request
+	// goes through, never to an address that merely equals it.
+	if proxied, err := g.proxy(req.URL); err == nil && proxied != nil {
+		req = req.WithContext(context.WithValue(req.Context(), viaProxy{}, proxied))
+	}
 	return g.base.RoundTrip(req)
 }
+
+// viaProxy is the context key for the proxy a request goes through.
+type viaProxy struct{}
 
 func (g *guard) check(req *http.Request) error {
 	u := req.URL
@@ -244,7 +252,7 @@ func isLoopbackHost(host string) bool {
 // connects to, so a DNS change between a check and the connection can't
 // get around it. The proxy's own address is not checked: it is the
 // user's.
-func (p Policy) dialer(proxy func(*url.URL) (*url.URL, error)) func(ctx context.Context, network, addr string) (net.Conn, error) {
+func (p Policy) dialer() func(ctx context.Context, network, addr string) (net.Conn, error) {
 	checked := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second,
 		Control: func(_, address string, _ syscall.RawConn) error {
 			ap, err := netip.ParseAddrPort(address)
@@ -258,30 +266,20 @@ func (p Policy) dialer(proxy func(*url.URL) (*url.URL, error)) func(ctx context.
 		}}
 	plain := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		if isProxy(proxy, addr) {
+		if u, ok := ctx.Value(viaProxy{}).(*url.URL); ok && proxyAddr(u) == strings.ToLower(addr) {
 			return plain.DialContext(ctx, network, addr)
 		}
 		return checked.DialContext(ctx, network, addr)
 	}
 }
 
-// isProxy reports whether addr is a configured proxy's address.
-func isProxy(proxy func(*url.URL) (*url.URL, error), addr string) bool {
-	for _, scheme := range []string{"https", "http"} {
-		// A host that no NO_PROXY entry matches, to learn the proxy.
-		u, err := proxy(&url.URL{Scheme: scheme, Host: "ctxtra-proxy-probe.invalid"})
-		if err != nil || u == nil {
-			continue
-		}
-		port := u.Port()
-		if port == "" {
-			port = map[string]string{"http": "80", "https": "443", "socks5": "1080", "socks5h": "1080"}[u.Scheme]
-		}
-		if strings.EqualFold(net.JoinHostPort(u.Hostname(), port), addr) {
-			return true
-		}
+// proxyAddr is the host:port that ctxtra connects to for the proxy u.
+func proxyAddr(u *url.URL) string {
+	port := u.Port()
+	if port == "" {
+		port = map[string]string{"http": "80", "https": "443", "socks5": "1080", "socks5h": "1080"}[u.Scheme]
 	}
-	return false
+	return strings.ToLower(net.JoinHostPort(u.Hostname(), port))
 }
 
 // proxyFunc is the proxy for a URL from HTTPS_PROXY, HTTP_PROXY, NO_PROXY

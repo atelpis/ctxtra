@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -294,12 +295,35 @@ func TestRemoteHugeAnswer(t *testing.T) {
 		}
 	}))
 	t.Cleanup(huge.Close)
+	// Error answers too, whatever type they claim.
+	hugeError := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/403" {
+			w.WriteHeader(http.StatusForbidden)
+		} else {
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		chunk := []byte(strings.Repeat(" ", 1<<20))
+		for range 20 {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(hugeError.Close)
 	good := httptest.NewServer(streamable())
 	t.Cleanup(good.Close)
 	s := startWith(t, t.TempDir(), 5*time.Second, nil,
 		upstream.Server{ID: "huge", Name: "huge", URL: huge.URL + "/mcp"},
+		upstream.Server{ID: "forbidden", Name: "forbidden", URL: hugeError.URL + "/403"},
+		upstream.Server{ID: "failing", Name: "failing", URL: hugeError.URL + "/500"},
 		upstream.Server{ID: "good", Name: "good", URL: good.URL + "/mcp"})
 	if got := toolNames(s.tools(t)); !slices.Equal(got, []string{"good__echo"}) {
 		t.Errorf("tools %v", got)
+	}
+	var b strings.Builder
+	l := &limitedBody{rc: io.NopCloser(strings.NewReader(strings.Repeat("x", maxAnswer+10))), left: maxAnswer}
+	if n, err := io.Copy(&b, l); err == nil || n != maxAnswer {
+		t.Errorf("limited body: %d %v", n, err)
 	}
 }

@@ -159,8 +159,9 @@ func (s *Store) nextGeneration(old int64) int64 {
 	return max(s.now().UnixNano(), old+1)
 }
 
-// Logout deletes srv's tokens and secret values on this machine, under
-// its lock. The client registration stays, with a chosen callback port.
+// Logout deletes srv's tokens and secret values, the client secret too, on
+// this machine, under its lock. The client registration stays, with a
+// chosen callback port.
 // The provider isn't told: the grant stays valid there.
 func (s *Store) Logout(srv upstream.Server) error {
 	unlock, err := s.lock(srv)
@@ -173,7 +174,7 @@ func (s *Store) Logout(srv upstream.Server) error {
 	// Also without a record: an empty one with a new generation, so a
 	// first sign-in that is still waiting for the browser can't save.
 	_, err = s.updateLocked(srv, true, func(r *Record) error {
-		r.Token, r.Secrets = Token{}, Secrets{}
+		r.Token, r.Secrets, r.Client.Secret = Token{}, Secrets{}, ""
 		r.Generation = s.nextGeneration(r.Generation)
 		return nil
 	})

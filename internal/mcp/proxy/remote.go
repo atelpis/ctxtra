@@ -26,8 +26,9 @@ type Tokens interface {
 	// Rejected refreshes after s rejected token with 401.
 	Rejected(ctx context.Context, s upstream.Server, token string) (string, error)
 	// NeedsLogin and StepUp record why s needs sign-in, and are the error
-	// to return.
-	NeedsLogin(s upstream.Server, reason string) error
+	// to return. NeedsLogin records nothing when a sign-in newer than the
+	// rejected token (sent; "" for none) was stored meanwhile.
+	NeedsLogin(s upstream.Server, reason, sent string) error
 	StepUp(s upstream.Server, scopes []string) error
 }
 
@@ -113,8 +114,12 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	resp, err := t.send(req, body, headers, token)
-	if err != nil || resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
-		return limit(resp), err
+	if err != nil {
+		return nil, err
+	}
+	resp = limit(resp)
+	if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
+		return resp, nil
 	}
 	if resp.StatusCode == http.StatusForbidden {
 		return t.forbidden(resp)
@@ -124,23 +129,25 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, &creds.LoginError{Name: t.srv.Name, Reason: "the server wants a sign-in"}
 	}
 	if token == "" {
-		return nil, t.tokens.NeedsLogin(t.srv, "not signed in")
+		return nil, t.tokens.NeedsLogin(t.srv, "not signed in", "")
 	}
 	token, err = t.tokens.Rejected(req.Context(), t.srv, token)
 	if err != nil {
 		return nil, err
 	}
 	resp, err = t.send(req, body, headers, token)
-	switch {
-	case err != nil:
+	if err != nil {
 		return nil, err
-	case resp.StatusCode == http.StatusForbidden:
-		return t.forbidden(resp)
-	case resp.StatusCode != http.StatusUnauthorized:
-		return limit(resp), nil
 	}
-	drain(resp)
-	return nil, t.tokens.NeedsLogin(t.srv, "the server rejected the sign-in")
+	resp = limit(resp)
+	switch resp.StatusCode {
+	case http.StatusForbidden:
+		return t.forbidden(resp)
+	case http.StatusUnauthorized:
+		drain(resp)
+		return nil, t.tokens.NeedsLogin(t.srv, "the server rejected the sign-in", token)
+	}
+	return resp, nil
 }
 
 // forbidden handles a 403: insufficient_scope records the scopes it asks
@@ -196,10 +203,12 @@ func drain(resp *http.Response) {
 // mustn't exhaust the proxy, which serves the session's other servers too.
 const maxAnswer = 16 << 20
 
-// limit makes a JSON answer's body fail after maxAnswer bytes. Event
-// streams stay open and are read event by event.
+// limit makes an answer's body fail after maxAnswer bytes. Only a
+// successful event stream stays open without limit: it is read event by
+// event. Error answers are read whole, whatever they claim to be.
 func limit(resp *http.Response) *http.Response {
-	if resp != nil && !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+	stream := resp.StatusCode/100 == 2 && strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream")
+	if !stream {
 		resp.Body = &limitedBody{rc: resp.Body, left: maxAnswer}
 	}
 	return resp

@@ -2,6 +2,7 @@ package oauth
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -18,8 +19,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
 	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
@@ -239,16 +238,9 @@ func (f *SignIn) client(ctx context.Context, m *Metadata, redirect string) (cred
 	if m.Server.RegistrationEndpoint == "" {
 		return creds.Client{}, ErrNeedsClientID
 	}
-	reg, err := oauthex.RegisterClient(ctx, m.Server.RegistrationEndpoint, &oauthex.ClientRegistrationMetadata{
-		RedirectURIs:            []string{redirect},
-		TokenEndpointAuthMethod: "none",
-		GrantTypes:              []string{"authorization_code", "refresh_token"},
-		ResponseTypes:           []string{"code"},
-		ClientName:              "ctxtra",
-	}, f.HTTP)
+	reg, err := register(ctx, f.HTTP, m.Server.RegistrationEndpoint, redirect)
 	if err != nil {
-		// Not the error's text: it can quote the answer, client secret too.
-		return creds.Client{}, errors.New("registering ctxtra with the authorization server failed")
+		return creds.Client{}, err
 	}
 	c := creds.Client{ID: reg.ClientID, Secret: reg.ClientSecret, AuthMethod: reg.TokenEndpointAuthMethod,
 		TokenURL: tokenURL, Redirect: redirect, Registered: true}
@@ -259,6 +251,46 @@ func (f *SignIn) client(ctx context.Context, m *Metadata, redirect string) (cred
 		}
 	}
 	return c, nil
+}
+
+// registration is a dynamic client registration's answer (RFC 7591).
+type registration struct {
+	ClientID                string `json:"client_id"`
+	ClientSecret            string `json:"client_secret"`
+	TokenEndpointAuthMethod string `json:"token_endpoint_auth_method"`
+}
+
+// register registers ctxtra as a public client for redirect. Errors name
+// the status only: the answer can hold a client secret.
+func register(ctx context.Context, c *http.Client, endpoint, redirect string) (*registration, error) {
+	body, _ := json.Marshal(map[string]any{
+		"redirect_uris":              []string{redirect},
+		"token_endpoint_auth_method": "none",
+		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"response_types":             []string{"code"},
+		"client_name":                "ctxtra",
+		"application_type":           "native",
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("can't reach the authorization server's registration endpoint")
+	}
+	defer resp.Body.Close()
+	failed := errors.New("registering ctxtra with the authorization server failed")
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: HTTP %d", failed, resp.StatusCode)
+	}
+	var reg registration
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&reg); err != nil || reg.ClientID == "" {
+		return nil, failed
+	}
+	return &reg, nil
 }
 
 // callback is the redirect listener's handler. A request with another

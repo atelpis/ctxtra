@@ -171,3 +171,14 @@ func TestOrigin(t *testing.T) {
 		}
 	}
 }
+
+// An address that equals the proxy's is checked like any other when the
+// request doesn't go through the proxy.
+func TestDirectRequestToProxyAddress(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://127.0.0.1:1")
+	t.Setenv("NO_PROXY", "127.0.0.1")
+	t.Setenv("ALL_PROXY", "")
+	if err := get(Policy{}.Client(), "https://127.0.0.1:1/"); !errors.Is(err, ErrRefused) {
+		t.Errorf("a direct request to the proxy's address: %v", err)
+	}
+}

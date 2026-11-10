@@ -777,3 +777,40 @@ func TestLogoutCancelsFirstSignIn(t *testing.T) {
 		t.Errorf("SaveSignIn: %v", err)
 	}
 }
+
+// A 401 for an old token doesn't undo a sign-in that came meanwhile.
+func TestLateRejectionKeepsNewSignIn(t *testing.T) {
+	fake := oauthtest.New(t, oauthtest.Options{})
+	s, srv, tok := signedInStore(t, fake, t.TempDir())
+	if err := s.NeedsLogin(srv, "not signed in", ""); err == nil {
+		t.Fatal("no error")
+	}
+	if err := s.NeedsLogin(srv, "rejected", "an older token"); err == nil {
+		t.Fatal("no error")
+	}
+	if st, _ := s.State(srv); !st.SignedIn || st.NeedsLogin {
+		t.Errorf("state: %+v", st)
+	}
+	if err := s.NeedsLogin(srv, "rejected", tok.AccessToken); err == nil {
+		t.Fatal("no error")
+	}
+	if st, _ := s.State(srv); st.SignedIn || !st.NeedsLogin {
+		t.Errorf("state after the current token was rejected: %+v", st)
+	}
+}
+
+func TestLogoutDeletesClientSecret(t *testing.T) {
+	keyring.MockInit()
+	s := &Store{Dir: t.TempDir()}
+	s.EnsureKey()
+	srv := upstream.Server{ID: "gh", Name: "gh", URL: "https://api.example/mcp", ClientID: "app"}
+	if err := s.SetClientSecret(srv, "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Logout(srv); err != nil {
+		t.Fatal(err)
+	}
+	if r, _ := s.Load(srv); r == nil || r.Client.Secret != "" || r.Client.ID != "app" {
+		t.Errorf("record: %+v", r)
+	}
+}

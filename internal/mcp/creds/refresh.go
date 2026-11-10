@@ -338,12 +338,17 @@ func isLoopback(host string) bool {
 
 // NeedsLogin records that srv needs sign-in, for the hook's summary and
 // for mcp status, and is the error to return.
-func (s *Store) NeedsLogin(srv upstream.Server, reason string) error {
+// When the stored token is no longer sent, the one the server rejected,
+// a sign-in came meanwhile: the state stays as that sign-in left it.
+func (s *Store) NeedsLogin(srv upstream.Server, reason, sent string) error {
 	unlock, err := s.lock(srv)
 	if err != nil {
 		return &LoginError{Name: srv.Name, Reason: reason}
 	}
 	defer unlock()
+	if r, err := s.load(srv.ID); err == nil && r != nil && r.Matches(srv) && r.Token.Access != "" && r.Token.Access != sent {
+		return &LoginError{Name: srv.Name, Reason: reason}
+	}
 	return s.needsLogin(srv, reason)
 }
 

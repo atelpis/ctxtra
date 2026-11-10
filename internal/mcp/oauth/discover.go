@@ -7,16 +7,18 @@ package oauth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"slices"
 	"strings"
 
-	"github.com/modelcontextprotocol/go-sdk/auth"
 	"github.com/modelcontextprotocol/go-sdk/oauthex"
 
+	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/mcp/netguard"
 )
 
@@ -135,12 +137,12 @@ func Discover(ctx context.Context, c *http.Client, resource string, ch *Challeng
 		issuer = prm.AuthorizationServers[0]
 		m.ResourceScopes = prm.ScopesSupported
 	}
-	asm, err := auth.GetAuthServerMetadata(ctx, issuer, c)
+	asm, err := serverMetadata(ctx, c, issuer)
 	if err != nil {
-		return nil, fmt.Errorf("the authorization server %s: %w", issuer, err)
+		return nil, err
 	}
-	if asm == nil {
-		return nil, fmt.Errorf("found no authorization server metadata for %s", issuer)
+	if len(asm.CodeChallengeMethodsSupported) == 0 {
+		return nil, fmt.Errorf("the authorization server %s doesn't offer PKCE", issuer)
 	}
 	if !slices.Contains(asm.CodeChallengeMethodsSupported, "S256") {
 		return nil, fmt.Errorf("the authorization server %s doesn't offer PKCE with S256", issuer)
@@ -166,30 +168,81 @@ func resourceMetadata(ctx context.Context, c *http.Client, resource string, ch *
 	}
 	urls = append(urls, origin+"/.well-known/oauth-protected-resource")
 	for _, mu := range urls {
-		prm, err := oauthex.GetProtectedResourceMetadata(ctx, mu, resource, c)
-		if err == nil {
-			return prm, nil
-		}
-		if !notFound(ctx, c, mu) {
+		var prm oauthex.ProtectedResourceMetadata
+		found, err := getJSON(ctx, c, mu, &prm)
+		if err != nil {
 			return nil, fmt.Errorf("the server's protected resource metadata: %w", err)
 		}
+		if !found {
+			continue
+		}
+		// RFC 9728 3.3: the metadata is for this resource.
+		if creds.CanonicalURL(prm.Resource) != creds.CanonicalURL(resource) {
+			return nil, fmt.Errorf("the server's protected resource metadata is for another resource")
+		}
+		return &prm, nil
 	}
 	return nil, nil
 }
 
-// notFound reports whether u answers with a 4xx status: no document
-// there, so discovery goes on.
-func notFound(ctx context.Context, c *http.Client, u string) bool {
+// serverMetadata is the authorization server metadata of issuer (RFC
+// 8414, and OpenID Connect discovery), which must name that issuer.
+func serverMetadata(ctx context.Context, c *http.Client, issuer string) (*oauthex.AuthServerMeta, error) {
+	u, err := url.Parse(issuer)
+	if err != nil || u.Host == "" {
+		return nil, fmt.Errorf("the authorization server %q is not a URL", issuer)
+	}
+	if u.Scheme != "https" && !(u.Scheme == "http" && loopback(u.Hostname())) {
+		return nil, fmt.Errorf("the authorization server %s doesn't use HTTPS", netguard.Origin(u))
+	}
+	origin, p := netguard.Origin(u), strings.Trim(u.Path, "/")
+	var urls []string
+	if p == "" {
+		urls = []string{origin + "/.well-known/oauth-authorization-server", origin + "/.well-known/openid-configuration"}
+	} else {
+		urls = []string{origin + "/.well-known/oauth-authorization-server/" + p,
+			origin + "/.well-known/openid-configuration/" + p, origin + "/" + p + "/.well-known/openid-configuration"}
+	}
+	for _, mu := range urls {
+		var asm oauthex.AuthServerMeta
+		found, err := getJSON(ctx, c, mu, &asm)
+		if err != nil {
+			return nil, fmt.Errorf("the authorization server %s: %w", origin, err)
+		}
+		if !found {
+			continue
+		}
+		if strings.TrimSuffix(asm.Issuer, "/") != strings.TrimSuffix(issuer, "/") {
+			return nil, fmt.Errorf("the authorization server's metadata names another issuer than %s", issuer)
+		}
+		return &asm, nil
+	}
+	return nil, fmt.Errorf("found no authorization server metadata for %s", issuer)
+}
+
+// getJSON reads a JSON document at u into v; false when there is none (a
+// 4xx answer). Errors don't quote the answer.
+func getJSON(ctx context.Context, c *http.Client, u string, v any) (bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
-		return false
+		return false, err
 	}
+	req.Header.Set("Accept", "application/json")
 	resp, err := c.Do(req)
 	if err != nil {
-		return false
+		return false, err
 	}
-	resp.Body.Close()
-	return resp.StatusCode >= 400 && resp.StatusCode < 500
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode >= 400 && resp.StatusCode < 500:
+		return false, nil
+	case resp.StatusCode != http.StatusOK:
+		return false, fmt.Errorf("HTTP %d", resp.StatusCode)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(v); err != nil {
+		return false, errors.New("the answer isn't a JSON document")
+	}
+	return true, nil
 }
 
 // checkEndpoints refuses endpoints without HTTPS, except loopback ones of
