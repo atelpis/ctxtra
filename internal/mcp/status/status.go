@@ -58,14 +58,28 @@ func path(dir string) string {
 	return filepath.Join(Dir(), hex.EncodeToString(sum[:16])+".json")
 }
 
-// Write replaces the record of r.Dir.
+// Write replaces the record of r.Dir, unless it holds a later session's
+// start: a slow server of an older session in the folder must not hide
+// the newer one.
 func Write(r Record) error {
 	r.Version = version
 	data, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err
 	}
-	return fsutil.WriteFile(path(r.Dir), append(data, '\n'), 0o600)
+	p := path(r.Dir)
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
+	}
+	unlock, err := fsutil.LockTimeout(p+".lock", 2*time.Second)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if cur, ok, _ := Read(r.Dir); ok && cur.Started.After(r.Started) {
+		return nil
+	}
+	return fsutil.WriteFile(p, append(data, '\n'), 0o600)
 }
 
 // Read is the record of the session folder dir; ok is false without one.

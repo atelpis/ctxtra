@@ -2,13 +2,16 @@ package cli
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/ctxtra/ctxtra/internal/mcp/netguard"
 	sessionstatus "github.com/ctxtra/ctxtra/internal/mcp/status"
+	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 	"github.com/ctxtra/ctxtra/internal/paths"
 )
 
@@ -47,7 +50,7 @@ func (a *app) mcpStatus(dir string) int {
 	}
 	fmt.Fprintf(a.Out, "MCP servers of %s:\n", paths.Tilde(dir))
 	for _, s := range servers {
-		fmt.Fprintf(a.Out, "  %s  %s, %s\n", s.Name, describeServer(s), signIn(s))
+		fmt.Fprintf(a.Out, "  %s  %s, %s\n", s.Name, shortServer(s), signIn(s))
 	}
 	if !ok {
 		fmt.Fprintln(a.Out, "\nno session has started here with ctxtra's MCP server yet")
@@ -70,4 +73,17 @@ func (a *app) mcpStatus(dir string) int {
 
 func seconds(ms int64) string {
 	return fmt.Sprintf("%.1f s", float64(ms)/1000)
+}
+
+// shortServer is s without what can hold a secret, a URL's path and query
+// or a command's arguments: an agent runs this command, and the model
+// reads its output.
+func shortServer(s upstream.Server) string {
+	if s.Local() {
+		return "local, " + filepath.Base(s.Command[0])
+	}
+	if u, err := url.Parse(s.URL); err == nil && u.Host != "" {
+		return "remote, " + netguard.Origin(u)
+	}
+	return "remote"
 }

@@ -65,6 +65,10 @@ type Options struct {
 	// NeedsSignIn reports whether a server's state says it needs sign-in,
 	// from local files, for the instructions.
 	NeedsSignIn func(upstream.Server) bool
+	// KeepsFirstList is set for an agent that ignores tool list changes,
+	// such as Codex and Muse: tools that come later reach a new session
+	// only.
+	KeepsFirstList bool
 }
 
 // Run serves the agent over t until the agent closes it or ctx ends, then
@@ -241,8 +245,12 @@ func (p *proxy) instructions() string {
 	}
 	for _, s := range p.bound {
 		if p.o.NeedsSignIn(s) {
+			then := ", and its tools follow."
+			if p.o.KeepsFirstList {
+				then = "; its tools come in a new session."
+			}
 			text += "\n" + s.Name + " needs sign-in and has no tools now: the user runs `ctxtra mcp login " + s.Name +
-				"` in a terminal, and its tools follow."
+				"` in a terminal" + then
 		}
 	}
 	return text
@@ -374,6 +382,14 @@ func (p *proxy) start(ctx context.Context) {
 	p.bound = servers
 	close(p.resolved)
 	p.report = newReport(p.o, servers)
+	if p.isOpen() {
+		// The first list was answered while the servers were being found:
+		// each is missing from it, and may follow.
+		for _, s := range servers {
+			p.report.set(s.Name, status.Missing, "too slow for the first tool list: finding the folder's servers took too long", 0)
+		}
+		p.report.flush()
+	}
 	type result struct {
 		s     upstream.Server
 		up    *Upstream
@@ -844,6 +860,7 @@ func (p *proxy) watchExit(up *Upstream) {
 		st = "connection closed"
 	}
 	p.o.Log(Record{Event: "server ended", Server: up.Server.Name, Error: st})
+	p.report.set(up.Server.Name, status.Missing, "ended during the session: "+st, 0)
 	// A remote server whose sign-in ended with it comes back after a login.
 	if !up.Server.Local() && p.o.SignInState != nil {
 		if _, ok := p.o.SignInState(up.Server); !ok {

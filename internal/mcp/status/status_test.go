@@ -27,3 +27,20 @@ func TestFoldersKeepTheirRecords(t *testing.T) {
 		t.Error("a folder without a session has a record")
 	}
 }
+
+// An older session in the folder doesn't replace a newer one's record.
+func TestNewerSessionWins(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	now := time.Now().UTC()
+	newer := Record{Dir: "/d", Agent: "claude", Started: now, Servers: []Server{{Name: "pg", State: Ready}}}
+	older := Record{Dir: "/d", Agent: "codex", Started: now.Add(-time.Minute), Servers: []Server{{Name: "pg", State: Late, Ms: 15000}}}
+	if err := Write(newer); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(older); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := Read("/d"); got.Agent != "claude" {
+		t.Errorf("record: %+v", got)
+	}
+}

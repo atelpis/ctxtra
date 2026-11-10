@@ -301,7 +301,8 @@ func TestStatusRecord(t *testing.T) {
 			recs = append(recs, r)
 			mu.Unlock()
 		}
-	}, testServer(t, "fast"), testServer(t, "slow", "-delay", "1s"), upstream.Server{ID: "bad", Name: "bad", Command: []string{"/nonexistent/mcp"}})
+	}, testServer(t, "fast"), testServer(t, "slow", "-delay", "1s"), upstream.Server{ID: "bad", Name: "bad", Command: []string{"/nonexistent/mcp"}},
+		testServer(t, "dies", "-exit-after", "150ms"))
 	deadline := time.After(10 * time.Second)
 	for !slices.Contains(toolNames(s.tools(t)), "slow__echo") {
 		select {
@@ -330,6 +331,9 @@ func TestStatusRecord(t *testing.T) {
 	}
 	if last["slow"].State != status.Late || last["slow"].Ms < 1000 {
 		t.Errorf("last record: %+v", recs[len(recs)-1])
+	}
+	if !strings.HasPrefix(last["dies"].Reason, "ended during the session") || last["dies"].State != status.Missing {
+		t.Errorf("a server that ended: %+v", last["dies"])
 	}
 }
 
