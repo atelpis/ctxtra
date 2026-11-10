@@ -377,3 +377,17 @@ func TestAdoptDuplicateKey(t *testing.T) {
 		t.Errorf("secret: %q %v", v, err)
 	}
 }
+
+func TestEnsureKeyRemovesLeftoverTempFiles(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	os.MkdirAll(dir, 0o700)
+	tmp := filepath.Join(dir, ".tmp-123")
+	os.WriteFile(tmp, []byte("AGE-SECRET-KEY-1..."), 0o600)
+	if _, err := (&Store{Dir: dir}).EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Errorf("the temporary file stayed: %v", err)
+	}
+}

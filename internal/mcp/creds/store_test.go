@@ -714,3 +714,31 @@ func TestSecretsWaitForSave(t *testing.T) {
 	unlock()
 	<-done
 }
+
+// When the old record can't be put back either, there is none.
+func TestFailedRestore(t *testing.T) {
+	keyring.MockInit()
+	s := &Store{Dir: t.TempDir()}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, s, local, "old")
+	oldDir, oldFile := syncDir, syncFile
+	t.Cleanup(func() { syncDir, syncFile = oldDir, oldFile })
+	calls := 0
+	syncDir = func(string) error { return errors.New("I/O error") }
+	syncFile = func(f *os.File) error {
+		calls++
+		if calls > 1 {
+			return errors.New("I/O error")
+		}
+		return oldFile(f)
+	}
+	if err := s.SetSecrets(local, map[string]string{"PGPASSWORD": "new"}, nil); err == nil {
+		t.Error("the save didn't fail")
+	}
+	syncDir, syncFile = oldDir, oldFile
+	if v, err := secret(t, s, local); err == nil || v == "new" {
+		t.Errorf("secret: %q %v", v, err)
+	}
+}

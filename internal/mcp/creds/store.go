@@ -357,9 +357,16 @@ func (s *Store) save(r *Record) error {
 		// failed. Readers wait for the lock this process holds.
 		var nd *notDurable
 		if errors.As(err, &nd) {
+			// The old values were saved before: putting them back counts
+			// even when this folder sync fails again.
+			restored := false
 			if oldErr == nil {
-				_ = writeDurable(path, old)
-			} else {
+				rerr := writeDurable(path, old)
+				restored = rerr == nil || errors.As(rerr, &nd)
+			}
+			if !restored {
+				// No record is better than one whose save failed: the
+				// server needs sign-in again.
 				_ = os.Remove(path)
 			}
 		}

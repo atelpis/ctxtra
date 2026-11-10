@@ -145,6 +145,12 @@ func (s *Store) EnsureKey() (fileKey bool, err error) {
 	}
 	defer unlock()
 	s.forgetKey()
+	// A temporary file that a stopped key write left can hold a key.
+	if tmps, _ := filepath.Glob(filepath.Join(s.Dir, ".tmp-*")); len(tmps) > 0 {
+		for _, t := range tmps {
+			_ = os.Remove(t)
+		}
+	}
 
 	info, err := s.readKeyInfo()
 	if err != nil {
