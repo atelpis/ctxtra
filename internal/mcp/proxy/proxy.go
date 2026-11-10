@@ -23,6 +23,7 @@ import (
 
 	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/mcp/names"
+	"github.com/ctxtra/ctxtra/internal/mcp/status"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 )
 
@@ -58,6 +59,9 @@ type Options struct {
 	SignInPoll time.Duration
 	// Log records what happened; nil logs nothing.
 	Log func(Record)
+	// Report gets the session start's status record for the folder, for
+	// ctxtra mcp status; nil keeps none.
+	Report func(status.Record)
 }
 
 // Run serves the agent over t until the agent closes it or ctx ends, then
@@ -172,6 +176,65 @@ type proxy struct {
 	latest    map[string][]*mcp.Tool    // each server's last tool list before the first list was answered
 	stopping  bool                      // no more upstreams are added
 	ended     map[*Upstream]bool        // servers that ended during the session
+
+	report *report
+}
+
+// report is the session start's status record, written once the first
+// tool list was answered and again for each later change.
+type report struct {
+	mu      sync.Mutex
+	rec     status.Record
+	write   func(status.Record)
+	written bool
+}
+
+func newReport(o Options, servers []upstream.Server) *report {
+	if len(servers) == 0 {
+		// A folder without servers keeps no record.
+		return nil
+	}
+	r := &report{write: o.Report, rec: status.Record{Dir: o.Dir, Agent: o.Agent, Started: o.Start.UTC(),
+		DeadlineMs: o.Deadline.Milliseconds()}}
+	for _, s := range servers {
+		r.rec.Servers = append(r.rec.Servers, status.Server{Name: s.Name, State: status.Missing})
+	}
+	return r
+}
+
+// set records what happened to the server name.
+func (r *report) set(name, state, reason string, ms int64) {
+	if r == nil || r.write == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for i := range r.rec.Servers {
+		if r.rec.Servers[i].Name == name {
+			r.rec.Servers[i] = status.Server{Name: name, State: state, Reason: reason, Ms: ms}
+		}
+	}
+	if r.written {
+		r.write(r.copyLocked())
+	}
+}
+
+// flush writes the record, the first time when the first tool list was
+// answered.
+func (r *report) flush() {
+	if r == nil || r.write == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.written = true
+	r.write(r.copyLocked())
+}
+
+func (r *report) copyLocked() status.Record {
+	c := r.rec
+	c.Servers = slices.Clone(r.rec.Servers)
+	return c
 }
 
 // route is where a shown tool goes.
@@ -240,6 +303,7 @@ func (p *proxy) start(ctx context.Context) {
 	case <-ctx.Done():
 		return
 	}
+	p.report = newReport(p.o, servers)
 	type result struct {
 		s     upstream.Server
 		up    *Upstream
@@ -276,6 +340,7 @@ func (p *proxy) start(ctx context.Context) {
 			if r.err != nil {
 				rec.Error = errorKind(r.err)
 				p.o.Log(rec)
+				p.report.set(r.s.Name, status.Missing, rec.Error, 0)
 				var login *creds.LoginError
 				if errors.As(r.err, &login) && p.o.SignInState != nil {
 					p.wg.Go(func() { p.awaitSignIn(ctx, r.s) })
@@ -284,10 +349,13 @@ func (p *proxy) start(ctx context.Context) {
 			}
 			p.o.Log(rec)
 			if p.isOpen() {
-				p.o.Log(Record{Event: "late", Server: r.s.Name, Ms: time.Since(p.o.Start).Milliseconds()})
+				late := time.Since(p.o.Start).Milliseconds()
+				p.o.Log(Record{Event: "late", Server: r.s.Name, Ms: late})
+				p.report.set(r.s.Name, status.Late, "too slow for the first tool list", late)
 				p.setTools(r.up, r.tools)
 				continue
 			}
+			p.report.set(r.s.Name, status.Ready, "", time.Since(p.o.Start).Milliseconds())
 			first[r.s.Name] = r.tools
 		case <-deadline.C:
 			var slow []string
@@ -296,8 +364,12 @@ func (p *proxy) start(ctx context.Context) {
 			}
 			slices.Sort(slow)
 			p.o.Log(Record{Event: "deadline", Servers: slow})
+			for _, n := range slow {
+				p.report.set(n, status.Missing, "too slow for the first tool list", 0)
+			}
 			p.publish(first)
 			p.open()
+			p.report.flush()
 		case <-ctx.Done():
 			return
 		}
@@ -306,6 +378,9 @@ func (p *proxy) start(ctx context.Context) {
 		p.publish(first)
 		p.open()
 	}
+	// Also when the first list was answered while the servers were still
+	// being resolved: they all came late.
+	p.report.flush()
 }
 
 // awaitSignIn connects to s, which needs sign-in, once its state file
@@ -347,6 +422,7 @@ func (p *proxy) awaitSignIn(ctx context.Context, s upstream.Server) {
 		}
 		p.wg.Go(func() { p.watchExit(up) })
 		p.o.Log(Record{Event: "signed-in", Server: s.Name, Tools: len(tools)})
+		p.report.set(s.Name, status.Late, "signed in during the session", time.Since(p.o.Start).Milliseconds())
 		select {
 		case <-p.ready:
 		case <-ctx.Done():

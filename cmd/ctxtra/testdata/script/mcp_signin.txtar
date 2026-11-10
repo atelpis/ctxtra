@@ -23,6 +23,8 @@ stderr 'Opening your browser to sign in to linear_work'
 ! stderr 'private window'
 exec ctxtra mcp list
 stdout '^linear_work  remote, signed in with https://127.0.0.1:[0-9]+$'
+exec ctxtra doctor
+stdout '^  linear_work: remote, signed in with https://127.0.0.1:[0-9]+$'
 
 # A second server of the same issuer: the hint comes before the browser.
 exec ctxtra-tty mcp add linear_ctxtra $FAKE_MCP

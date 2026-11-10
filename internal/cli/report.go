@@ -473,13 +473,17 @@ func (r report) doctor(dir string, asJSON bool) int {
 		if runs == nil {
 			runs = []hook.Entry{}
 		}
-		writeJSON(r.Out, map[string]any{
+		out := map[string]any{
 			"ctxtra":  releaseInfo(cfg, state.Load(), r.version),
 			"config":  map[string]any{"file": cfg.File, "exists": statErr == nil, "binding_files": len(cfg.BindingFiles), "bindings": len(cfg.Bindings)},
 			"sources": sources, "session": session(res),
 			"files": hits(res.Files, false), "skills": hits(res.Skills, true), "agents_over": agentDrops(res),
 			"hooks": agents, "last_hook_runs": runs,
-		}, slices.Concat(sessionDiagnostics(res), diagnostics("error", others), diagnostics("notice", cfg.Notes)))
+		}
+		if experimental.MCP() && len(cfg.MCPServers) > 0 {
+			out["mcp"] = map[string]any{"key": keyLocation(), "servers": mcpInfos(cfg)}
+		}
+		writeJSON(r.Out, out, slices.Concat(sessionDiagnostics(res), diagnostics("error", others), diagnostics("notice", cfg.Notes)))
 		if ok {
 			return 0
 		}
@@ -518,6 +522,14 @@ func (r report) doctor(dir string, asJSON bool) int {
 		fmt.Fprintf(r.Out, "  NOTICE: %s\n", n)
 	}
 	r.sizeWarnings(res, "  ")
+
+	if experimental.MCP() && len(cfg.MCPServers) > 0 {
+		fmt.Fprintln(r.Out, "\nMCP servers:")
+		fmt.Fprintf(r.Out, "  credentials: %s\n", keyNote())
+		for _, s := range mcpInfos(cfg) {
+			fmt.Fprintf(r.Out, "  %s: %s, %s\n", s.Name, s.Kind, s.SignIn)
+		}
+	}
 
 	fmt.Fprintln(r.Out, "\nhooks:")
 	for _, a := range agents {

@@ -327,6 +327,10 @@ ctxtra mcp logout linear_work               # deletes the sign-in on this machin
   `--callback-port PORT`.
 - `logout` doesn't tell the provider: remove the grant in the provider's settings to end it there.
 
+When a session lacks a server's tools, `ctxtra mcp status` in that folder says why: the server needs sign-in,
+failed, or was too slow for the agent's first tool list. The session summary also names servers that need
+sign-in.
+
 A session's servers are fixed when it starts; their tools can still change. ctxtra waits for slow servers only as long as each agent
 waits for it: 1.5 seconds in Claude Code (later tools follow in its interactive mode), up to 10 in the others.
 A server that starts slower, such as one run with `npx`, can be missing from that session. In Codex, the

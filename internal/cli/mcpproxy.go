@@ -15,6 +15,7 @@ import (
 	"github.com/ctxtra/ctxtra/internal/experimental"
 	"github.com/ctxtra/ctxtra/internal/logfile"
 	"github.com/ctxtra/ctxtra/internal/mcp/proxy"
+	sessionstatus "github.com/ctxtra/ctxtra/internal/mcp/status"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/resolve"
@@ -41,7 +42,12 @@ func runProxy(args []string, stdio IO, version string) int {
 	store := openStore()
 	store.KeyTimeout = 3 * time.Second
 	o := proxy.Options{Agent: agent, Version: version, Dir: dir, Start: started, Servers: sessionServers, Log: log,
-		Deadline: mcpDeadline(agent), Secrets: store, Tokens: store, SignInState: store.SignInState}
+		Deadline: mcpDeadline(agent), Secrets: store, Tokens: store, SignInState: store.SignInState,
+		Report: func(r sessionstatus.Record) {
+			if err := sessionstatus.Write(r); err != nil {
+				log(proxy.Record{Event: "error", Error: "can't write the session's status record"})
+			}
+		}}
 	switch {
 	case !experimental.MCP():
 		o.Servers = func(string) ([]upstream.Server, []string) { return nil, nil }

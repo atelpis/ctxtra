@@ -391,3 +391,33 @@ func TestEnsureKeyRemovesLeftoverTempFiles(t *testing.T) {
 		t.Errorf("the temporary file stayed: %v", err)
 	}
 }
+
+// failingKeychain fails a test that touches it.
+type failingKeychain struct{ t *testing.T }
+
+func (k failingKeychain) get(time.Duration) (string, error) {
+	k.t.Error("the keychain was read")
+	return "", errNoKeychain
+}
+
+func (k failingKeychain) set(string) error {
+	k.t.Error("the keychain was written")
+	return errNoKeychain
+}
+
+// What the hook reads, a server's state, needs no key and no keychain.
+func TestStateNeedsNoKey(t *testing.T) {
+	keyring.MockInit()
+	dir := t.TempDir()
+	s := &Store{Dir: dir}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	setSecret(t, s, local, "pw")
+	old := kc
+	t.Cleanup(func() { kc = old })
+	kc = failingKeychain{t}
+	if st, err := (&Store{Dir: dir}).State(local); err != nil || !st.SignedIn {
+		t.Errorf("state: %+v %v", st, err)
+	}
+}

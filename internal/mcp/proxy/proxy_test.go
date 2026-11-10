@@ -23,6 +23,7 @@ import (
 
 	"github.com/ctxtra/ctxtra/internal/mcp/mcptest"
 	"github.com/ctxtra/ctxtra/internal/mcp/names"
+	"github.com/ctxtra/ctxtra/internal/mcp/status"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 )
 
@@ -264,6 +265,49 @@ func TestMissingSecrets(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("log: %+v", s.records())
+	}
+}
+
+// The session's status record says which server was too slow for the
+// first tool list, and how long it took.
+func TestStatusRecord(t *testing.T) {
+	var mu sync.Mutex
+	var recs []status.Record
+	s := startWith(t, t.TempDir(), 300*time.Millisecond, func(o *Options) {
+		o.Report = func(r status.Record) {
+			mu.Lock()
+			recs = append(recs, r)
+			mu.Unlock()
+		}
+	}, testServer(t, "fast"), testServer(t, "slow", "-delay", "1s"), upstream.Server{ID: "bad", Name: "bad", Command: []string{"/nonexistent/mcp"}})
+	deadline := time.After(10 * time.Second)
+	for !slices.Contains(toolNames(s.tools(t)), "slow__echo") {
+		select {
+		case <-s.changed:
+		case <-deadline:
+			t.Fatal("the slow server never came")
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(recs) < 2 {
+		t.Fatalf("records: %+v", recs)
+	}
+	byName := func(r status.Record) map[string]status.Server {
+		m := map[string]status.Server{}
+		for _, s := range r.Servers {
+			m[s.Name] = s
+		}
+		return m
+	}
+	first, last := byName(recs[0]), byName(recs[len(recs)-1])
+	if first["fast"].State != status.Ready || first["slow"].State != status.Missing || first["slow"].Reason != "too slow for the first tool list" ||
+		first["bad"].State != status.Missing || first["bad"].Reason != "program not found" {
+		t.Errorf("first record: %+v", recs[0])
+	}
+	if last["slow"].State != status.Late || last["slow"].Ms < 1000 {
+		t.Errorf("last record: %+v", recs[len(recs)-1])
 	}
 }
 

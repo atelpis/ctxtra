@@ -55,7 +55,7 @@ only with ` + experimental.MCPVar + `=1.`,
 			return group(c, args)
 		},
 	}
-	c.AddCommand(a.mcpAddCmd(), a.mcpListCmd(), a.mcpShowCmd(), a.mcpLoginCmd(), a.mcpLogoutCmd(), a.mcpRemoveCmd(), mcpProxyCmd())
+	c.AddCommand(a.mcpAddCmd(), a.mcpListCmd(), a.mcpShowCmd(), a.mcpStatusCmd(), a.mcpLoginCmd(), a.mcpLogoutCmd(), a.mcpRemoveCmd(), mcpProxyCmd())
 	return c
 }
 
@@ -383,6 +383,43 @@ type mcpInfo struct {
 	Notes   string   `json:"notes,omitempty"`
 }
 
+// mcpInfos are the config's servers with their sign-in state.
+func mcpInfos(cfg *config.Config) []mcpInfo {
+	out := []mcpInfo{}
+	for _, s := range cfg.MCPServers {
+		kind := "remote"
+		if s.Local() {
+			kind = "local"
+		}
+		out = append(out, mcpInfo{s.Name, kind, s.URL, s.Command, signIn(s), s.Notes})
+	}
+	return out
+}
+
+// keyLocation is where the key of the credentials is: "keychain", the key
+// file's path, or "" when nothing is stored yet.
+func keyLocation() string {
+	switch loc := creds.Open().KeyLocation(); loc {
+	case "the OS keychain":
+		return "keychain"
+	default:
+		return loc
+	}
+}
+
+// keyNote says where the key of the credentials is, with the warning for
+// a key file.
+func keyNote() string {
+	switch loc := keyLocation(); loc {
+	case "":
+		return "none stored yet"
+	case "keychain":
+		return "encrypted, the key in the OS keychain"
+	default:
+		return "encrypted, the key in " + paths.Tilde(loc) + " (no OS keychain was usable: any process of yours can read the credentials)"
+	}
+}
+
 // signIn is a server's sign-in state, from local files only.
 func signIn(s upstream.Server) string {
 	switch {
@@ -416,14 +453,7 @@ func (a *app) mcpListCmd() *cobra.Command {
 		Args:    noArgs,
 		RunE: a.mcpRun(func(*cobra.Command, []string) error {
 			cfg := config.Load(paths.ConfigPath(), newReader())
-			out := []mcpInfo{}
-			for _, s := range cfg.MCPServers {
-				kind := "remote"
-				if s.Local() {
-					kind = "local"
-				}
-				out = append(out, mcpInfo{s.Name, kind, s.URL, s.Command, signIn(s), s.Notes})
-			}
+			out := mcpInfos(cfg)
 			var problems []string
 			for _, p := range cfg.Problems {
 				if strings.Contains(p, "mcp-servers") {
@@ -439,6 +469,9 @@ func (a *app) mcpListCmd() *cobra.Command {
 			}
 			for _, s := range out {
 				fmt.Fprintf(a.Out, "%s  %s, %s\n", s.Name, s.Kind, s.SignIn)
+			}
+			if len(out) > 0 {
+				fmt.Fprintf(a.Out, "credentials: %s\n", keyNote())
 			}
 			for _, p := range problems {
 				fmt.Fprintf(a.Out, "PROBLEM: %s\n", p)

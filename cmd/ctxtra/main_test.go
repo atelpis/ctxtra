@@ -363,7 +363,12 @@ func mcpClient(ts *testscript.TestScript, neg bool, args []string) {
 	}
 	bin, err := exec.LookPath("ctxtra")
 	ts.Check(err)
-	cmd := exec.Command(bin, "mcp", "proxy", "test", "--unknown-flag")
+	// $MCP_AGENT is the agent the proxy starts for, with its deadline.
+	agentName := ts.Getenv("MCP_AGENT")
+	if agentName == "" {
+		agentName = "test"
+	}
+	cmd := exec.Command(bin, "mcp", "proxy", agentName, "--unknown-flag")
 	cmd.Dir = ts.MkAbs(args[0])
 	cmd.Env = environ(ts)
 	var stderr strings.Builder

@@ -754,6 +754,33 @@ the same way.
 values again. `ctxtra mcp logout NAME` deletes the tokens and secret values on this machine, like the agents'
 own logout; the provider isn't told, so the grant stays valid there until it expires or the user removes it.
 
+### Sign-in state and missing tools
+
+The session summary names each bound server whose state file says it needs sign-in, after an empty line, like
+the [notices](#notices):
+
+```text
+⚠ linear_work needs sign-in: run ctxtra mcp login linear_work
+```
+
+The hook reads only the state files: no key, no keychain, no network. A server that no session has tried yet
+has no state, and no line.
+
+The proxy records, per session folder, what the last session started there got from each bound server: its
+tools in the first tool list, later (too slow for it, or signed in during the session; Codex and Muse don't
+get those tools), or none, and why. `ctxtra mcp status [DIR]` shows that record with the folder's servers and
+their sign-in state, from local files only:
+
+```text
+the last session here (codex, 2026-11-10 14:08:19) waited 10.0 s for the first tool list:
+  linear_work  ready after 0.4 s
+  pg  later: too slow for the first tool list, after 15.2 s; Codex and Muse sessions didn't get its tools
+```
+
+The records are in `~/.ctxtra/mcp/status`, one per folder, so a session in one folder never changes another's.
+`ctxtra mcp list` and `doctor` show each server's sign-in state and where the key of the credentials is, with the
+warning for a key file.
+
 ### Credentials
 
 A server's secret values, its OAuth client registration and its tokens are stored in `~/.ctxtra/mcp`, never in
