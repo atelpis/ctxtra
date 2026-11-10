@@ -182,12 +182,10 @@ func (a *app) mcpLogin(name string, withSecrets bool, o signInOptions) int {
 	store := openStore()
 	ctx, stop := signalContext()
 	defer stop()
-	// The client secret is asked for only when one is stored: a public
-	// app has none.
 	r, _ := store.Load(s)
 	hasClientSecret := r != nil && r.Matches(s) && r.Client.Secret != ""
 	ask := func() error {
-		v, err := askSecrets(a.IO, a.noInput, name, s.SecretEnv, s.SecretHeaders, hasClientSecret)
+		v, err := askSecrets(a.IO, a.noInput, name, s.SecretEnv, s.SecretHeaders, false)
 		if err != nil || v.empty() {
 			return err
 		}
@@ -220,11 +218,16 @@ func (a *app) mcpLogin(name string, withSecrets bool, o signInOptions) int {
 	if a.noInput || !Interactive(a.IO) {
 		return fail(fmt.Errorf("%w: run ctxtra mcp login %s in your own terminal", errNeedsTerminal, name))
 	}
+	// The user's own app: its secret is asked for when none is stored
+	// (after a logout), or again with --secrets. The sign-in stores it,
+	// with the callback port.
+	if s.ClientID != "" && (withSecrets || !hasClientSecret) {
+		if o.clientSecret, err = askClientSecret(a.IO, a.noInput, name); err != nil {
+			return fail(err)
+		}
+	}
 	if err := signInTo(ctx, a.IO, store, s, ch, o); err != nil {
 		return fail(err)
-	}
-	if o.callbackPort != 0 {
-		_ = store.SetCallbackPort(s, o.callbackPort)
 	}
 	fmt.Fprintln(a.Out, "Sessions already running in Codex or Muse get its tools in a new session.")
 	return 0

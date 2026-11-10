@@ -25,10 +25,12 @@ type Tokens interface {
 	Token(ctx context.Context, s upstream.Server) (string, error)
 	// Rejected refreshes after s rejected token with 401.
 	Rejected(ctx context.Context, s upstream.Server, token string) (string, error)
+	// Generation is s's sign-in generation, 0 without credentials.
+	Generation(s upstream.Server) (int64, error)
 	// NeedsLogin and StepUp record why s needs sign-in, and are the error
-	// to return. NeedsLogin records nothing when a sign-in newer than the
-	// rejected token (sent; "" for none) was stored meanwhile.
-	NeedsLogin(s upstream.Server, reason, sent string) error
+	// to return. NeedsLogin records nothing when the generation isn't gen
+	// any more: a sign-in or new secret values came meanwhile.
+	NeedsLogin(s upstream.Server, reason string, gen int64) error
 	StepUp(s upstream.Server, scopes []string) error
 }
 
@@ -80,6 +82,12 @@ type authTransport struct {
 }
 
 func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// The generation before the credentials are read: a 401 is about
+	// these, not about a sign-in that comes while the request runs.
+	var gen int64
+	if t.tokens != nil {
+		gen, _ = t.tokens.Generation(t.srv)
+	}
 	// Secret headers are read for each request, so a logout or a new
 	// value applies to running sessions too.
 	headers := map[string]string{}
@@ -129,7 +137,7 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, &creds.LoginError{Name: t.srv.Name, Reason: "the server wants a sign-in"}
 	}
 	if token == "" {
-		return nil, t.tokens.NeedsLogin(t.srv, "not signed in", "")
+		return nil, t.tokens.NeedsLogin(t.srv, "not signed in", gen)
 	}
 	token, err = t.tokens.Rejected(req.Context(), t.srv, token)
 	if err != nil {
@@ -145,7 +153,7 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return t.forbidden(resp)
 	case http.StatusUnauthorized:
 		drain(resp)
-		return nil, t.tokens.NeedsLogin(t.srv, "the server rejected the sign-in", token)
+		return nil, t.tokens.NeedsLogin(t.srv, "the server rejected the sign-in", gen)
 	}
 	return resp, nil
 }

@@ -781,17 +781,18 @@ func TestLogoutCancelsFirstSignIn(t *testing.T) {
 // A 401 for an old token doesn't undo a sign-in that came meanwhile.
 func TestLateRejectionKeepsNewSignIn(t *testing.T) {
 	fake := oauthtest.New(t, oauthtest.Options{})
-	s, srv, tok := signedInStore(t, fake, t.TempDir())
-	if err := s.NeedsLogin(srv, "not signed in", ""); err == nil {
+	s, srv, _ := signedInStore(t, fake, t.TempDir())
+	cur, _ := s.Generation(srv)
+	if err := s.NeedsLogin(srv, "not signed in", 0); err == nil {
 		t.Fatal("no error")
 	}
-	if err := s.NeedsLogin(srv, "rejected", "an older token"); err == nil {
+	if err := s.NeedsLogin(srv, "rejected", cur-1); err == nil {
 		t.Fatal("no error")
 	}
 	if st, _ := s.State(srv); !st.SignedIn || st.NeedsLogin {
 		t.Errorf("state: %+v", st)
 	}
-	if err := s.NeedsLogin(srv, "rejected", tok.AccessToken); err == nil {
+	if err := s.NeedsLogin(srv, "rejected", cur); err == nil {
 		t.Fatal("no error")
 	}
 	if st, _ := s.State(srv); st.SignedIn || !st.NeedsLogin {

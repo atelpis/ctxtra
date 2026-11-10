@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -285,13 +286,24 @@ func TestRemoteLoopbackOnlyForLoopback(t *testing.T) {
 // A server whose answer is too large is left out, and the proxy keeps
 // serving the others.
 func TestRemoteHugeAnswer(t *testing.T) {
+	// The most one request wrote: the proxy may try the server twice
+	// (streamable HTTP, then SSE).
+	var written atomic.Int64
 	huge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		chunk := []byte(strings.Repeat(" ", 1<<20))
-		for range 20 {
-			if _, err := w.Write(chunk); err != nil {
+		var n int64
+		defer func() {
+			for cur := written.Load(); n > cur && !written.CompareAndSwap(cur, n); cur = written.Load() {
+			}
+		}()
+		for range 64 {
+			m, err := w.Write(chunk)
+			n += int64(m)
+			if err != nil {
 				return
 			}
+			w.(http.Flusher).Flush()
 		}
 	}))
 	t.Cleanup(huge.Close)
@@ -320,6 +332,12 @@ func TestRemoteHugeAnswer(t *testing.T) {
 		upstream.Server{ID: "good", Name: "good", URL: good.URL + "/mcp"})
 	if got := toolNames(s.tools(t)); !slices.Equal(got, []string{"good__echo"}) {
 		t.Errorf("tools %v", got)
+	}
+	// The proxy stopped reading at the limit: the server could write
+	// little more than that, the sockets' buffers, before the connection
+	// closed. Without the limit it writes all 64 MiB.
+	if w := written.Load(); w > maxAnswer+8<<20 {
+		t.Errorf("the server wrote %d bytes", w)
 	}
 	var b strings.Builder
 	l := &limitedBody{rc: io.NopCloser(strings.NewReader(strings.Repeat("x", maxAnswer+10))), left: maxAnswer}

@@ -18,9 +18,10 @@ import (
 // secretReader asks for secret values: in the terminal without echo, or
 // one line each from stdin when it isn't a terminal, for scripts.
 type secretReader struct {
-	stdio   IO
-	noInput bool
-	lines   *bufio.Reader
+	stdio    IO
+	noInput  bool
+	optional bool // an empty value is an answer
+	lines    *bufio.Reader
 }
 
 func (r *secretReader) read(prompt string) (string, error) {
@@ -46,7 +47,17 @@ func (r *secretReader) read(prompt string) (string, error) {
 	return r.check(prompt, strings.TrimRight(v, "\r\n"))
 }
 
+// askClientSecret asks for the secret of the server's own OAuth app; an
+// empty answer is an app without one.
+func askClientSecret(stdio IO, noInput bool, server string) (string, error) {
+	r := &secretReader{stdio: stdio, noInput: noInput, optional: true}
+	return r.read("client secret for " + server + " (empty for an app without one)")
+}
+
 func (r *secretReader) check(prompt, v string) (string, error) {
+	if r.optional {
+		return v, nil
+	}
 	if v == "" {
 		return "", fmt.Errorf("%s: the value is empty", prompt)
 	}
