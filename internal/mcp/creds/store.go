@@ -175,6 +175,9 @@ type Client struct {
 	// client_secret_basic, client_secret_post or none.
 	AuthMethod string `json:"auth_method"`
 	TokenURL   string `json:"token_url"`
+	// Registered is set for a dynamic registration, made for Redirect.
+	Registered bool   `json:"registered"`
+	Redirect   string `json:"redirect"`
 }
 
 // Token is the OAuth grant.

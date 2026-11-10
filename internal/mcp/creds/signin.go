@@ -60,7 +60,7 @@ func (s *Store) SaveSignIn(srv upstream.Server, gen int64, issuer string, c Clie
 	if err != nil {
 		return nil, err
 	}
-	_ = s.writeState(fileID(srv.ID), func(st *State) {
+	_ = s.setState(srv, func(st *State) {
 		signedIn(r)(st)
 		st.Scopes = nil
 	})
@@ -84,7 +84,7 @@ func (s *Store) SetSecrets(srv upstream.Server, env, headers map[string]string) 
 		return err
 	}
 	if r.Token.Access == "" {
-		_ = s.writeState(fileID(srv.ID), signedIn(r))
+		_ = s.setState(srv, signedIn(r))
 	}
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -180,14 +181,14 @@ func (s *Store) refreshLocked(ctx context.Context, srv upstream.Server, rejected
 	if err := s.save(r); err != nil {
 		return "", fmt.Errorf("the credentials of %s could not be saved: %w", srv.Name, err)
 	}
-	_ = s.writeState(fileID(srv.ID), signedIn(r))
+	_ = s.setState(srv, signedIn(r))
 	return tok.Access, nil
 }
 
 // needsLogin records that srv needs sign-in, and is the error to return.
 // The caller holds the lock.
 func (s *Store) needsLogin(srv upstream.Server, reason string) error {
-	_ = s.writeState(fileID(srv.ID), func(st *State) {
+	_ = s.setState(srv, func(st *State) {
 		st.SignedIn, st.NeedsLogin, st.Reason = false, true, reason
 	})
 	return &LoginError{srv.Name, reason}
@@ -215,37 +216,47 @@ type tokenResponse struct {
 // refresh asks r's token endpoint for new tokens. Errors name the OAuth
 // error code only: a provider's description can repeat request values.
 func (s *Store) refresh(ctx context.Context, r *Record) (Token, error) {
-	if err := checkEndpoint(r.Client.TokenURL, r.URL); err != nil {
-		return Token{}, err
-	}
-	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
-	defer cancel()
 	form := url.Values{"grant_type": {"refresh_token"}, "refresh_token": {r.Token.Refresh}}
 	if r.URL != "" {
 		form.Set("resource", r.URL)
 	}
-	basic := r.Client.AuthMethod == "client_secret_basic" && r.Client.Secret != ""
+	t, _, err := s.RequestToken(ctx, r.Client, form)
+	return t, err
+}
+
+// RequestToken posts form to c's token endpoint, with c's client
+// authentication, and returns the tokens and the answer's other fields.
+// It never follows a redirect, which would send the form on, and its
+// errors name the OAuth error code or the HTTP status only: a provider's
+// text can repeat what was sent. The endpoint must use HTTPS, except a
+// loopback one for a loopback resource.
+func (s *Store) RequestToken(ctx context.Context, c Client, form url.Values) (Token, map[string]json.RawMessage, error) {
+	if err := checkEndpoint(c.TokenURL, form.Get("resource")); err != nil {
+		return Token{}, nil, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, refreshTimeout)
+	defer cancel()
+	form = maps.Clone(form)
+	basic := c.AuthMethod == "client_secret_basic" && c.Secret != ""
 	if !basic {
-		form.Set("client_id", r.Client.ID)
-		if r.Client.Secret != "" {
-			form.Set("client_secret", r.Client.Secret)
+		form.Set("client_id", c.ID)
+		if c.Secret != "" {
+			form.Set("client_secret", c.Secret)
 		}
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.Client.TokenURL, strings.NewReader(form.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {
-		return Token{}, err
+		return Token{}, nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	if basic {
-		req.SetBasicAuth(url.QueryEscape(r.Client.ID), url.QueryEscape(r.Client.Secret))
+		req.SetBasicAuth(url.QueryEscape(c.ID), url.QueryEscape(c.Secret))
 	}
 	client := http.DefaultClient
 	if s.HTTP != nil {
 		client = s.HTTP
 	}
-	// A redirect would send the refresh token and client secret on to
-	// another address: never follow one.
 	noRedirect := *client
 	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	client = &noRedirect
@@ -255,30 +266,34 @@ func (s *Store) refresh(ctx context.Context, r *Record) (Token, error) {
 		// Not the error's text: it can quote the URL, or a header of the
 		// answer.
 		if errors.Is(err, context.DeadlineExceeded) {
-			return Token{}, fmt.Errorf("the token endpoint %s didn't answer in time", req.URL.Host)
+			return Token{}, nil, fmt.Errorf("the token endpoint %s didn't answer in time", req.URL.Host)
 		}
-		return Token{}, fmt.Errorf("can't reach the token endpoint %s", req.URL.Host)
+		return Token{}, nil, fmt.Errorf("can't reach the token endpoint %s", req.URL.Host)
 	}
 	defer resp.Body.Close()
-	var tr tokenResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxRecord)).Decode(&tr); err != nil && resp.StatusCode == http.StatusOK {
-		return Token{}, errors.New("the token endpoint's answer isn't JSON")
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxRecord))
+	if err != nil {
+		return Token{}, nil, fmt.Errorf("can't read the token endpoint's answer")
 	}
+	var tr tokenResponse
+	var extra map[string]json.RawMessage
+	if err := json.Unmarshal(body, &tr); err != nil && resp.StatusCode == http.StatusOK {
+		return Token{}, nil, errors.New("the token endpoint's answer isn't JSON")
+	}
+	_ = json.Unmarshal(body, &extra)
 	if resp.StatusCode != http.StatusOK || tr.Error != "" {
 		if tr.Error == "invalid_grant" {
-			return Token{}, errInvalidGrant
+			return Token{}, nil, errInvalidGrant
 		}
-		// Only known codes: the text is the provider's, and can repeat
-		// what was sent.
 		if slices.Contains(oauthErrors, tr.Error) {
-			return Token{}, fmt.Errorf("the token endpoint answered %s", tr.Error)
+			return Token{}, nil, fmt.Errorf("the token endpoint answered %s", tr.Error)
 		}
-		return Token{}, fmt.Errorf("the token endpoint answered HTTP %d", resp.StatusCode)
+		return Token{}, nil, fmt.Errorf("the token endpoint answered HTTP %d", resp.StatusCode)
 	}
 	if tr.AccessToken == "" {
-		return Token{}, errors.New("the token endpoint's answer has no access token")
+		return Token{}, nil, errors.New("the token endpoint's answer has no access token")
 	}
-	return newToken(tr, now), nil
+	return newToken(tr, now), extra, nil
 }
 
 // newToken is the Token of a token endpoint's answer, received at now.

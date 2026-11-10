@@ -67,6 +67,8 @@ type Options struct {
 	// Resource serves requests with a valid token at /mcp; nil answers
 	// 200 with {"ok":true}.
 	Resource http.Handler
+	// Account adds an ID token with this email to sign-in answers.
+	Account string
 }
 
 // Server is a running fake authorization server, also its resource
@@ -171,6 +173,7 @@ func (s *Server) AddClient(id, secret string, redirects ...string) {
 
 // Tokens are a token endpoint's answer.
 type Tokens struct {
+	IDToken      string `json:"id_token,omitempty"`
 	AccessToken  string `json:"access_token"`
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int    `json:"expires_in,omitempty"`
@@ -409,6 +412,10 @@ func (s *Server) token(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		out := s.issueLocked(c.grant, true)
 		s.mu.Unlock()
+		if s.o.Account != "" {
+			claims, _ := json.Marshal(map[string]string{"email": s.o.Account})
+			out.IDToken = "e30." + base64.RawURLEncoding.EncodeToString(claims) + ".sig"
+		}
 		writeJSON(w, http.StatusOK, out)
 	case "refresh_token":
 		if s.o.OnRefresh != nil {
