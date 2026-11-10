@@ -192,7 +192,7 @@ func serverMetadata(ctx context.Context, c *http.Client, issuer string) (*oauthe
 	if err != nil || u.Host == "" {
 		return nil, fmt.Errorf("the authorization server %q is not a URL", issuer)
 	}
-	if u.Scheme != "https" && !(u.Scheme == "http" && loopback(u.Hostname())) {
+	if u.Scheme != "https" && (u.Scheme != "http" || !loopback(u.Hostname())) {
 		return nil, fmt.Errorf("the authorization server %s doesn't use HTTPS", netguard.Origin(u))
 	}
 	origin, p := netguard.Origin(u), strings.Trim(u.Path, "/")
