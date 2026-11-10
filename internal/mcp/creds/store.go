@@ -345,7 +345,24 @@ func (s *Store) save(r *Record) error {
 	if err := w.Close(); err != nil {
 		return err
 	}
-	if err := writeDurable(s.recordPath(r.ID, version), buf.Bytes()); err != nil {
+	// load reads at most maxRecord: a larger record could never be read.
+	if buf.Len() > maxRecord {
+		return fmt.Errorf("the credentials are larger than %d bytes", maxRecord)
+	}
+	path := s.recordPath(r.ID, version)
+	old, oldErr := os.ReadFile(path)
+	if err := writeDurable(path, buf.Bytes()); err != nil {
+		// The new record is in place but not known to be on the disk: put
+		// the old one back, so that no reader uses values whose save
+		// failed. Readers wait for the lock this process holds.
+		var nd *notDurable
+		if errors.As(err, &nd) {
+			if oldErr == nil {
+				_ = writeDurable(path, old)
+			} else {
+				_ = os.Remove(path)
+			}
+		}
 		return err
 	}
 	r.raw = data
@@ -589,8 +606,18 @@ func writeDurable(path string, data []byte) error {
 		return err
 	}
 	if err := syncDir(dir); err != nil {
-		return err
+		return &notDurable{err}
 	}
 	// The folder may be new: its own entry must reach the disk too.
-	return syncDir(filepath.Dir(dir))
+	if err := syncDir(filepath.Dir(dir)); err != nil {
+		return &notDurable{err}
+	}
+	return nil
 }
+
+// notDurable is a write that replaced the file but whose folder couldn't
+// be synced.
+type notDurable struct{ err error }
+
+func (e *notDurable) Error() string { return e.err.Error() }
+func (e *notDurable) Unwrap() error { return e.err }

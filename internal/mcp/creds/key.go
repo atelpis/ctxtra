@@ -244,6 +244,15 @@ func (s *Store) adoptKey() (string, *age.X25519Identity, error) {
 	case !errors.Is(err, os.ErrNotExist):
 		return "", nil, err
 	}
+	// The same key in both places: a keychain write that couldn't be read
+	// back left a file too. The keychain is the place; the file goes, so
+	// no backup copies the key in clear text.
+	if len(keys) == 2 && keys[0].id.String() == keys[1].id.String() {
+		if err := os.Remove(s.keyPath()); err != nil {
+			return "", nil, err
+		}
+		return inKeychain, keys[0].id, nil
+	}
 	for _, k := range keys {
 		if s.readsAny(k.id) {
 			return k.loc, k.id, nil
