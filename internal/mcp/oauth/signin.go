@@ -48,7 +48,9 @@ type SignIn struct {
 	NoBrowser   bool
 	// CallbackPort is the listener's port; 0 picks one.
 	CallbackPort int
-	// ClientSecret is the secret of Server.ClientID, if it has one.
+	// ClientSecret is the secret of Server.ClientID, if it has one; ""
+	// uses the stored one, when it was stored for the same authorization
+	// server.
 	ClientSecret string
 	// Scopes are asked for besides the server's own: an earlier sign-in's,
 	// and those a 403 asked for.
@@ -79,6 +81,14 @@ var ErrNeedsClientID = errors.New("the server's authorization server accepts onl
 // token request, and the save, which fails when another sign-in or a
 // removal finished meanwhile. ch is the server's 401 challenge.
 func (f *SignIn) Run(ctx context.Context, ch *Challenge) (*Result, error) {
+	// One limit for the whole sign-in, discovery and registration too, so
+	// the listener's port is never held longer.
+	timeout := f.Timeout
+	if timeout == 0 {
+		timeout = SignInTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 	gen, err := f.Store.Generation(f.Server)
 	if err != nil {
 		return nil, err
@@ -128,12 +138,6 @@ func (f *SignIn) Run(ctx context.Context, ch *Challenge) (*Result, error) {
 		authURL += "?" + q.Encode()
 	}
 
-	timeout := f.Timeout
-	if timeout == 0 {
-		timeout = SignInTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
 	got := make(chan url.Values, 2)
 	srv := &http.Server{Handler: callback(state, got), ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
@@ -205,8 +209,19 @@ func (f *SignIn) Run(ctx context.Context, ch *Challenge) (*Result, error) {
 // dynamic registration (the stored one when it has this redirect).
 func (f *SignIn) client(ctx context.Context, m *Metadata, redirect string) (creds.Client, error) {
 	tokenURL := m.Server.TokenEndpoint
+	stored, _ := f.Store.Load(f.Server)
+	// Made for another server or authorization server: nothing of it goes
+	// to this one. A client secret stored before the first sign-in has no
+	// issuer yet.
+	if stored != nil && (!stored.Matches(f.Server) || stored.Issuer != "" && stored.Issuer != m.Server.Issuer) {
+		stored = nil
+	}
 	if f.Server.ClientID != "" {
-		c := creds.Client{ID: f.Server.ClientID, Secret: f.ClientSecret, AuthMethod: "none", TokenURL: tokenURL}
+		secret := f.ClientSecret
+		if secret == "" && stored != nil && stored.Client.ID == f.Server.ClientID {
+			secret = stored.Client.Secret
+		}
+		c := creds.Client{ID: f.Server.ClientID, Secret: secret, AuthMethod: "none", TokenURL: tokenURL}
 		if c.Secret != "" {
 			c.AuthMethod = "client_secret_post"
 			if len(m.Server.TokenEndpointAuthMethodsSupported) == 0 || slices.Contains(m.Server.TokenEndpointAuthMethodsSupported, "client_secret_basic") {
@@ -218,9 +233,8 @@ func (f *SignIn) client(ctx context.Context, m *Metadata, redirect string) (cred
 	if ClientMetadataURL != "" && m.Server.ClientIDMetadataDocumentSupported {
 		return creds.Client{ID: ClientMetadataURL, AuthMethod: "none", TokenURL: tokenURL}, nil
 	}
-	if r, err := f.Store.Load(f.Server); err == nil && r != nil && r.Matches(f.Server) &&
-		r.Client.Registered && r.Client.Redirect == redirect && r.Client.TokenURL == tokenURL {
-		return r.Client, nil
+	if stored != nil && stored.Client.Registered && stored.Client.Redirect == redirect && stored.Client.TokenURL == tokenURL {
+		return stored.Client, nil
 	}
 	if m.Server.RegistrationEndpoint == "" {
 		return creds.Client{}, ErrNeedsClientID

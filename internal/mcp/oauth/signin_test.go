@@ -450,3 +450,26 @@ func TestCommitRefuses(t *testing.T) {
 		t.Errorf("stored: %+v", r)
 	}
 }
+
+// A stored client secret goes only to the authorization server it was
+// used with.
+func TestStoredSecretStaysWithItsIssuer(t *testing.T) {
+	_, f := setup(t, oauthtest.Options{})
+	f.Server.ClientID = "app"
+	if err := f.Store.SetClientSecret(f.Server, "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+	m := &Metadata{Server: &oauthex.AuthServerMeta{Issuer: "https://first.example", TokenEndpoint: "https://first.example/token"}}
+	c, err := f.client(context.Background(), m, "http://127.0.0.1:1/callback")
+	if err != nil || c.Secret != "s3cret" {
+		t.Fatalf("before the first sign-in: %+v %v", c, err)
+	}
+	gen, _ := f.Store.Generation(f.Server)
+	if _, err := f.Store.SaveSignIn(f.Server, gen, "https://first.example", c, creds.Token{Access: "a"}); err != nil {
+		t.Fatal(err)
+	}
+	m.Server.Issuer, m.Server.TokenEndpoint = "https://evil.example", "https://evil.example/token"
+	if c, err := f.client(context.Background(), m, "http://127.0.0.1:1/callback"); err != nil || c.Secret != "" {
+		t.Errorf("another issuer got %+v %v", c, err)
+	}
+}

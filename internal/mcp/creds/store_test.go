@@ -760,3 +760,20 @@ func TestLogoutCancelsPendingSignIn(t *testing.T) {
 		t.Error("signed in after logout")
 	}
 }
+
+// A first sign-in, with no record yet, is cancelled by a logout too.
+func TestLogoutCancelsFirstSignIn(t *testing.T) {
+	keyring.MockInit()
+	s := &Store{Dir: t.TempDir()}
+	if _, err := s.EnsureKey(); err != nil {
+		t.Fatal(err)
+	}
+	srv := upstream.Server{ID: "x", Name: "x", URL: "https://mcp.example/mcp"}
+	gen, _ := s.Generation(srv)
+	if err := s.Logout(srv); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SaveSignIn(srv, gen, "https://auth.example", Client{}, Token{Access: "late"}); !errors.Is(err, ErrSignInChanged) {
+		t.Errorf("SaveSignIn: %v", err)
+	}
+}

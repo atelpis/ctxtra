@@ -280,3 +280,26 @@ func TestRemoteLoopbackOnlyForLoopback(t *testing.T) {
 		t.Errorf("a plain HTTP server on loopback: %v %+v", got, s.records())
 	}
 }
+
+// A server whose answer is too large is left out, and the proxy keeps
+// serving the others.
+func TestRemoteHugeAnswer(t *testing.T) {
+	huge := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		chunk := []byte(strings.Repeat(" ", 1<<20))
+		for range 20 {
+			if _, err := w.Write(chunk); err != nil {
+				return
+			}
+		}
+	}))
+	t.Cleanup(huge.Close)
+	good := httptest.NewServer(streamable())
+	t.Cleanup(good.Close)
+	s := startWith(t, t.TempDir(), 5*time.Second, nil,
+		upstream.Server{ID: "huge", Name: "huge", URL: huge.URL + "/mcp"},
+		upstream.Server{ID: "good", Name: "good", URL: good.URL + "/mcp"})
+	if got := toolNames(s.tools(t)); !slices.Equal(got, []string{"good__echo"}) {
+		t.Errorf("tools %v", got)
+	}
+}

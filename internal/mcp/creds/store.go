@@ -12,6 +12,7 @@ package creds
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -53,7 +54,7 @@ type Store struct {
 	HTTP *http.Client
 	// Client is the HTTP client for token requests about the server at
 	// resource, under that server's network rules.
-	Client func(resource string) *http.Client
+	Client func(ctx context.Context, resource string) *http.Client
 	// LockTimeout bounds the wait for a server's lock; 0 is 30 seconds.
 	LockTimeout time.Duration
 	// Now is the clock; nil is time.Now.

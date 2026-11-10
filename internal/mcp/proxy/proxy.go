@@ -698,6 +698,12 @@ func (p *proxy) watchExit(up *Upstream) {
 		st = "connection closed"
 	}
 	p.o.Log(Record{Event: "server ended", Server: up.Server.Name, Error: st})
+	// A remote server whose sign-in ended with it comes back after a login.
+	if !up.Server.Local() && p.o.SignInState != nil {
+		if _, ok := p.o.SignInState(up.Server); !ok {
+			p.wg.Go(func() { p.awaitSignIn(p.ctx, up.Server) })
+		}
+	}
 }
 
 // tokenKey is a progress token as a map key. The spec allows strings and

@@ -170,12 +170,15 @@ func (s *Store) Logout(srv upstream.Server) error {
 	defer unlock()
 	// A new generation: a sign-in that started before the logout can't
 	// save.
-	_, err = s.updateLocked(srv, false, func(r *Record) error {
+	// Also without a record: an empty one with a new generation, so a
+	// first sign-in that is still waiting for the browser can't save.
+	_, err = s.updateLocked(srv, true, func(r *Record) error {
 		r.Token, r.Secrets = Token{}, Secrets{}
 		r.Generation = s.nextGeneration(r.Generation)
 		return nil
 	})
-	if errors.Is(err, ErrDeleted) {
+	if errors.Is(err, ErrNoKey) {
+		// No key, so no sign-in has started: nothing to cancel.
 		err = nil
 	}
 	if err != nil {

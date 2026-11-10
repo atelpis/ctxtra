@@ -708,11 +708,13 @@ checks every request, not only the configured URL:
   ULA) are allowed only when the server itself is on one, and loopback only when the server is on loopback.
 - `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `ALL_PROXY` (also lower case) are honored, and the certificates of
   `SSL_CERT_FILE` and `SSL_CERT_DIR` are trusted next to the system's. Through a proxy, ctxtra checks the target's
-  addresses as this machine resolves them.
+  addresses as this machine resolves them, and refuses a name that doesn't resolve here unless it is the
+  server's own. The proxy resolves the name again: a proxy that resolves it to another address isn't covered.
 
 ### Sign-in
 
-A remote server that answers a request without a token with 401 uses OAuth. Only `ctxtra mcp add` and `ctxtra
+A remote server that answers a request without a token with 401 and a Bearer challenge uses OAuth; an older
+SSE server is asked with GET. Only `ctxtra mcp add` and `ctxtra
 mcp login`, in the user's terminal, sign in; the proxy and the hook never do. Without a terminal, or with
 `--no-input`, they fail and change nothing; `--no-login` adds the server without signing in.
 

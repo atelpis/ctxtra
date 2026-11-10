@@ -27,8 +27,8 @@ import (
 // server's network rules.
 func openStore() *creds.Store {
 	s := creds.Open()
-	s.Client = func(resource string) *http.Client {
-		p, err := netguard.For(context.Background(), resource)
+	s.Client = func(ctx context.Context, resource string) *http.Client {
+		p, err := netguard.For(ctx, resource)
 		if err != nil {
 			// Nothing is reachable: For failed on the server's name.
 			p = netguard.Policy{}
@@ -80,20 +80,16 @@ func signInTo(ctx context.Context, stdio IO, store *creds.Store, s upstream.Serv
 	st, _ := store.State(s)
 	var scopes []string
 	r, _ := store.Load(s)
-	secret := o.clientSecret
 	port := o.callbackPort
 	if r != nil && r.Matches(s) {
 		scopes = append(scopes, r.Token.Scopes...)
-		if secret == "" && r.Client.ID == s.ClientID {
-			secret = r.Client.Secret
-		}
 		if port == 0 {
 			port = r.Client.CallbackPort
 		}
 	}
 	scopes = append(scopes, st.Scopes...)
 	f := &oauth.SignIn{Server: s, Store: store, HTTP: p.Client(), Out: stdio.Err, In: stdio.In,
-		OpenBrowser: openBrowser, NoBrowser: o.noBrowser, CallbackPort: port, ClientSecret: secret, Scopes: scopes,
+		OpenBrowser: openBrowser, NoBrowser: o.noBrowser, CallbackPort: port, ClientSecret: o.clientSecret, Scopes: scopes,
 		Commit: stillDeclared(s)}
 	res, err := f.Run(ctx, ch)
 	if err != nil {
@@ -112,9 +108,9 @@ func signInTo(ctx context.Context, stdio IO, store *creds.Store, s upstream.Serv
 	return nil
 }
 
-// stillDeclared saves a sign-in only while the config still has s as it
-// was when the sign-in started, under the config's lock: a server removed
-// or changed meanwhile gets no credentials.
+// stillDeclared saves a sign-in or secret values only while the config
+// still has s as it was when they were asked for, under the config's lock:
+// a server removed or changed meanwhile gets no credentials.
 func stillDeclared(s upstream.Server) func(save func() error) error {
 	return func(save func() error) error {
 		return config.WithLock(func() error {
@@ -186,12 +182,16 @@ func (a *app) mcpLogin(name string, withSecrets bool, o signInOptions) int {
 	store := openStore()
 	ctx, stop := signalContext()
 	defer stop()
+	// The client secret is asked for only when one is stored: a public
+	// app has none.
+	r, _ := store.Load(s)
+	hasClientSecret := r != nil && r.Matches(s) && r.Client.Secret != ""
 	ask := func() error {
-		v, err := askSecrets(a.IO, a.noInput, name, s.SecretEnv, s.SecretHeaders, s.ClientID != "")
+		v, err := askSecrets(a.IO, a.noInput, name, s.SecretEnv, s.SecretHeaders, hasClientSecret)
 		if err != nil || v.empty() {
 			return err
 		}
-		return storeSecrets(a.Err, store, s, v)
+		return stillDeclared(s)(func() error { return storeSecrets(a.Err, store, s, v) })
 	}
 	if s.Local() {
 		if len(s.SecretEnv) == 0 {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -113,7 +114,7 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	resp, err := t.send(req, body, headers, token)
 	if err != nil || resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
-		return resp, err
+		return limit(resp), err
 	}
 	if resp.StatusCode == http.StatusForbidden {
 		return t.forbidden(resp)
@@ -136,7 +137,7 @@ func (t *authTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	case resp.StatusCode == http.StatusForbidden:
 		return t.forbidden(resp)
 	case resp.StatusCode != http.StatusUnauthorized:
-		return resp, nil
+		return limit(resp), nil
 	}
 	drain(resp)
 	return nil, t.tokens.NeedsLogin(t.srv, "the server rejected the sign-in")
@@ -190,6 +191,38 @@ func drain(resp *http.Response) {
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
 	resp.Body.Close()
 }
+
+// maxAnswer bounds a JSON answer: the SDK reads one whole, and a server
+// mustn't exhaust the proxy, which serves the session's other servers too.
+const maxAnswer = 16 << 20
+
+// limit makes a JSON answer's body fail after maxAnswer bytes. Event
+// streams stay open and are read event by event.
+func limit(resp *http.Response) *http.Response {
+	if resp != nil && !strings.HasPrefix(resp.Header.Get("Content-Type"), "text/event-stream") {
+		resp.Body = &limitedBody{rc: resp.Body, left: maxAnswer}
+	}
+	return resp
+}
+
+type limitedBody struct {
+	rc   io.ReadCloser
+	left int64
+}
+
+func (b *limitedBody) Read(p []byte) (int, error) {
+	if b.left <= 0 {
+		return 0, errors.New("the server's answer is too large")
+	}
+	if int64(len(p)) > b.left {
+		p = p[:b.left]
+	}
+	n, err := b.rc.Read(p)
+	b.left -= int64(n)
+	return n, err
+}
+
+func (b *limitedBody) Close() error { return b.rc.Close() }
 
 func insufficientScope(resp *http.Response) bool {
 	for _, h := range resp.Header.Values("WWW-Authenticate") {

@@ -261,7 +261,7 @@ func (s *Store) RequestToken(ctx context.Context, c Client, form url.Values) (To
 	case s.HTTP != nil:
 		client = s.HTTP
 	case s.Client != nil:
-		client = s.Client(form.Get("resource"))
+		client = s.Client(ctx, form.Get("resource"))
 	}
 	noRedirect := *client
 	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
