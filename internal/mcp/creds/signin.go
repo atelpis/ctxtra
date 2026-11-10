@@ -110,13 +110,13 @@ func (s *Store) Secrets(srv upstream.Server) (env, headers map[string]string, er
 	r, err := s.loadShared(srv)
 	switch {
 	case errors.Is(err, errUnreadable):
-		return nil, nil, &LoginError{srv.Name, "its secret values can't be read"}
+		return nil, nil, &LoginError{Name: srv.Name, Reason: "its secret values can't be read"}
 	case err != nil:
 		return nil, nil, err
 	case r == nil:
-		return nil, nil, &LoginError{srv.Name, "its secret values are not set"}
+		return nil, nil, &LoginError{Name: srv.Name, Reason: "its secret values are not set"}
 	case !r.Matches(srv):
-		return nil, nil, &LoginError{srv.Name, "its secret values were set for another address or command"}
+		return nil, nil, &LoginError{Name: srv.Name, Reason: "its secret values were set for another address or command"}
 	}
 	env, headers = map[string]string{}, map[string]string{}
 	var missing []string
@@ -136,7 +136,7 @@ func (s *Store) Secrets(srv upstream.Server) (env, headers map[string]string, er
 	}
 	if len(missing) > 0 {
 		slices.Sort(missing)
-		return nil, nil, &LoginError{srv.Name, fmt.Sprintf("no value is set for %s", strings.Join(missing, ", "))}
+		return nil, nil, &LoginError{Name: srv.Name, Reason: fmt.Sprintf("no value is set for %s", strings.Join(missing, ", "))}
 	}
 	return env, headers, nil
 }

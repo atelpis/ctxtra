@@ -293,7 +293,7 @@ func random() string {
 // that isn't one: the provider controls it.
 func safeCode(s string) string {
 	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r == '_') {
+		if (r < 'a' || r > 'z') && r != '_' {
 			return "an error"
 		}
 	}

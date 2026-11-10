@@ -35,6 +35,9 @@ const (
 type LoginError struct {
 	Name   string
 	Reason string
+	// Never is set for a server with no sign-in at all, which may not use
+	// OAuth.
+	Never bool
 }
 
 func (e *LoginError) Error() string {
@@ -83,13 +86,13 @@ func (s *Store) fresh(r *Record) bool {
 func usable(srv upstream.Server, r *Record, err error) error {
 	switch {
 	case errors.Is(err, errUnreadable):
-		return &LoginError{srv.Name, "its credentials can't be read"}
+		return &LoginError{Name: srv.Name, Reason: "its credentials can't be read"}
 	case err != nil:
 		return err
 	case r == nil || r.Token.Access == "":
-		return &LoginError{srv.Name, "not signed in"}
+		return &LoginError{Name: srv.Name, Reason: "not signed in", Never: true}
 	case !r.Matches(srv):
-		return &LoginError{srv.Name, "the sign-in was for another address"}
+		return &LoginError{Name: srv.Name, Reason: "the sign-in was for another address"}
 	}
 	return nil
 }
@@ -191,7 +194,7 @@ func (s *Store) needsLogin(srv upstream.Server, reason string) error {
 	_ = s.setState(srv, func(st *State) {
 		st.SignedIn, st.NeedsLogin, st.Reason = false, true, reason
 	})
-	return &LoginError{srv.Name, reason}
+	return &LoginError{Name: srv.Name, Reason: reason}
 }
 
 // oauthErrors are the error codes of a token endpoint (RFC 6749 5.2,
@@ -328,4 +331,45 @@ func isLoopback(host string) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// NeedsLogin records that srv needs sign-in, for the hook's summary and
+// for mcp status, and is the error to return.
+func (s *Store) NeedsLogin(srv upstream.Server, reason string) error {
+	unlock, err := s.lock(srv)
+	if err != nil {
+		return &LoginError{Name: srv.Name, Reason: reason}
+	}
+	defer unlock()
+	return s.needsLogin(srv, reason)
+}
+
+// StepUp records the scopes that srv asked for with 403
+// insufficient_scope, so that the next login asks for them, and is the
+// error to return.
+func (s *Store) StepUp(srv upstream.Server, scopes []string) error {
+	reason := "the server needs more permissions"
+	unlock, err := s.lock(srv)
+	if err != nil {
+		return &LoginError{Name: srv.Name, Reason: reason}
+	}
+	defer unlock()
+	_ = s.setState(srv, func(st *State) {
+		st.NeedsLogin, st.Reason = true, reason
+		st.Scopes = append(st.Scopes, scopes...)
+		slices.Sort(st.Scopes)
+		st.Scopes = slices.Compact(st.Scopes)
+	})
+	return &LoginError{Name: srv.Name, Reason: reason}
+}
+
+// SignInState is srv's sign-in generation and whether it is signed in,
+// from its state file only: the proxy checks it every few seconds while
+// the server waits for sign-in.
+func (s *Store) SignInState(srv upstream.Server) (int64, bool) {
+	st, err := s.State(srv)
+	if err != nil {
+		return 0, false
+	}
+	return st.Generation, st.SignedIn
 }

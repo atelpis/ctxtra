@@ -14,12 +14,14 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/mcp/names"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 )
@@ -45,8 +47,15 @@ type Options struct {
 	// Connect starts a session with one server; nil uses a Dialer with
 	// Secrets.
 	Connect func(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*Upstream, error)
-	// Secrets has the servers' secret values.
+	// Secrets has the servers' secret values, Tokens their OAuth tokens.
 	Secrets Secrets
+	Tokens  Tokens
+	// SignInState is a server's sign-in generation and whether it is
+	// signed in, from local files: a server missing because it needs
+	// sign-in is connected when they change. nil doesn't wait.
+	SignInState func(upstream.Server) (int64, bool)
+	// SignInPoll is how often SignInState is read; 0 is 3 seconds.
+	SignInPoll time.Duration
 	// Log records what happened; nil logs nothing.
 	Log func(Record)
 }
@@ -59,7 +68,10 @@ func Run(ctx context.Context, o Options, t mcp.Transport) error {
 		o.Deadline = Deadline
 	}
 	if o.Connect == nil {
-		o.Connect = Dialer{Secrets: o.Secrets}.Dial
+		o.Connect = Dialer{Secrets: o.Secrets, Tokens: o.Tokens}.Dial
+	}
+	if o.SignInPoll == 0 {
+		o.SignInPoll = 3 * time.Second
 	}
 	if o.Log == nil {
 		o.Log = func(Record) {}
@@ -264,6 +276,10 @@ func (p *proxy) start(ctx context.Context) {
 			if r.err != nil {
 				rec.Error = errorKind(r.err)
 				p.o.Log(rec)
+				var login *creds.LoginError
+				if errors.As(r.err, &login) && p.o.SignInState != nil {
+					p.wg.Go(func() { p.awaitSignIn(ctx, r.s) })
+				}
 				continue
 			}
 			p.o.Log(rec)
@@ -289,6 +305,49 @@ func (p *proxy) start(ctx context.Context) {
 	if !p.isOpen() {
 		p.publish(first)
 		p.open()
+	}
+}
+
+// awaitSignIn connects to s, which needs sign-in, once its state file
+// says it was signed in again, and adds its tools with a list change.
+// The session's set of servers doesn't change: s is one of them.
+func (p *proxy) awaitSignIn(ctx context.Context, s upstream.Server) {
+	gen, _ := p.o.SignInState(s)
+	tick := time.NewTicker(p.o.SignInPoll)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		g, ok := p.o.SignInState(s)
+		if !ok || g == gen {
+			continue
+		}
+		gen = g
+		up, tools, err := p.connect(ctx, s)
+		var login *creds.LoginError
+		if errors.As(err, &login) {
+			continue
+		}
+		if err != nil {
+			p.o.Log(Record{Event: "connect", Server: s.Name, Error: errorKind(err)})
+			return
+		}
+		if !p.add(up) {
+			up.Close()
+			return
+		}
+		p.wg.Go(func() { p.watchExit(up) })
+		p.o.Log(Record{Event: "signed-in", Server: s.Name, Tools: len(tools)})
+		select {
+		case <-p.ready:
+		case <-ctx.Done():
+			return
+		}
+		p.setTools(up, tools)
+		return
 	}
 }
 
@@ -529,7 +588,7 @@ func (p *proxy) call(ctx context.Context, req *mcp.CallToolRequest) (res *mcp.Ca
 			p.o.Log(Record{Event: "call", Server: server, Error: "panic"})
 		}
 	}()
-	params := &mcp.CallToolParams{Meta: req.Params.Meta, Name: r.name, Arguments: req.Params.Arguments}
+	params := &mcp.CallToolParams{Meta: forwardMeta(req.Params.Meta), Name: r.name, Arguments: req.Params.Arguments}
 	if len(req.Params.Arguments) == 0 {
 		params.Arguments = nil
 	}
@@ -551,13 +610,35 @@ func (p *proxy) call(ctx context.Context, req *mcp.CallToolRequest) (res *mcp.Ca
 	defer stop()
 	defer context.AfterFunc(p.ctx, stop)()
 	res, err = r.up.Session.CallTool(ctx, params)
+	var login *creds.LoginError
 	switch {
+	case errors.As(err, &login):
+		// The agent and the user see what to do; never a browser.
+		p.o.Log(Record{Event: "call", Server: server, Error: errorKind(err)})
+		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: login.Error()}}}, nil
 	case err != nil:
 		p.o.Log(Record{Event: "call", Server: server, Error: errorKind(err)})
 	case res.IsError:
 		p.o.Log(Record{Event: "call", Server: server, Error: "tool error"})
 	}
 	return res, err
+}
+
+// forwardMeta is a call's _meta without the protocol's own keys
+// (io.modelcontextprotocol/...): they describe the agent's session with
+// the proxy, not the proxy's with the server, and a server can refuse a
+// request that carries another session's protocol version.
+func forwardMeta(m mcp.Meta) mcp.Meta {
+	if m == nil {
+		return nil
+	}
+	out := mcp.Meta{}
+	for k, v := range m {
+		if !strings.HasPrefix(k, "io.modelcontextprotocol/") {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // stop ends every server session and stops the local servers, also those

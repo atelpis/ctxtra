@@ -14,6 +14,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ctxtra/ctxtra/internal/mcp/creds"
+	"github.com/ctxtra/ctxtra/internal/mcp/netguard"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 )
 
@@ -86,9 +88,6 @@ type Secrets interface {
 	Secrets(s upstream.Server) (env, headers map[string]string, err error)
 }
 
-// ErrRemote is the error for a remote server, which this version can't
-// connect to yet.
-var ErrRemote = errors.New("remote servers are not supported yet")
 
 // Dial starts a session with s, a server bound to a session in dir,
 // without secret values.
@@ -101,6 +100,9 @@ type Dialer struct {
 	// Secrets has the servers' secret values; without it, a server that
 	// has some can't start.
 	Secrets Secrets
+	// Tokens has remote servers' OAuth tokens; without it, requests go
+	// without one.
+	Tokens Tokens
 	// Stderr gets a local server's stderr, for debugging; nil drops it.
 	Stderr io.Writer
 }
@@ -109,7 +111,7 @@ type Dialer struct {
 // gets its own secret values.
 func (d Dialer) Dial(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*Upstream, error) {
 	if !s.Local() {
-		return nil, ErrRemote
+		return d.dialRemote(ctx, s, c)
 	}
 	var secrets map[string]string
 	if len(s.SecretEnv) > 0 {
@@ -248,6 +250,7 @@ func errorKind(err error) string {
 	var exit *exec.ExitError
 	var rpc *jsonrpc.Error
 	var ended exited
+	var login *creds.LoginError
 	switch {
 	case errors.As(err, &ended):
 		return "server " + ended.state
@@ -255,9 +258,13 @@ func errorKind(err error) string {
 		return "cancelled"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "timeout"
-	case errors.Is(err, ErrSecrets), errors.Is(err, ErrRemote), errors.Is(err, ErrTooManyTools):
+	case errors.Is(err, ErrSecrets), errors.Is(err, ErrTooManyTools):
 		// These say why without the server's own words.
 		return err.Error()
+	case errors.As(err, &login):
+		return "needs sign-in: " + login.Reason
+	case errors.Is(err, netguard.ErrRefused):
+		return "refused by ctxtra's network rules"
 	case errors.Is(err, exec.ErrNotFound), errors.Is(err, os.ErrNotExist):
 		return "program not found"
 	case errors.Is(err, exec.ErrDot):

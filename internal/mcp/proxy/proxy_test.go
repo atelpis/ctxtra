@@ -80,15 +80,24 @@ func start(t *testing.T, dir string, deadline time.Duration, servers ...upstream
 // startSecrets is start with secret values from secrets.
 func startSecrets(t *testing.T, dir string, deadline time.Duration, secrets Secrets, servers ...upstream.Server) *session {
 	t.Helper()
+	return startWith(t, dir, deadline, func(o *Options) { o.Secrets = secrets }, servers...)
+}
+
+// startWith is start with options that set changes.
+func startWith(t *testing.T, dir string, deadline time.Duration, set func(*Options), servers ...upstream.Server) *session {
+	t.Helper()
 	s := &session{changed: make(chan struct{}, 10), done: make(chan error, 1), prog: make(chan *mcp.ProgressNotificationParams, 10)}
 	ct, st := mcp.NewInMemoryTransports()
-	o := Options{Agent: "test", Dir: dir, Deadline: deadline, Secrets: secrets,
+	o := Options{Agent: "test", Dir: dir, Deadline: deadline,
 		Servers: func(string) ([]upstream.Server, []string) { return servers, nil },
 		Log: func(r Record) {
 			s.logMu.Lock()
 			s.log = append(s.log, r)
 			s.logMu.Unlock()
 		}}
+	if set != nil {
+		set(&o)
+	}
 	go func() { s.done <- Run(context.Background(), o, st) }()
 	c := mcp.NewClient(&mcp.Implementation{Name: "agent", Version: "1"}, &mcp.ClientOptions{
 		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
@@ -432,7 +441,7 @@ func TestFailingServer(t *testing.T) {
 	exits.Command = []string{"/bin/sh", "-c", "exit 3"}
 	secret := testServer(t, "secret")
 	secret.SecretEnv = []string{"TOKEN"}
-	remote := upstream.Server{ID: "r", Name: "r", URL: "https://example.com/mcp"}
+	remote := upstream.Server{ID: "r", Name: "r", URL: "https://169.254.169.254/mcp"}
 	dies := testServer(t, "dies", "-exit-now")
 	s := start(t, t.TempDir(), 5*time.Second, bad, testServer(t, "good"), exits, secret, remote, dies)
 	got := toolNames(s.tools(t))
@@ -446,7 +455,7 @@ func TestFailingServer(t *testing.T) {
 		}
 	}
 	want := map[string]string{"bad": "program not found", "good": "", "exits": "connection closed",
-		"secret": "secret values are not available", "r": "remote servers are not supported yet", "dies": "server exit status 17"}
+		"secret": "secret values are not available", "r": "refused by ctxtra's network rules", "dies": "server exit status 17"}
 	for k, v := range want {
 		if errs[k] != v && (k != "exits" || !strings.HasPrefix(errs[k], "server exit")) {
 			t.Errorf("%s: %q, want %q", k, errs[k], v)
