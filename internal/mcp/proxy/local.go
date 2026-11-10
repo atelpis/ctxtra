@@ -88,7 +88,6 @@ type Secrets interface {
 	Secrets(s upstream.Server) (env, headers map[string]string, err error)
 }
 
-
 // Dial starts a session with s, a server bound to a session in dir,
 // without secret values.
 func Dial(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*Upstream, error) {

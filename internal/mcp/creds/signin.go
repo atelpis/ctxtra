@@ -156,3 +156,37 @@ func lookupHeader(h map[string]string, name string) (string, bool) {
 func (s *Store) nextGeneration(old int64) int64 {
 	return max(s.now().UnixNano(), old+1)
 }
+
+// Logout deletes srv's tokens and secret values on this machine, under
+// its lock. The client registration stays, with a chosen callback port.
+// The provider isn't told: the grant stays valid there.
+func (s *Store) Logout(srv upstream.Server) error {
+	unlock, err := s.lock(srv)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	_, err = s.updateLocked(srv, false, func(r *Record) error {
+		r.Token, r.Secrets = Token{}, Secrets{}
+		return nil
+	})
+	if errors.Is(err, ErrDeleted) {
+		err = nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.setState(srv, func(st *State) {
+		st.SignedIn, st.NeedsLogin, st.Reason = false, false, "signed out"
+	})
+}
+
+// SetCallbackPort stores the redirect listener's port for srv, under its
+// lock.
+func (s *Store) SetCallbackPort(srv upstream.Server, port int) error {
+	_, err := s.Update(srv, true, func(r *Record) error {
+		r.Client.CallbackPort = port
+		return nil
+	})
+	return err
+}

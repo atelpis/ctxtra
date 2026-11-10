@@ -96,6 +96,7 @@ func (f *SignIn) Run(ctx context.Context, ch *Challenge) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	client.CallbackPort = f.CallbackPort
 	issuer := m.Server.Issuer
 	if others := f.Store.ServersOf(issuer, f.Server); len(others) > 0 {
 		fmt.Fprintf(f.Out, "You are already signed in to %s as %s. The provider may use the account of your browser's\n"+

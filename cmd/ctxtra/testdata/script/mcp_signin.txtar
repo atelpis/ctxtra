@@ -1,0 +1,64 @@
+# Remote servers with OAuth: ctxtra mcp add signs in, in the terminal,
+# through the browser ($BROWSER), and lists the tools sessions see; login
+# signs in again, logout deletes the sign-in on this machine only, and the
+# proxy uses the stored tokens. Tests have no keychain: the key is a file.
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+env BROWSER=fakebrowser
+fakeauth account=me@example.com
+
+# Dry run: no sign-in, nothing stored.
+exec ctxtra-tty mcp add linear_work $FAKE_MCP --dry-run
+stdout 'would add the MCP server linear_work'
+! exists .ctxtra/mcp
+
+# Add: the browser signs in, the tools follow.
+exec ctxtra-tty mcp add linear_work $FAKE_MCP --notes 'the work workspace'
+stdout '^added the MCP server linear_work to ~/.config/ctxtra/config.yaml: remote, '
+stdout '^signed in to linear_work with https://127.0.0.1:[0-9]+$'
+stdout '^account: me@example.com$'
+stdout '^notes: the work workspace$'
+stdout '^  linear_work__list_issues_[0-9a-f]{6} \(shortened from list-issues\)$'
+stderr 'Opening your browser to sign in to linear_work'
+! stderr 'private window'
+exec ctxtra mcp list
+stdout '^linear_work  remote, signed in with https://127.0.0.1:[0-9]+$'
+
+# A second server of the same issuer: the hint comes before the browser.
+exec ctxtra-tty mcp add linear_ctxtra $FAKE_MCP
+stderr 'already signed in to https://127.0.0.1:[0-9]+ as linear_work'
+stderr 'private window'
+
+# The proxy calls the tool with the stored token.
+exec ctxtra binding add work --dir '~/dev/**' --mcp linear_work
+mkdir dev/app
+mcp dev/app linear_work__list_issues_073b9f
+stdout '^tool linear_work__list_issues_[0-9a-f]{6}:'
+stdout '^result: CTXMARK-ISSUES$'
+exec cat .ctxtra/log.jsonl
+stdout '"event":"connect","server":"linear_work","tools":1'
+! stdout 'at-[0-9]'
+
+# Logout: local only.
+exec ctxtra mcp logout linear_work
+stdout '^deleted the sign-in and secret values of linear_work on this machine$'
+stdout 'stays valid there'
+exec ctxtra mcp list
+stdout '^linear_work  remote, not signed in$'
+mcp dev/app
+! stdout 'tool linear_work__'
+
+# Login needs a terminal; then it signs in again.
+! exec ctxtra mcp login linear_work
+stderr 'signing in needs a terminal'
+! exec ctxtra-tty --no-input mcp login linear_work
+stderr 'signing in needs a terminal'
+exec ctxtra-tty mcp login linear_work
+stdout '^signed in to linear_work with '
+stdout 'Codex or Muse get its tools in a new session'
+mcp dev/app
+stdout '^tool linear_work__list_issues'
+
+# No credential value reaches the output or the state files.
+! grep 'at-[0-9]' .ctxtra/mcp/state/linear_work.json
+! grep 'rt-[0-9]' .ctxtra/mcp/state/linear_work.json

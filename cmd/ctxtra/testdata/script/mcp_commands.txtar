@@ -44,8 +44,9 @@ stderr 'an MCP server named gh already exists'
 stderr 'server name "Bad-Name"'
 ! exec ctxtra mcp add rel -- ./bin/mcp
 stderr 'the program must be an absolute path or a name in PATH'
-! exec ctxtra mcp add web https://example.com/mcp
-stderr 'add --no-login'
+fakeauth
+! exec ctxtra mcp add web $FAKE_MCP
+stderr '^ctxtra mcp add: signing in needs a terminal; nothing changed: add --no-login, and run ctxtra mcp login web in your terminal later$'
 cmp .config/ctxtra/config.yaml before.yaml
 
 # A remote server without sign-in, and the list.

@@ -257,8 +257,11 @@ func (s *Store) RequestToken(ctx context.Context, c Client, form url.Values) (To
 		req.SetBasicAuth(url.QueryEscape(c.ID), url.QueryEscape(c.Secret))
 	}
 	client := http.DefaultClient
-	if s.HTTP != nil {
+	switch {
+	case s.HTTP != nil:
 		client = s.HTTP
+	case s.Client != nil:
+		client = s.Client(form.Get("resource"))
 	}
 	noRedirect := *client
 	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }

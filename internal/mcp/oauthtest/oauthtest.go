@@ -110,6 +110,13 @@ type token struct {
 
 // New starts a server with TLS, closed when t ends. Its Client trusts it.
 func New(t testing.TB, o Options) *Server {
+	s := Start(o)
+	t.Cleanup(s.Close)
+	return s
+}
+
+// Start starts a server with TLS; the caller closes it.
+func Start(o Options) *Server {
 	s := &Server{o: o, clients: map[string]*client{}, codes: map[string]*code{}, access: map[string]*token{},
 		refresh: map[string]*grant{}}
 	for id, secret := range o.Clients {
@@ -124,7 +131,6 @@ func New(t testing.TB, o Options) *Server {
 	mux.HandleFunc("POST /token", s.token)
 	mux.Handle("/mcp", s.Protect(o.Resource))
 	s.Server = httptest.NewTLSServer(mux)
-	t.Cleanup(s.Close)
 	return s
 }
 

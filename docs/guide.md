@@ -308,6 +308,25 @@ ctxtra keeps the servers' secret values, such as an API token, encrypted in `~/.
 your OS keychain. Without a keychain, for example on a Linux server, the key is a file there, and ctxtra warns
 that any process of yours can read the credentials.
 
+For a server that uses OAuth, you sign in once, in your terminal, and every agent uses that sign-in:
+
+```bash
+ctxtra mcp login linear_work                # opens your browser
+ctxtra mcp login linear_work --no-browser   # over SSH: open the link elsewhere, paste where it ends
+ctxtra mcp logout linear_work               # deletes the sign-in on this machine
+```
+
+- Sessions never open a browser. When a sign-in expires or the server wants more permissions, a tool call
+  says to run `ctxtra mcp login NAME`. A session that started before you signed in gets the tools within a few
+  seconds; in Codex and Muse, start a new session.
+- Two accounts of one provider, such as two Linear workspaces, are two servers with two names. Write in each
+  server's notes which account it is. When you sign in to the second one, the provider may pick the account
+  your browser is signed in to: use a private window.
+- GitHub and Slack don't let ctxtra register itself. Create an OAuth app there with the redirect address
+  `http://127.0.0.1:PORT/callback`, and add the server with `--client-id` (with `--client-secret` for Slack) and
+  `--callback-port PORT`.
+- `logout` doesn't tell the provider: remove the grant in the provider's settings to end it there.
+
 A session's servers are fixed when it starts; their tools can still change. ctxtra waits for slow servers only as long as each agent
 waits for it: 1.5 seconds in Claude Code (later tools follow in its interactive mode), up to 10 in the others.
 A server that starts slower, such as one run with `npx`, can be missing from that session. In Codex, the

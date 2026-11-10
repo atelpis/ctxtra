@@ -1,0 +1,18 @@
+# A provider that gives no refresh token: ctxtra says the user signs in
+# again when the sign-in expires. Over SSH: --no-browser prints the link.
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+env BROWSER=fakebrowser
+fakeauth norefresh
+exec ctxtra-tty mcp add issues $FAKE_MCP
+stdout 'The provider gave no refresh token: when this sign-in expires, run ctxtra mcp login issues again.'
+
+# Without a terminal, nothing changes.
+! exec ctxtra mcp add other $FAKE_MCP
+stderr 'signing in needs a terminal'
+! grep other .config/ctxtra/config.yaml
+
+# With --no-login, the server is added and signs in later.
+exec ctxtra mcp add later $FAKE_MCP --no-login
+exec ctxtra mcp list
+stdout '^later  remote, not signed in$'

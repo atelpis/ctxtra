@@ -48,8 +48,12 @@ type Store struct {
 	// KeyTimeout bounds the wait for the keychain; 0 waits as long as it
 	// takes. The proxy sets it: it must never wait for a prompt.
 	KeyTimeout time.Duration
-	// HTTP sends refresh requests; nil uses http.DefaultClient.
+	// HTTP sends token requests; nil uses Client, else
+	// http.DefaultClient.
 	HTTP *http.Client
+	// Client is the HTTP client for token requests about the server at
+	// resource, under that server's network rules.
+	Client func(resource string) *http.Client
 	// LockTimeout bounds the wait for a server's lock; 0 is 30 seconds.
 	LockTimeout time.Duration
 	// Now is the clock; nil is time.Now.
@@ -178,6 +182,9 @@ type Client struct {
 	// Registered is set for a dynamic registration, made for Redirect.
 	Registered bool   `json:"registered"`
 	Redirect   string `json:"redirect"`
+	// CallbackPort is the redirect listener's port that the user chose
+	// for their own app; 0 for any.
+	CallbackPort int `json:"callback_port"`
 }
 
 // Token is the OAuth grant.

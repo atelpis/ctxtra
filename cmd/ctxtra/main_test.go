@@ -9,9 +9,13 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -27,6 +31,7 @@ import (
 	"github.com/ctxtra/ctxtra/internal/jsonorder"
 	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/mcp/mcptest"
+	"github.com/ctxtra/ctxtra/internal/mcp/oauthtest"
 	"github.com/ctxtra/ctxtra/internal/testenv"
 )
 
@@ -47,6 +52,9 @@ func TestMain(m *testing.M) {
 		},
 		// A stdio MCP server for the proxy's tests.
 		"mcptest": func() { mcptest.Main(os.Args[1:]) },
+		// A browser in which the user is signed in: it follows the
+		// sign-in link to ctxtra's redirect listener ($BROWSER).
+		"fakebrowser": fakeBrowser,
 	})
 }
 
@@ -63,6 +71,7 @@ func TestScript(t *testing.T) {
 			"expand":    expandFile,
 			"slots":     collapseSlots,
 			"mcp":       mcpClient,
+			"fakeauth":  fakeAuth,
 		},
 	})
 }
@@ -157,7 +166,7 @@ func environ(ts *testscript.TestScript) []string {
 		"GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL",
 		"CTXTRA_CONFIG", "CTXTRA_LOG", "CLAUDE_CONFIG_DIR", "CODEX_HOME", "PI_CODING_AGENT_DIR",
 		"OPENCODE_CONFIG_DIR", "XDG_CONFIG_HOME", "HERMES_HOME", "DSH_HOME", "GIT_SSL_NO_VERIFY",
-		"DEVIN_PROJECT_DIR", "CTXTRA_EXPERIMENTAL_MCP", "GITHUB_TOKEN"} {
+		"DEVIN_PROJECT_DIR", "CTXTRA_EXPERIMENTAL_MCP", "GITHUB_TOKEN", "SSL_CERT_FILE"} {
 		if v := ts.Getenv(k); v != "" {
 			env = append(env, k+"="+v)
 		}
@@ -391,4 +400,61 @@ func mcpClient(ts *testscript.TestScript, neg bool, args []string) {
 			fmt.Fprintf(ts.Stdout(), "result: %s\n", t.Text)
 		}
 	}
+}
+
+// fakeAuth starts a fake OAuth authorization server with an MCP server
+// behind it, for the rest of the script: $FAKE_MCP is the MCP server's
+// URL, $FAKE_ISSUER the issuer, and SSL_CERT_FILE trusts it, as a
+// company's certificate would be. Arguments: norefresh (no refresh
+// tokens), account=EMAIL (an ID token with it).
+func fakeAuth(ts *testscript.TestScript, neg bool, args []string) {
+	if neg {
+		ts.Fatalf("usage: fakeauth [norefresh] [account=EMAIL]")
+	}
+	o := oauthtest.Options{Lifetime: time.Hour}
+	for _, a := range args {
+		switch {
+		case a == "norefresh":
+			o.NoRefresh = true
+		case strings.HasPrefix(a, "account="):
+			o.Account = strings.TrimPrefix(a, "account=")
+		default:
+			ts.Fatalf("fakeauth: unknown argument %q", a)
+		}
+	}
+	srv := mcp.NewServer(&mcp.Implementation{Name: "fake", Version: "1"}, nil)
+	mcp.AddTool(srv, &mcp.Tool{Name: "list-issues", Description: "List issues."}, func(context.Context, *mcp.CallToolRequest, map[string]any) (*mcp.CallToolResult, any, error) {
+		return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: "CTXMARK-ISSUES"}}}, nil, nil
+	})
+	o.Resource = mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return srv }, nil)
+	fake := oauthtest.Start(o)
+	ts.Defer(fake.Close)
+	ca := ts.MkAbs(".fake-ca.pem")
+	ts.Check(os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: fake.Certificate().Raw}), 0o600))
+	ts.Setenv("SSL_CERT_FILE", ca)
+	ts.Setenv("FAKE_MCP", fake.ResourceURL())
+	ts.Setenv("FAKE_ISSUER", fake.URL)
+}
+
+// fakeBrowser opens the sign-in link: it follows the authorization
+// server's redirect to ctxtra's listener, trusting $SSL_CERT_FILE.
+func fakeBrowser() {
+	pool := x509.NewCertPool()
+	ca, _ := os.ReadFile(os.Getenv("SSL_CERT_FILE"))
+	pool.AppendCertsFromPEM(ca)
+	c := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}},
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := c.Get(os.Args[1])
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	resp.Body.Close()
+	// ctxtra starts the browser and doesn't wait for it.
+	go func() {
+		if r, err := http.Get(resp.Header.Get("Location")); err == nil {
+			r.Body.Close()
+		}
+	}()
+	time.Sleep(time.Second)
 }

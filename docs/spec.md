@@ -696,6 +696,62 @@ ended, and its own end. It never logs tool arguments, results, secrets or config
 problems as text; a failed call is logged by its kind or code only, because error messages can repeat the
 arguments. `doctor`'s last hook runs leave these lines out.
 
+A remote server is reached with streamable HTTP, and with the older SSE transport when that fails. ctxtra
+checks every request, not only the configured URL:
+
+- Requests go only to the server's origin. A redirect to another origin is refused, and so is an SSE message
+  endpoint on another origin. Tokens and secret headers go only to the server; refresh tokens and client secrets
+  only to the authorization server's token endpoint, which never gets a redirect followed.
+- HTTPS only. Plain HTTP only to loopback, for a server on loopback.
+- Addresses are checked when connecting, so a DNS change can't get around the check. Link-local addresses,
+  such as the cloud metadata address `169.254.169.254`, are always refused. Private addresses (RFC 1918, CGNAT,
+  ULA) are allowed only when the server itself is on one, and loopback only when the server is on loopback.
+- `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `ALL_PROXY` (also lower case) are honored, and the certificates of
+  `SSL_CERT_FILE` and `SSL_CERT_DIR` are trusted next to the system's. Through a proxy, ctxtra checks the target's
+  addresses as this machine resolves them.
+
+### Sign-in
+
+A remote server that answers a request without a token with 401 uses OAuth. Only `ctxtra mcp add` and `ctxtra
+mcp login`, in the user's terminal, sign in; the proxy and the hook never do. Without a terminal, or with
+`--no-input`, they fail and change nothing; `--no-login` adds the server without signing in.
+
+Sign-in follows the MCP authorization spec (2026-07-28) for clients:
+
+- Discovery: the server's protected resource metadata, where its 401 says or at the well-known places, names
+  the authorization server. Without that metadata, as with Atlassian, ctxtra looks for authorization server
+  metadata at the server's origin. The metadata must name the issuer it was found for, offer PKCE with `S256`,
+  and use HTTPS for every endpoint.
+- Scopes: the server's configured scopes; else those of its 401; else those of its protected resource metadata.
+  ctxtra adds `offline_access` when the authorization server lists it, so that it issues a refresh token, and
+  the scopes of the last sign-in and of a 403 `insufficient_scope`.
+- Client: the user's own app (`--client-id`, and `--client-secret` for its secret), else ctxtra's client ID
+  metadata document, else dynamic registration. ctxtra's document isn't hosted yet, so ctxtra registers
+  dynamically. A server that offers neither, such as GitHub or Slack, needs the user's own app.
+- The browser opens the authorization link (`$BROWSER`, else `open` or `xdg-open`). ctxtra waits for the
+  redirect on `127.0.0.1`, on a random port or on `--callback-port`, which is stored for later logins. It
+  accepts one redirect with the right `state` and refuses others without ending the sign-in; it waits 5
+  minutes. With `--no-browser`, ctxtra prints the link and accepts the address the browser ends at, pasted in
+  the terminal, for example over SSH.
+- The answer's `iss` must be the issuer, and is required when the authorization server says it sends it. The
+  token request sends the `resource` parameter. A failed check stores nothing.
+- A dynamic registration is reused while the redirect address is the same, and made again for a new one.
+
+After sign-in, ctxtra shows the issuer, the server's notes, and the account when the provider's answer names
+one. A second server of the same issuer gets a note before the browser opens: the provider may use the
+browser's active account, so a private window helps to sign in with another one. When no refresh token came,
+ctxtra says the user signs in again when the sign-in expires.
+
+In a session, a server that needs sign-in at its start has no tools; the proxy reads its state file every 3
+seconds and adds its tools once it is signed in (Codex and Muse ignore the list change: a new session gets
+them). A refresh token that the provider rejects, or a 401 after one refresh, fails the call with `run ctxtra
+mcp login NAME`. A 403 `insufficient_scope` records the scopes it asks for, for the next login, and fails the call
+the same way.
+
+`ctxtra mcp login NAME` signs in again; for a server without OAuth, or with `--secrets`, it asks for the secret
+values again. `ctxtra mcp logout NAME` deletes the tokens and secret values on this machine, like the agents'
+own logout; the provider isn't told, so the grant stays valid there until it expires or the user removes it.
+
 ### Credentials
 
 A server's secret values, its OAuth client registration and its tokens are stored in `~/.ctxtra/mcp`, never in
