@@ -268,6 +268,28 @@ func TestMissingSecrets(t *testing.T) {
 	}
 }
 
+// The answer to initialize tells the agent how to learn why a tool is
+// missing, and names the servers that need sign-in.
+func TestInstructions(t *testing.T) {
+	remote := upstream.Server{ID: "linear", Name: "linear", URL: "https://169.254.169.254/mcp"}
+	s := startWith(t, t.TempDir(), 2*time.Second, func(o *Options) {
+		o.NeedsSignIn = func(s upstream.Server) bool { return s.Name == "linear" }
+	}, testServer(t, "pg"), remote)
+	got := s.cs.InitializeResult().Instructions
+	for _, want := range []string{"(pg, linear)", "run `ctxtra mcp status` in the session folder",
+		"linear needs sign-in and has no tools now: the user runs `ctxtra mcp login linear`"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("instructions %q lack %q", got, want)
+		}
+	}
+	if strings.Contains(got, "pg needs sign-in") {
+		t.Errorf("instructions: %q", got)
+	}
+	if empty := start(t, t.TempDir(), time.Second); empty.cs.InitializeResult().Instructions != "" {
+		t.Errorf("instructions without servers: %q", empty.cs.InitializeResult().Instructions)
+	}
+}
+
 // The session's status record says which server was too slow for the
 // first tool list, and how long it took.
 func TestStatusRecord(t *testing.T) {

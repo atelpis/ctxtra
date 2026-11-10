@@ -62,6 +62,9 @@ type Options struct {
 	// Report gets the session start's status record for the folder, for
 	// ctxtra mcp status; nil keeps none.
 	Report func(status.Record)
+	// NeedsSignIn reports whether a server's state says it needs sign-in,
+	// from local files, for the instructions.
+	NeedsSignIn func(upstream.Server) bool
 }
 
 // Run serves the agent over t until the agent closes it or ctx ends, then
@@ -86,11 +89,11 @@ func Run(ctx context.Context, o Options, t mcp.Transport) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	p := &proxy{o: o, ctx: ctx, ready: make(chan struct{}), tools: map[string]route{}, progress: map[string]*progressQueue{},
-		latest: map[string][]*mcp.Tool{}}
+		latest: map[string][]*mcp.Tool{}, resolved: make(chan struct{})}
 	p.server = mcp.NewServer(&mcp.Implementation{Name: "ctxtra", Version: o.Version}, &mcp.ServerOptions{
 		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}},
 	})
-	p.server.AddReceivingMiddleware(p.waitForTools)
+	p.server.AddReceivingMiddleware(p.waitForTools, p.instruct)
 	p.wg.Go(func() { p.start(ctx) })
 	// The servers stop as soon as the session ends: when the agent closes
 	// the connection, or ctx ends. The SDK then still waits for running
@@ -178,6 +181,71 @@ type proxy struct {
 	ended     map[*Upstream]bool        // servers that ended during the session
 
 	report *report
+
+	resolved chan struct{}     // closed when bound is set
+	bound    []upstream.Server // the session's servers
+}
+
+// initWait is how long the answer to initialize waits for the session's
+// servers, to name in the instructions those that need sign-in. Resolving
+// is quick unless the folder's repository is slow to read.
+const initWait = 500 * time.Millisecond
+
+// instruct adds the instructions to the answer to initialize: Claude Code
+// shows them in the model's system prompt, Codex in the description of
+// the server's tools. They say how to learn why a tool is missing, and
+// name the servers whose state says they need sign-in.
+func (p *proxy) instruct(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if method != "initialize" && method != "server/discover" {
+			return next(ctx, method, req)
+		}
+		select {
+		case <-p.resolved:
+		case <-time.After(initWait):
+		case <-ctx.Done():
+		}
+		res, err := next(ctx, method, req)
+		if err != nil {
+			return res, err
+		}
+		// initialize, or discover in protocol versions from 2026-07-28.
+		switch r := res.(type) {
+		case *mcp.InitializeResult:
+			r.Instructions = p.instructions()
+		case *mcp.DiscoverResult:
+			r.Instructions = p.instructions()
+		}
+		return res, err
+	}
+}
+
+func (p *proxy) instructions() string {
+	select {
+	case <-p.resolved:
+	default:
+		return ""
+	}
+	if len(p.bound) == 0 {
+		return ""
+	}
+	var names []string
+	for _, s := range p.bound {
+		names = append(names, s.Name)
+	}
+	text := "This server gives the session the tools of the MCP servers that ctxtra binds to this folder (" +
+		strings.Join(names, ", ") + "). When an expected tool of theirs is missing or a call fails, run " +
+		"`ctxtra mcp status` in the session folder: it says why."
+	if p.o.NeedsSignIn == nil {
+		return text
+	}
+	for _, s := range p.bound {
+		if p.o.NeedsSignIn(s) {
+			text += "\n" + s.Name + " needs sign-in and has no tools now: the user runs `ctxtra mcp login " + s.Name +
+				"` in a terminal, and its tools follow."
+		}
+	}
+	return text
 }
 
 // report is the session start's status record, written once the first
@@ -303,6 +371,8 @@ func (p *proxy) start(ctx context.Context) {
 	case <-ctx.Done():
 		return
 	}
+	p.bound = servers
+	close(p.resolved)
 	p.report = newReport(p.o, servers)
 	type result struct {
 		s     upstream.Server

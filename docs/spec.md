@@ -778,6 +778,12 @@ the last session here (codex, 2026-11-10 14:08:19) waited 10.0 s for the first t
 ```
 
 The records are in `~/.ctxtra/mcp/status`, one per folder, so a session in one folder never changes another's.
+
+The agent learns it too: the proxy's instructions (the MCP `instructions` field, which it sends after waiting
+at most half a second for the folder's servers) name the bound servers and say to run `ctxtra mcp status` when
+a tool of theirs is missing, and name each server whose state says it needs sign-in. Claude Code shows them in
+the system prompt; Codex in the description of the `ctxtra` server's tools, so only when the session has at least
+one of them.
 `ctxtra mcp list` and `doctor` show each server's sign-in state and where the key of the credentials is, with the
 warning for a key file.
 

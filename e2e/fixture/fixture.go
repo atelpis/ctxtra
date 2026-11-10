@@ -19,6 +19,9 @@ type Fixture struct {
 	t    testing.TB
 	Home string
 	Bin  string // the ctxtra binary under test
+	// Extra are more variables for every process, such as
+	// CTXTRA_EXPERIMENTAL_MCP=1.
+	Extra []string
 }
 
 // New creates an empty home for the test, in dir, or in a temporary folder
@@ -127,7 +130,7 @@ func (f *Fixture) Config(bindings string) {
 // variable from the user's shell except PATH, git that reads no user or
 // system config, and the agents' config folders inside the home.
 func (f *Fixture) Env() []string {
-	return []string{
+	return append([]string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + f.Home,
 		"TMPDIR=" + f.Path("tmp"),
@@ -142,7 +145,7 @@ func (f *Fixture) Env() []string {
 		"PI_CODING_AGENT_DIR=" + f.Path(".pi/agent"),
 		"COPILOT_HOME=" + f.Path(".copilot"),
 		"DSH_HOME=" + f.Path(".dsh"),
-	}
+	}, f.Extra...)
 }
 
 // Ctxtra runs the ctxtra binary and fails the test on an error.

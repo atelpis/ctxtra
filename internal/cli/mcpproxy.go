@@ -43,6 +43,10 @@ func runProxy(args []string, stdio IO, version string) int {
 	store.KeyTimeout = 3 * time.Second
 	o := proxy.Options{Agent: agent, Version: version, Dir: dir, Start: started, Servers: sessionServers, Log: log,
 		Deadline: mcpDeadline(agent), Secrets: store, Tokens: store, SignInState: store.SignInState,
+		NeedsSignIn: func(s upstream.Server) bool {
+			st, err := store.State(s)
+			return err == nil && st.NeedsLogin
+		},
 		Report: func(r sessionstatus.Record) {
 			if err := sessionstatus.Write(r); err != nil {
 				log(proxy.Record{Event: "error", Error: "can't write the session's status record"})
