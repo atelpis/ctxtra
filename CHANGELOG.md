@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The release archives include `THIRD_PARTY_NOTICES.md`, with the licenses of the software that ctxtra
+  includes.
+
 ## v0.4.1
 
 - ctxtra's source repository is now `github.com/ctxtra/ctxtra`. The Homebrew tap stays at
