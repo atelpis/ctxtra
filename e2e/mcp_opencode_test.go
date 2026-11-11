@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"net"
@@ -76,7 +77,7 @@ bindings:
 			for i := 0; listening(port); i++ {
 				if i == 50 {
 					t.Errorf("OpenCode's service still listens on port %d: killed", port)
-					if pid := listener(t, port); pid > 0 {
+					for _, pid := range services(s.Home) {
 						_ = syscall.Kill(-pid, syscall.SIGKILL)
 						_ = syscall.Kill(pid, syscall.SIGKILL)
 					}
@@ -92,11 +93,10 @@ bindings:
 		}
 
 		s.Run(wt, driver.Options{}, mcpScript(a.Name(), "alpha__probe_ping")...)
-		first := listener(t, port)
 		s.Run(billing, driver.Options{}, mcpScript(a.Name(), "beta__probe_ping")...)
-		// One service served both folders.
-		if first == 0 || listener(t, port) != first {
-			t.Errorf("the service on port %d changed between the runs: pid %d, then %d", port, first, listener(t, port))
+		// One service served both folders: OpenCode's log has one start.
+		if n := serviceStarts(t, s.Path(".local/share/opencode/log")); n != 1 {
+			t.Errorf("OpenCode started its service %d times, want 1", n)
 		}
 		if calls, _ := probeCalls(t, s.Path("alpha.jsonl")); !slices.Contains(calls, "probe_ping") {
 			t.Errorf("alpha got calls %v from the worktree", calls)
@@ -152,10 +152,51 @@ func listening(port int) bool {
 	return true
 }
 
-// listener is the process that listens on port, 0 when none does.
-func listener(t *testing.T, port int) int {
+// serviceStarts counts how often OpenCode logged starting its service.
+func serviceStarts(t *testing.T, dir string) int {
 	t.Helper()
-	out, _ := exec.Command("lsof", "-nP", "-t", "-iTCP:"+strconv.Itoa(port), "-sTCP:LISTEN").Output()
-	pid, _ := strconv.Atoi(strings.TrimSpace(strings.Split(string(out), "\n")[0]))
-	return pid
+	files, _ := filepath.Glob(filepath.Join(dir, "*.log"))
+	n := 0
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.Contains(line, `message="cli starting"`) && strings.Contains(line, `\"serve\",\"--service\"`) {
+				n++
+			}
+		}
+	}
+	return n
+}
+
+// services are the OpenCode service processes of the test's home: on
+// Linux from /proc, elsewhere from ps.
+func services(home string) []int {
+	var pids []int
+	if entries, err := os.ReadDir("/proc"); err == nil {
+		for _, e := range entries {
+			pid, err := strconv.Atoi(e.Name())
+			if err != nil {
+				continue
+			}
+			cmd, _ := os.ReadFile(filepath.Join("/proc", e.Name(), "cmdline"))
+			env, _ := os.ReadFile(filepath.Join("/proc", e.Name(), "environ"))
+			if bytes.Contains(cmd, []byte("--service")) && bytes.Contains(env, []byte("HOME="+home+"\x00")) {
+				pids = append(pids, pid)
+			}
+		}
+		return pids
+	}
+	out, _ := exec.Command("ps", "-Eaxo", "pid=,command=").Output()
+	for _, line := range strings.Split(string(out), "\n") {
+		f := strings.Fields(line)
+		if len(f) > 1 && strings.Contains(line, "serve --service") && strings.Contains(line, "HOME="+home+" ") {
+			if pid, err := strconv.Atoi(f[0]); err == nil {
+				pids = append(pids, pid)
+			}
+		}
+	}
+	return pids
 }
