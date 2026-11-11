@@ -457,7 +457,12 @@ func (p *proxy) start(ctx context.Context) {
 			if r.err != nil {
 				rec.Error = errorKind(r.err)
 				p.o.Log(rec)
-				p.report.set(r.s.Name, status.Missing, rec.Error, 0)
+				// A connection that the session's end cut off says nothing
+				// about the server: it keeps what the record says, such as
+				// too slow for the first list.
+				if ctx.Err() == nil {
+					p.report.set(r.s.Name, status.Missing, rec.Error, 0)
+				}
 				var login *creds.LoginError
 				if errors.As(r.err, &login) && p.o.SignInState != nil {
 					p.wg.Go(func() { p.awaitSignIn(ctx, r.s) })
