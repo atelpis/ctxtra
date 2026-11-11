@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ctxtra/ctxtra/e2e/driver"
 )
@@ -52,17 +54,36 @@ bindings:
 		}
 		port := ln.Addr().(*net.TCPAddr).Port
 		ln.Close()
-		service := func(args ...string) string {
-			cmd := exec.Command(a.Bin, append([]string{"service"}, args...)...)
+		service := func(args ...string) (string, error) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+			defer cancel()
+			cmd := exec.CommandContext(ctx, a.Bin, append([]string{"service"}, args...)...)
 			cmd.Dir, cmd.Env = s.Home, s.Env()
 			out, err := cmd.CombinedOutput()
-			if err != nil && args[0] != "stop" {
-				t.Fatalf("opencode service %v: %v\n%s", args, err, out)
-			}
-			return string(out)
+			return string(out), err
 		}
-		service("set", "port", strconv.Itoa(port))
-		t.Cleanup(func() { service("stop") })
+		if out, err := service("set", "port", strconv.Itoa(port)); err != nil {
+			t.Fatalf("opencode service set port: %v\n%s", err, out)
+		}
+		// Before the home is removed: the service must be gone, with its
+		// proxies.
+		t.Cleanup(func() {
+			if out, err := service("stop"); err != nil {
+				t.Errorf("opencode service stop: %v\n%s", err, out)
+			}
+			for i := 0; ; i++ {
+				c, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), time.Second)
+				if err != nil {
+					break
+				}
+				c.Close()
+				if i == 50 {
+					t.Errorf("OpenCode's service still listens on port %d", port)
+					break
+				}
+				time.Sleep(200 * time.Millisecond)
+			}
+		})
 		adjust := s.Adjust
 		s.Adjust = func(cmd *exec.Cmd) {
 			adjust(cmd)
@@ -78,7 +99,7 @@ bindings:
 			t.Errorf("beta got calls %v from the subfolder", calls)
 		}
 		// The runs went through the service, which still runs.
-		if st := service("status"); !strings.Contains(st, strconv.Itoa(port)) {
+		if st, _ := service("status"); !strings.Contains(st, strconv.Itoa(port)) {
 			t.Errorf("the service isn't running on port %d:\n%s", port, st)
 		}
 		dirs := proxyDirs(t, s.Path(".ctxtra/log.jsonl"))

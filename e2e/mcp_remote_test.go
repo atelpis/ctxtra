@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"filippo.io/age"
 
@@ -161,8 +160,8 @@ func readFile(t *testing.T, path string) string {
 }
 
 // A server that is missing at the start because its secret value isn't
-// set gets its tools when the user sets it during the session: here while
-// Claude Code runs a command that waits.
+// set gets its tools when the user sets it during the session: here the
+// session's own command runs ctxtra mcp login, then waits.
 func TestMCPSignInDuringSession(t *testing.T) {
 	forEachAgent(t, nil, func(t *testing.T, a Agent) {
 		if a.Name() != "claude" {
@@ -182,32 +181,24 @@ bindings:
 `
 		})
 		s.Write("dev/a/README.md", "x")
+		s.Write("key.txt", key+"\n")
 		adjust := s.Adjust
 		s.Adjust = func(cmd *exec.Cmd) {
 			adjust(cmd)
 			for i, arg := range cmd.Args {
 				if arg == "--allowedTools" {
-					cmd.Args[i+1] += ",Bash(sleep:*)"
+					cmd.Args[i+1] += ",Bash"
 				}
 			}
 		}
-		// The user sets the value while the session waits.
-		done := make(chan error, 1)
-		go func() {
-			time.Sleep(3 * time.Second)
-			login := exec.Command(s.Bin, "mcp", "login", "web")
-			login.Dir, login.Env, login.Stdin = s.Home, s.Env(), strings.NewReader(key+"\n")
-			out, err := login.CombinedOutput()
-			if err != nil {
-				err = fmt.Errorf("%v: %s", err, out)
-			}
-			done <- err
-		}()
-		s.Run(s.Path("dev/a"), driver.Options{},
-			mock.Call("Bash", map[string]any{"command": "sleep 9", "description": "wait"}),
+		login := fmt.Sprintf("'%s' mcp login web < '%s' && sleep 5", s.Bin, s.Path("key.txt"))
+		r := s.Run(s.Path("dev/a"), driver.Options{},
+			mock.Call("Bash", map[string]any{"command": login, "description": "sign in"}),
 			mcpCalls(a.Name(), "web__web_ping"))
-		if err := <-done; err != nil {
-			t.Fatal(err)
+		for _, tool := range mock.ToolNames(r.Requests[0].API, r.Requests[0].Body) {
+			if strings.Contains(tool.Name, "web__web_ping") {
+				t.Fatalf("the first request already has %s: no sign-in during the session was checked", tool.Name)
+			}
 		}
 		if got := web.called(); len(got) != 1 {
 			t.Errorf("the server got calls %v", got)

@@ -292,7 +292,7 @@ session folder: a binding for `~/dev/mono/billing/**` doesn't reach a session st
 ## Experimental: MCP servers
 
 ctxtra can give your sessions MCP servers by folder, like instructions and skills, through one MCP server named
-`ctxtra` that `ctxtra setup` adds to each agent. It is work in progress and off unless
+`ctxtra` that `ctxtra setup` adds to each agent but Muse. It is work in progress and off unless
 `CTXTRA_EXPERIMENTAL_MCP=1` is set in your environment, for setup and for your agents. How the config declares
 servers isn't decided yet; [spec.md](spec.md#experimental-mcp-servers) describes what works so far.
 

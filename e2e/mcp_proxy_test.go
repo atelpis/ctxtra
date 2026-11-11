@@ -78,11 +78,12 @@ func approveMCP(s *Session, agent string, cmd *exec.Cmd) {
 
 // mcpScript calls the ctxtra server's tools the way the agent offers
 // them. OpenCode connects MCP servers in the background, about a second
-// after its start, and the mock answers at once: its first turn waits two
-// seconds in a script.
+// after its start, and the mock answers at once: its first turn waits five
+// seconds in a script. The mock can't wait for a condition: a slower start
+// fails the scenario with an unknown tool.
 func mcpScript(agent string, names ...string) []mock.Step {
 	if agent == "opencode" {
-		wait := mock.CallCode("execute", "const t = Date.now(); while (Date.now() - t < 2000) {} return 1")
+		wait := mock.CallCode("execute", "const t = Date.now(); while (Date.now() - t < 5000) {} return 1")
 		return []mock.Step{wait, mcpCalls(agent, names...)}
 	}
 	return []mock.Step{mcpCalls(agent, names...)}

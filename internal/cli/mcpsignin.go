@@ -152,8 +152,8 @@ func (a *app) mcpLoginCmd() *cobra.Command {
 		Short: "Sign in to an MCP server, or set its secret values again",
 		Long: `Sign in to a remote MCP server that uses OAuth, in your browser, and store the
 tokens for every agent. For a server without OAuth, or with --secrets, ask for
-its secret values again. Sessions that already run in Codex or Muse get the
-server's tools in a new session; the others pick them up within seconds.`,
+its secret values again. Sessions that already run in Codex get the server's
+tools in a new session; the others pick them up within seconds.`,
 		Example: `  ctxtra mcp login linear_work
   ctxtra mcp login linear_work --no-browser
   ctxtra mcp login pg`,
@@ -229,7 +229,7 @@ func (a *app) mcpLogin(name string, withSecrets bool, o signInOptions) int {
 	if err := signInTo(ctx, a.IO, store, s, ch, o); err != nil {
 		return fail(err)
 	}
-	fmt.Fprintln(a.Out, "Sessions already running in Codex or Muse get its tools in a new session.")
+	fmt.Fprintln(a.Out, "Sessions already running in Codex get its tools in a new session.")
 	return 0
 }
 

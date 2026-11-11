@@ -57,7 +57,7 @@ stderr 'signing in needs a terminal'
 stderr 'signing in needs a terminal'
 exec ctxtra-tty mcp login linear_work
 stdout '^signed in to linear_work with '
-stdout 'Codex or Muse get its tools in a new session'
+stdout 'Codex get its tools in a new session'
 mcp dev/app
 stdout '^tool linear_work__list_issues'
 

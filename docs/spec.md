@@ -663,7 +663,7 @@ It gives the session the tools of the MCP servers bound to the session folder, a
   shorter than the agent waits for the list, because an agent that gives up first gets no tools of any server:
   1.5 seconds in Claude Code, 8 in Pi, 10 in the others (Codex waits that long because its entry is
   `required`). A server that answers later is added with a tool list change notification; agents that ignore
-  it (Codex, Muse) don't get its tools in that session.
+  it (Codex) don't get its tools in that session.
 - A problem never breaks a session: with a broken config, a failing server or no bound server, the proxy starts
   and serves the tools it can, or none, and logs the problem. A server whose tool list has more than 2,000 tools
   or 8 MiB, or that pages without end, is left out. A server that ends during the session is stopped with the
