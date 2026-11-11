@@ -195,8 +195,16 @@ func generate(t *testing.T) []byte {
 }
 
 // THIRD_PARTY_NOTICES.md names every module linked into ctxtra, with its
-// licenses. After a dependency change: go test ./internal/notices -update
+// licenses. After a dependency change: go test ./internal/notices -update.
+// Check it with -count=1.
 func TestNotices(t *testing.T) {
+	// Read here, so that the test cache sees a dependency change; CI runs
+	// the test with -count=1, as an import change shows only in go list.
+	for _, f := range []string{"../../go.mod", "../../go.sum"} {
+		if _, err := os.ReadFile(f); err != nil {
+			t.Fatal(err)
+		}
+	}
 	want := generate(t)
 	if *update {
 		if err := os.WriteFile(file, want, 0o644); err != nil {

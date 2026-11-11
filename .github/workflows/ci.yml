@@ -34,6 +34,9 @@ jobs:
           check-latest: true
       - run: go vet ./...
       - run: go test -race ./...
+      # Never from the test cache: it can't see the dependency graph that
+      # the test reads through go list.
+      - run: go test -count=1 ./internal/notices
 
   # gofmt runs as a golangci-lint formatter (.golangci.yml).
   lint:
