@@ -292,7 +292,7 @@ session folder: a binding for `~/dev/mono/billing/**` doesn't reach a session st
 ## Experimental: MCP servers
 
 ctxtra can give your sessions MCP servers by folder, like instructions and skills, through one MCP server named
-`ctxtra` that `ctxtra setup` adds to each agent. It is work in progress and off unless
+`ctxtra` that `ctxtra setup` adds to each agent but Muse. It is work in progress and off unless
 `CTXTRA_EXPERIMENTAL_MCP=1` is set in your environment, for setup and for your agents. How the config declares
 servers isn't decided yet; [spec.md](spec.md#experimental-mcp-servers) describes what works so far.
 
@@ -302,7 +302,46 @@ ctxtra binds to that folder:
 - Claude Code: allow `mcp__ctxtra` in `permissions.allow`, or a pattern such as `mcp__ctxtra__linear_work__*`.
 - Codex: add `default_tools_approval_mode = "approve"` to the `[mcp_servers.ctxtra]` table; setup keeps it.
 - Antigravity: an allow rule `mcp(ctxtra/*)`.
-- Muse has no rules per server: approve the tools when it asks.
+
+ctxtra keeps the servers' secret values, such as an API token, encrypted in `~/.ctxtra/mcp`, with the key in
+your OS keychain. Without a keychain, for example on a Linux server, the key is a file there, and ctxtra warns
+that any process of yours can read the credentials.
+
+For a server that uses OAuth, you sign in once, in your terminal, and every agent uses that sign-in:
+
+```bash
+ctxtra mcp login linear_work                # opens your browser
+ctxtra mcp login linear_work --no-browser   # over SSH: open the link elsewhere, paste where it ends
+ctxtra mcp logout linear_work               # deletes the sign-in on this machine
+```
+
+- Sessions never open a browser. When a sign-in expires or the server wants more permissions, a tool call
+  says to run `ctxtra mcp login NAME`. A session that started before you signed in gets the tools within a few
+  seconds; in Codex, start a new session.
+- Two accounts of one provider, such as two Linear workspaces, are two servers with two names. Write in each
+  server's notes which account it is. When you sign in to the second one, the provider may pick the account
+  your browser is signed in to: use a private window.
+- GitHub and Slack don't let ctxtra register itself. Create an OAuth app there with the redirect address
+  `http://127.0.0.1:PORT/callback`, and add the server with `--client-id` (with `--client-secret` for Slack) and
+  `--callback-port PORT`.
+- `logout` doesn't tell the provider: remove the grant in the provider's settings to end it there.
+
+What to keep in mind:
+
+- Binding servers to folders prevents mistakes, such as a session using the wrong account. It doesn't
+  protect anything from an agent that has a shell: it can use every server of your config.
+- Any process of yours can read the stored credentials, as with the agents' own sign-ins.
+- `ctxtra mcp show` prints a local server's error output, which can hold secrets; an agent that runs it
+  reads it too.
+- ctxtra's MCP server sees every tool call and its result, and passes them on. Its log has neither, only
+  which servers started and how calls failed.
+- Without a keychain, a backup of `~/.ctxtra/mcp` holds the key of your credentials too.
+- ctxtra will later sign in as an app described by a file on its own domain, which authorization servers
+  show you. Until then it registers itself with each authorization server.
+
+When a session lacks a server's tools, `ctxtra mcp status` in that folder says why: the server needs sign-in,
+failed, or was too slow for the agent's first tool list. The session summary also names servers that need
+sign-in.
 
 A session's servers are fixed when it starts; their tools can still change. ctxtra waits for slow servers only as long as each agent
 waits for it: 1.5 seconds in Claude Code (later tools follow in its interactive mode), up to 10 in the others.

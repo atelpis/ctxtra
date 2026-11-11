@@ -15,6 +15,7 @@ import (
 	"github.com/ctxtra/ctxtra/internal/experimental"
 	"github.com/ctxtra/ctxtra/internal/logfile"
 	"github.com/ctxtra/ctxtra/internal/mcp/proxy"
+	sessionstatus "github.com/ctxtra/ctxtra/internal/mcp/status"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/resolve"
@@ -37,8 +38,21 @@ func runProxy(args []string, stdio IO, version string) int {
 	log := func(r proxy.Record) {
 		logfile.Append(proxyRecord{Ts: time.Now().UTC().Format(time.RFC3339Nano), Kind: "mcp", Harness: agent, Record: r})
 	}
+	// The keychain can wait for a prompt that no one sees in a session.
+	store := openStore()
+	store.KeyTimeout = 3 * time.Second
 	o := proxy.Options{Agent: agent, Version: version, Dir: dir, Start: started, Servers: sessionServers, Log: log,
-		Deadline: mcpDeadline(agent)}
+		Deadline: mcpDeadline(agent), Secrets: store, Tokens: store, SignInState: store.SignInState,
+		KeepsFirstList: agent == "codex" || agent == "muse",
+		NeedsSignIn: func(s upstream.Server) bool {
+			st, err := store.State(s)
+			return err == nil && st.NeedsLogin
+		},
+		Report: func(r sessionstatus.Record) {
+			if err := sessionstatus.Write(r); err != nil {
+				log(proxy.Record{Event: "error", Error: "can't write the session's status record"})
+			}
+		}}
 	switch {
 	case !experimental.MCP():
 		o.Servers = func(string) ([]upstream.Server, []string) { return nil, nil }

@@ -204,7 +204,7 @@ func skillInstall(stdio IO, name string, dryRun bool) int {
 	s := newSources(stdio)
 	created, err := s.change(func(old []byte) ([]byte, error) {
 		return config.AddBinding(old, newBinding)
-	})
+	}, nil)
 	if err != nil {
 		fmt.Fprintf(stdio.Err, "ctxtra skill install: %v\n", err)
 		return 1

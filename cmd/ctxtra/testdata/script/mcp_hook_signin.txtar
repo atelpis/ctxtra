@@ -1,0 +1,37 @@
+# The session summary names the bound MCP servers that need sign-in, from
+# their state files only: no key, no keychain, no network.
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+exec ctxtra setup --agent claude
+mkdir dev/app other
+
+# No session has tried the server yet: no state, no line.
+runhook claude SessionStart dev/app
+stdout '"systemMessage":"✓ ctxtra added 1 instruction\\nInstructions:\\n  local\\n  - ~/.config/ctxtra/work.md"'
+! stdout 'needs sign-in'
+
+# A session found that it needs sign-in.
+mkdir .ctxtra/mcp/state
+cp state.json .ctxtra/mcp/state/linear_work.json
+runhook claude SessionStart dev/app
+stdout '"systemMessage":"✓ ctxtra added 1 instruction\\nInstructions:\\n  local\\n  - ~/.config/ctxtra/work.md\\n\\n⚠ linear_work needs sign-in: run ctxtra mcp login linear_work"'
+! stdout 'CTXMARK-SECRET'
+! exists .ctxtra/mcp/key.json
+
+# A folder that doesn't bind it gets no line.
+runhook claude SessionStart other
+! stdout 'needs sign-in'
+
+-- .config/ctxtra/config.yaml --
+schema: ctxtra/v1
+mcp-servers:
+  linear_work: {url: 'https://mcp.example.invalid/mcp'}
+bindings:
+  - name: work
+    match: {dirs: ['~/dev/**']}
+    instructions: [work.md]
+    mcp-servers: [linear_work]
+-- .config/ctxtra/work.md --
+CTXMARK-WORK
+-- state.json --
+{"version":1,"name":"linear_work","signed_in":false,"needs_login":true,"reason":"the sign-in expired or was revoked"}

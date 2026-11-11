@@ -41,6 +41,7 @@ var (
 	codexStart = flag.Int("codex-startup-timeout", 0, "Codex's startup_timeout_sec for the probe; 0 leaves the default")
 	codexExtra = flag.String("codex-config", "", "one more -c override for Codex, such as mcp_servers.probe.required=true")
 	extraEnv   = flag.String("env", "", "one more variable for the agent, NAME=VALUE")
+	instrFlag  = flag.String("instructions", "", "the probe's MCP instructions, to see which agents show them to the model")
 )
 
 var ctxtraBin, probeBin string
@@ -196,6 +197,9 @@ func (e *env) mcpArgs() []string {
 	args := []string{probeBin, "mcp", "-log", e.mcpLog}
 	if *listDelay > 0 {
 		args = append(args, "-list-delay", listDelay.String())
+	}
+	if *instrFlag != "" {
+		args = append(args, "-instructions", *instrFlag)
 	}
 	return args
 }

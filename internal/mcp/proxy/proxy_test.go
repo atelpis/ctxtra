@@ -23,6 +23,7 @@ import (
 
 	"github.com/ctxtra/ctxtra/internal/mcp/mcptest"
 	"github.com/ctxtra/ctxtra/internal/mcp/names"
+	"github.com/ctxtra/ctxtra/internal/mcp/status"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 )
 
@@ -74,6 +75,18 @@ func (s *session) records() []Record {
 // start runs a proxy for dir with servers, and connects to it.
 func start(t *testing.T, dir string, deadline time.Duration, servers ...upstream.Server) *session {
 	t.Helper()
+	return startSecrets(t, dir, deadline, nil, servers...)
+}
+
+// startSecrets is start with secret values from secrets.
+func startSecrets(t *testing.T, dir string, deadline time.Duration, secrets Secrets, servers ...upstream.Server) *session {
+	t.Helper()
+	return startWith(t, dir, deadline, func(o *Options) { o.Secrets = secrets }, servers...)
+}
+
+// startWith is start with options that set changes.
+func startWith(t *testing.T, dir string, deadline time.Duration, set func(*Options), servers ...upstream.Server) *session {
+	t.Helper()
 	s := &session{changed: make(chan struct{}, 10), done: make(chan error, 1), prog: make(chan *mcp.ProgressNotificationParams, 10)}
 	ct, st := mcp.NewInMemoryTransports()
 	o := Options{Agent: "test", Dir: dir, Deadline: deadline,
@@ -83,6 +96,9 @@ func start(t *testing.T, dir string, deadline time.Duration, servers ...upstream
 			s.log = append(s.log, r)
 			s.logMu.Unlock()
 		}}
+	if set != nil {
+		set(&o)
+	}
 	go func() { s.done <- Run(context.Background(), o, st) }()
 	c := mcp.NewClient(&mcp.Implementation{Name: "agent", Version: "1"}, &mcp.ClientOptions{
 		ToolListChangedHandler: func(context.Context, *mcp.ToolListChangedRequest) {
@@ -165,8 +181,37 @@ func TestNoServers(t *testing.T) {
 	}
 }
 
+// secrets are fixed secret values per server ID.
+type secrets map[string]map[string]string
+
+func (m secrets) Secrets(s upstream.Server) (map[string]string, map[string]string, error) {
+	env, ok := m[s.ID]
+	if !ok {
+		return nil, nil, errors.New(s.Name + ": its secret values are not set; run ctxtra mcp login " + s.Name)
+	}
+	return env, nil, nil
+}
+
+type localEnv struct {
+	Cwd string
+	Env []string
+}
+
+func envOf(t *testing.T, s *session, tool string) localEnv {
+	t.Helper()
+	out, err := s.call(t, tool, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got localEnv
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		t.Fatal(out)
+	}
+	return got
+}
+
 // Local servers start in the session folder with only their own and the
-// base variables.
+// base variables, and their own secret values.
 func TestLocalEnvironment(t *testing.T) {
 	t.Setenv("GITHUB_TOKEN", "do-not-pass")
 	t.Setenv("HTTPS_PROXY", "http://proxy:3128")
@@ -175,17 +220,12 @@ func TestLocalEnvironment(t *testing.T) {
 	srv := testServer(t, "pg")
 	srv.Env["DB"] = "dev"
 	srv.EnvPass = []string{"MY_PASS"}
-	s := start(t, dir, 5*time.Second, srv)
-	out, err := s.call(t, "pg__env", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var got struct {
-		Cwd string
-		Env []string
-	}
-	if err := json.Unmarshal([]byte(out), &got); err != nil {
-		t.Fatal(out)
+	srv.SecretEnv = []string{"PGPASSWORD"}
+	other := testServer(t, "other")
+	s := startSecrets(t, dir, 5*time.Second, secrets{"pg": {"PGPASSWORD": "s3cret"}, "other": {"PGPASSWORD": "not-for-pg"}}, srv, other)
+	got := envOf(t, s, "pg__env")
+	if o := envOf(t, s, "other__env"); slices.ContainsFunc(o.Env, func(kv string) bool { return strings.HasPrefix(kv, "PGPASSWORD=") }) {
+		t.Errorf("a server without secret-env got a secret: %v", o.Env)
 	}
 	real, _ := filepath.EvalSymlinks(dir)
 	if wd, _ := filepath.EvalSymlinks(got.Cwd); wd != real {
@@ -196,15 +236,104 @@ func TestLocalEnvironment(t *testing.T) {
 		k, _, _ := strings.Cut(kv, "=")
 		keys = append(keys, k)
 	}
-	for _, want := range []string{"DB=dev", "HTTPS_PROXY=http://proxy:3128", "MY_PASS=passed", "PATH=" + os.Getenv("PATH")} {
+	for _, want := range []string{"DB=dev", "HTTPS_PROXY=http://proxy:3128", "MY_PASS=passed", "PATH=" + os.Getenv("PATH"), "PGPASSWORD=s3cret"} {
 		if !slices.Contains(got.Env, want) {
 			t.Errorf("missing %s in %v", want, got.Env)
 		}
 	}
 	for _, k := range keys {
-		if !slices.Contains(baseEnv, k) && !slices.Contains([]string{"DB", "MY_PASS", "PROXYTEST_ROLE"}, k) {
+		if !slices.Contains(baseEnv, k) && !slices.Contains([]string{"DB", "MY_PASS", "PROXYTEST_ROLE", "PGPASSWORD"}, k) {
 			t.Errorf("unexpected variable %s", k)
 		}
+	}
+}
+
+// A server whose secret values are missing is left out, and the log says
+// why.
+func TestMissingSecrets(t *testing.T) {
+	srv := testServer(t, "pg")
+	srv.SecretEnv = []string{"PGPASSWORD"}
+	s := startSecrets(t, t.TempDir(), 5*time.Second, secrets{}, srv, testServer(t, "good"))
+	if got := toolNames(s.tools(t)); slices.ContainsFunc(got, func(n string) bool { return strings.HasPrefix(n, "pg__") }) {
+		t.Errorf("tools %v", got)
+	}
+	found := false
+	for _, r := range s.records() {
+		if r.Event == "connect" && r.Server == "pg" {
+			found = r.Error == "secret values are not available: pg: its secret values are not set; run ctxtra mcp login pg"
+		}
+	}
+	if !found {
+		t.Errorf("log: %+v", s.records())
+	}
+}
+
+// The answer to initialize tells the agent how to learn why a tool is
+// missing, and names the servers that need sign-in.
+func TestInstructions(t *testing.T) {
+	remote := upstream.Server{ID: "linear", Name: "linear", URL: "https://169.254.169.254/mcp"}
+	s := startWith(t, t.TempDir(), 2*time.Second, func(o *Options) {
+		o.NeedsSignIn = func(s upstream.Server) bool { return s.Name == "linear" }
+	}, testServer(t, "pg"), remote)
+	got := s.cs.InitializeResult().Instructions
+	for _, want := range []string{"(pg, linear)", "run `ctxtra mcp status` in the session folder",
+		"linear needs sign-in and has no tools now: the user runs `ctxtra mcp login linear`"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("instructions %q lack %q", got, want)
+		}
+	}
+	if strings.Contains(got, "pg needs sign-in") {
+		t.Errorf("instructions: %q", got)
+	}
+	if empty := start(t, t.TempDir(), time.Second); empty.cs.InitializeResult().Instructions != "" {
+		t.Errorf("instructions without servers: %q", empty.cs.InitializeResult().Instructions)
+	}
+}
+
+// The session's status record says which server was too slow for the
+// first tool list, and how long it took.
+func TestStatusRecord(t *testing.T) {
+	var mu sync.Mutex
+	var recs []status.Record
+	s := startWith(t, t.TempDir(), 300*time.Millisecond, func(o *Options) {
+		o.Report = func(r status.Record) {
+			mu.Lock()
+			recs = append(recs, r)
+			mu.Unlock()
+		}
+	}, testServer(t, "fast"), testServer(t, "slow", "-delay", "1s"), upstream.Server{ID: "bad", Name: "bad", Command: []string{"/nonexistent/mcp"}},
+		testServer(t, "dies", "-exit-after", "150ms"))
+	deadline := time.After(10 * time.Second)
+	for !slices.Contains(toolNames(s.tools(t)), "slow__echo") {
+		select {
+		case <-s.changed:
+		case <-deadline:
+			t.Fatal("the slow server never came")
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	defer mu.Unlock()
+	if len(recs) < 2 {
+		t.Fatalf("records: %+v", recs)
+	}
+	byName := func(r status.Record) map[string]status.Server {
+		m := map[string]status.Server{}
+		for _, s := range r.Servers {
+			m[s.Name] = s
+		}
+		return m
+	}
+	first, last := byName(recs[0]), byName(recs[len(recs)-1])
+	if first["fast"].State != status.Ready || first["slow"].State != status.Missing || first["slow"].Reason != "too slow for the first tool list" ||
+		first["bad"].State != status.Missing || first["bad"].Reason != "program not found" {
+		t.Errorf("first record: %+v", recs[0])
+	}
+	if last["slow"].State != status.Late || last["slow"].Ms < 1000 {
+		t.Errorf("last record: %+v", recs[len(recs)-1])
+	}
+	if !strings.HasPrefix(last["dies"].Reason, "ended during the session") || last["dies"].State != status.Missing {
+		t.Errorf("a server that ended: %+v", last["dies"])
 	}
 }
 
@@ -382,7 +511,7 @@ func TestFailingServer(t *testing.T) {
 	exits.Command = []string{"/bin/sh", "-c", "exit 3"}
 	secret := testServer(t, "secret")
 	secret.SecretEnv = []string{"TOKEN"}
-	remote := upstream.Server{ID: "r", Name: "r", URL: "https://example.com/mcp"}
+	remote := upstream.Server{ID: "r", Name: "r", URL: "https://169.254.169.254/mcp"}
 	dies := testServer(t, "dies", "-exit-now")
 	s := start(t, t.TempDir(), 5*time.Second, bad, testServer(t, "good"), exits, secret, remote, dies)
 	got := toolNames(s.tools(t))
@@ -396,7 +525,7 @@ func TestFailingServer(t *testing.T) {
 		}
 	}
 	want := map[string]string{"bad": "program not found", "good": "", "exits": "connection closed",
-		"secret": "secret values are not available", "r": "remote servers are not supported yet", "dies": "server exit status 17"}
+		"secret": "secret values are not available", "r": "refused by ctxtra's network rules", "dies": "server exit status 17"}
 	for k, v := range want {
 		if errs[k] != v && (k != "exits" || !strings.HasPrefix(errs[k], "server exit")) {
 			t.Errorf("%s: %q, want %q", k, errs[k], v)
@@ -934,5 +1063,22 @@ func TestServerEndsBeforeFirstList(t *testing.T) {
 	got := toolNames(s.tools(t))
 	if slices.ContainsFunc(got, func(n string) bool { return strings.HasPrefix(n, "a__") }) || !slices.Contains(got, "b__echo") {
 		t.Errorf("tools %v", got)
+	}
+}
+
+// A server that ended stays missing in the record, also when its start's
+// result is recorded after its end.
+func TestReportKeepsEnd(t *testing.T) {
+	var last status.Record
+	r := newReport(Options{Report: func(rec status.Record) { last = rec }}, []upstream.Server{{Name: "pg"}})
+	r.flush()
+	r.end("pg", "ended during the session: exit status 1")
+	r.set("pg", status.Ready, "", 10)
+	if last.Servers[0].State != status.Missing {
+		t.Errorf("record: %+v", last.Servers)
+	}
+	r.restart("pg", "signed in during the session", 20)
+	if last.Servers[0].State != status.Late {
+		t.Errorf("after a restart: %+v", last.Servers)
 	}
 }

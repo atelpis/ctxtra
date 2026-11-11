@@ -136,6 +136,9 @@ type Session struct {
 	t     *testing.T
 	agent Agent
 	runs  int
+	// Adjust changes the agent's command before each run, such as to
+	// approve MCP tools in a headless run.
+	Adjust func(cmd *exec.Cmd)
 }
 
 func newSession(t *testing.T, a Agent) *Session {
@@ -173,6 +176,9 @@ func (s *Session) Run(dir string, opts driver.Options, script ...mock.Step) *Res
 	cmd, err := s.agent.Command(s.agent.Bin, s.Home, dir, m.URL(), prompt, opts, s.Env())
 	if err != nil {
 		s.t.Fatal(err)
+	}
+	if s.Adjust != nil {
+		s.Adjust(cmd)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeoutRun)
 	defer cancel()

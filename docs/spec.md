@@ -663,7 +663,7 @@ It gives the session the tools of the MCP servers bound to the session folder, a
   shorter than the agent waits for the list, because an agent that gives up first gets no tools of any server:
   1.5 seconds in Claude Code, 8 in Pi, 10 in the others (Codex waits that long because its entry is
   `required`). A server that answers later is added with a tool list change notification; agents that ignore
-  it (Codex, Muse) don't get its tools in that session.
+  it (Codex) don't get its tools in that session.
 - A problem never breaks a session: with a broken config, a failing server or no bound server, the proxy starts
   and serves the tools it can, or none, and logs the problem. A server whose tool list has more than 2,000 tools
   or 8 MiB, or that pages without end, is left out. A server that ends during the session is stopped with the
@@ -696,6 +696,147 @@ ended, and its own end. It never logs tool arguments, results, secrets or config
 problems as text; a failed call is logged by its kind or code only, because error messages can repeat the
 arguments. `doctor`'s last hook runs leave these lines out.
 
+A remote server is reached with streamable HTTP, and with the older SSE transport when that fails. ctxtra
+checks every request, not only the configured URL:
+
+- Requests go only to the server's origin. A redirect to another origin is refused, and so is an SSE message
+  endpoint on another origin. Tokens and secret headers go only to the server; refresh tokens and client secrets
+  only to the authorization server's token endpoint, which never gets a redirect followed.
+- HTTPS only. Plain HTTP only to loopback, for a server on loopback.
+- Addresses are checked when connecting, so a DNS change can't get around the check. Link-local addresses,
+  such as the cloud metadata address `169.254.169.254`, are always refused. Private addresses (RFC 1918, CGNAT,
+  ULA) are allowed only when the server itself is on one, and loopback only when the server is on loopback.
+- `HTTPS_PROXY`, `HTTP_PROXY`, `NO_PROXY` and `ALL_PROXY` (also lower case) are honored, and the certificates of
+  `SSL_CERT_FILE` and `SSL_CERT_DIR` are trusted next to the system's. Through a proxy, ctxtra checks the target's
+  addresses as this machine resolves them, and refuses a name that doesn't resolve here unless it is the
+  server's own. The proxy resolves the name again: a proxy that resolves it to another address isn't covered.
+
+### Sign-in
+
+A remote server that answers a request without a token with 401 and a Bearer challenge uses OAuth; an older
+SSE server is asked with GET. Only `ctxtra mcp add` and `ctxtra
+mcp login`, in the user's terminal, sign in; the proxy and the hook never do. Without a terminal, or with
+`--no-input`, they fail and change nothing; `--no-login` adds the server without signing in.
+
+Sign-in follows the MCP authorization spec (2026-07-28) for clients:
+
+- Discovery: the server's protected resource metadata, where its 401 says or at the well-known places, names
+  the authorization server. Without that metadata, as with Atlassian, ctxtra looks for authorization server
+  metadata at the server's origin. The metadata must name the issuer it was found for, offer PKCE with `S256`,
+  and use HTTPS for every endpoint.
+- Scopes: the server's configured scopes; else those of its 401; else those of its protected resource metadata.
+  ctxtra adds `offline_access` when the authorization server lists it, so that it issues a refresh token, and
+  the scopes of the last sign-in and of a 403 `insufficient_scope`.
+- Client: the user's own app (`--client-id`, and `--client-secret` for its secret), else ctxtra's client ID
+  metadata document, else dynamic registration. ctxtra's document isn't hosted yet, so ctxtra registers
+  dynamically. A server that offers neither, such as GitHub or Slack, needs the user's own app.
+- The browser opens the authorization link (`$BROWSER`, else `open` or `xdg-open`). ctxtra waits for the
+  redirect on `127.0.0.1`, on a random port or on `--callback-port`, which is stored for later logins. It
+  accepts one redirect with the right `state` and refuses others without ending the sign-in; it waits 5
+  minutes. With `--no-browser`, ctxtra prints the link and accepts the address the browser ends at, pasted in
+  the terminal, for example over SSH.
+- The answer's `iss` must be the issuer, and is required when the authorization server says it sends it. The
+  token request sends the `resource` parameter. A failed check stores nothing.
+- A dynamic registration is reused while the redirect address is the same, and made again for a new one.
+
+After sign-in, ctxtra shows the issuer, the server's notes, and the account when the provider's answer names
+one. A second server of the same issuer gets a note before the browser opens: the provider may use the
+browser's active account, so a private window helps to sign in with another one. When no refresh token came,
+ctxtra says the user signs in again when the sign-in expires.
+
+In a session, a server that needs sign-in at its start has no tools; the proxy reads its state file every 3
+seconds and adds its tools once it is signed in (Codex ignores the list change: a new session gets
+them). A refresh token that the provider rejects, or a 401 after one refresh, fails the call with `run ctxtra
+mcp login NAME`. A 403 `insufficient_scope` records the scopes it asks for, for the next login, and fails the call
+the same way.
+
+`ctxtra mcp login NAME` signs in again; for a server without OAuth, or with `--secrets`, it asks for the secret
+values again. `ctxtra mcp logout NAME` deletes the tokens and secret values on this machine, like the agents'
+own logout; the provider isn't told, so the grant stays valid there until it expires or the user removes it.
+
+### Sign-in state and missing tools
+
+The session summary names each bound server whose state file says it needs sign-in, after an empty line, like
+the [notices](#notices):
+
+```text
+⚠ linear_work needs sign-in: run ctxtra mcp login linear_work
+```
+
+The hook reads only the state files: no key, no keychain, no network. A server that no session has tried yet
+has no state, and no line.
+
+The proxy records, per session folder, what the last session started there got from each bound server: its
+tools in the first tool list, later (too slow for it, or signed in during the session; Codex doesn't
+get those tools), or none, and why. `ctxtra mcp status [DIR]` shows that record with the folder's servers and
+their sign-in state, from local files only:
+
+```text
+the last session here (codex, 2026-11-10 14:08:19) waited 10.0 s for the first tool list:
+  linear_work  ready after 0.4 s
+  pg  later: too slow for the first tool list, after 15.2 s; Codex sessions didn't get its tools
+```
+
+The records are in `~/.ctxtra/mcp/status`, one per folder, so a session in one folder never changes another's.
+
+The agent learns it too: the proxy's instructions (the MCP `instructions` field, which it sends after waiting
+at most half a second for the folder's servers) name the bound servers and say to run `ctxtra mcp status` when
+a tool of theirs is missing, and name each server whose state says it needs sign-in. Claude Code shows them in
+the system prompt; Codex in the description of the `ctxtra` server's tools, so only when the session has at least
+one of them.
+`ctxtra mcp list` and `doctor` show each server's sign-in state and where the key of the credentials is, with the
+warning for a key file.
+
+### Credentials
+
+A server's secret values, its OAuth client registration and its tokens are stored in `~/.ctxtra/mcp`, never in
+the config or in an agent's config. ctxtra asks for secret values in the terminal without showing them, or
+reads them from stdin, one per line.
+
+| Path | Content |
+|---|---|
+| `credentials/<server>.v1.age` | The server's credentials, encrypted. `v1` is the format version. |
+| `state/<server>.json` | No secrets: whether the server is signed in, and why it needs sign-in. |
+| `locks/<server>.lock`, `locks/.store.lock` | Locks for changes of one server's files, and for creating the key. |
+| `key.json` | No secrets: where the key is, `keychain` or `file`. |
+| `key` | The key, only when `key.json` says `file`. |
+
+The folder is readable by the user only (0700), and the files too (0600). Every save replaces the file in one
+step and is synced to the disk before ctxtra uses the new values: a failed save fails the command or the
+call.
+
+The key is an [age](https://age-encryption.org) X25519 key in the OS keychain: the login keychain on macOS, the
+Secret Service on Linux (service `ctxtra`, account `mcp-credentials`). Without a usable keychain, the key is the
+file `key`, and ctxtra warns that any process of the user can read the credentials then. Only the commands that
+set secret values or sign in create the key, and they record its place in `key.json`. Every other command and
+the proxy use that place and never create or move the key. When the keychain that holds the key can't be
+reached, for example over SSH or without a session bus, ctxtra says so and doesn't fall back to a file. A
+file key stays the key when a keychain becomes usable later. The proxy waits for the keychain at most 3
+seconds, and on Linux never unlocks a locked Secret Service collection, which would show a prompt. macOS can't
+read a locked keychain without a prompt; the login keychain is unlocked while the user is logged in. When the
+proxy can't get the key, the servers that need it are left out. When the
+key is gone, the credentials can't be read: the next command that creates the key moves them to
+`credentials/unreadable`, and their servers need their values or sign-in again.
+
+Each server's credentials record its name and its URL, or its command for a local server. When the server's
+definition changes, ctxtra sends nothing and the values must be set again. Two configs (`$CTXTRA_CONFIG`) with
+a server of the same name and URL share its credentials; use different names for different accounts.
+Removing a server deletes its credentials.
+
+Sessions in every agent refresh a server's tokens at the same time safely: a refresh holds that server's lock
+while it reads the credentials again, asks for new tokens and saves them, and other sessions wait for it and
+use the new tokens. Every other change of a server's credentials takes the same lock. The locks use `flock`,
+which can be unreliable on a network home folder (NFS).
+
+The hook never reads the credentials or the key. Like the agents' own MCP sign-ins, the credentials protect
+against backups, sync tools and casual reads, not against the user's own processes: any process of the user
+can read the key, through the keychain's command-line tool or the key file.
+
+The file names, the format version in them, the lock paths and the state file's meaning are a contract between
+ctxtra versions, so sessions of an older and a newer ctxtra can refresh the same server. Within a format
+version, ctxtra only adds fields and keeps the fields it doesn't know. An older ctxtra that finds credentials in
+a newer format fails that server's calls with an upgrade hint, and changes nothing.
+
 ### Setup
 
 With `CTXTRA_EXPERIMENTAL_MCP=1` and at least one MCP server in the config, `ctxtra setup` adds the entry to each
@@ -709,8 +850,10 @@ keeps one that is there; `--remove` removes it.
 | Cursor | `~/.cursor/mcp.json` | `mcpServers.ctxtra: {command, args}` |
 | OpenCode | `~/.config/opencode/opencode.json` | `mcp.servers.ctxtra: {type: local, command, pool: false}` |
 | Pi | `~/.pi/agent/mcp.json` | `mcpServers.ctxtra: {command, args}` |
-| Muse | `~/.config/muse/settings.json` | `mcpServers.ctxtra: {type: stdio, command, args, mode: optional}` |
 | Antigravity | `~/.gemini/config/mcp_config.json` | `mcpServers.ctxtra: {command, args}` |
+
+Muse isn't supported yet: it starts MCP servers with a cleared environment, so ctxtra's server would get
+neither `CTXTRA_EXPERIMENTAL_MCP` nor ctxtra's other settings. Setup adds no entry to it.
 
 Agents write these files themselves too (Claude Code often writes `~/.claude.json`): when a file changes
 between setup's read and its write, setup makes its edit again on the new content, so the agent's change stays.
@@ -746,6 +889,38 @@ The setup notices and `doctor` report the entry:
 | The entry is gone from its file | `claude: the ctxtra MCP server is gone from ~/.claude.json; if that wasn't on purpose, run ctxtra setup --agent claude; ...` |
 | Codex's entry doesn't pass a local server's `env-pass` variable | `codex: the ctxtra MCP server doesn't pass DBHOST to local servers; run ctxtra setup --agent codex` |
 | An entry named ctxtra isn't setup's | `~/.claude.json: the ctxtra MCP server doesn't run ctxtra mcp proxy; rename or delete it, then run ctxtra setup --agent claude` |
+
+### Security
+
+ctxtra holds the sign-ins of many services, the most sensitive data it keeps. What protects them, and what
+doesn't:
+
+- **Folder scoping prevents mistakes; it isn't a security boundary.** A binding decides which servers a
+  session gets, so an agent doesn't use the wrong account by accident. An agent with a shell can still run
+  `ctxtra mcp proxy` in another folder, or run `ctxtra mcp` commands, and use every server of the config.
+- **Any process of the user can read the credentials,** through the keychain's command-line tool or the key
+  file. With the key in the keychain, encryption protects them from backups, sync tools and casual reads, as
+  the agents' own sign-ins are. With a key file, a backup or sync of `~/.ctxtra/mcp` holds the key too, and
+  whoever gets it can read every credential.
+- **The proxy sees every call and its result,** and forwards them. It logs neither: only which servers
+  started, how they ended, and failed calls by their kind or code, with URLs cut to their origin.
+- **Credentials stay on their origin** and go only over HTTPS, or plain HTTP to a server on loopback: see
+  [Network and logs](#network-and-logs).
+- **Local servers get little of the agent's environment:** their own variables, the fixed base set, and the
+  variables they name in `env-pass`. A token in the agent's environment reaches a server only when that
+  server names it, or when it is part of a base variable, such as a proxy URL with a password. They run in the session folder, and a tool like `npx`
+  can run code of the session's repository.
+- **`ctxtra mcp show` prints a local server's stderr** in the terminal, which can hold secrets. An agent that
+  runs it reads that output. `ctxtra mcp status`, which the proxy's instructions point agents to, shows only
+  a server's origin or program name, never a URL's path, its query or a command's arguments.
+- **Packages can't start commands.** A source's binding files can name servers but not declare them, so a
+  pinned package never makes the proxy start a program.
+- **A problem in the proxy never fails a session:** a broken config, a failing server or missing credentials
+  cost the tools they concern. Only a proxy that can't start at all, such as a moved ctxtra binary, stops a
+  Codex session, whose entry is required.
+- **ctxtra's client identity.** When ctxtra's client ID metadata document is used, it is the identity that
+  authorization servers show and trust for ctxtra, and whoever controls its domain controls that identity.
+  Until the domain exists, ctxtra registers itself with each authorization server instead.
 
 ### Tool names
 

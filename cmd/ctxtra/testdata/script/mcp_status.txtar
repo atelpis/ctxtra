@@ -1,0 +1,31 @@
+# ctxtra mcp status says which servers a folder's last session got, and
+# why one is missing: here pg is too slow for Claude Code's 1.5 seconds.
+
+env CTXTRA_EXPERIMENTAL_MCP=1
+mkdir dev/app other
+exec ctxtra mcp status dev/app
+stdout '^MCP servers of ~/dev/app:$'
+stdout '^  pg  local, mcptest, none needed$'
+stdout 'no session has started here'
+
+env MCP_AGENT=claude
+mcp dev/app
+stdout '^tool fast__echo'
+! stdout '^tool pg__'
+exec ctxtra mcp status dev/app
+stdout '^the last session here \(claude, .*\) waited 1.5 s for the first tool list:$'
+stdout '^  fast  ready after [0-9.]+ s$'
+stdout '^  (pg  missing: too slow for the first tool list|pg  later: too slow for the first tool list, after [3-9]\.[0-9] s; Codex sessions didn''t get its tools)$'
+
+exec ctxtra mcp status other
+stdout 'no MCP servers are bound to ~/other'
+
+-- .config/ctxtra/config.yaml --
+schema: ctxtra/v1
+mcp-servers:
+  pg: {command: [mcptest, -delay, 3s]}
+  fast: {command: [mcptest]}
+bindings:
+  - name: app
+    match: {dirs: ['~/dev/**']}
+    mcp-servers: [pg, fast]

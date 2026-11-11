@@ -19,7 +19,9 @@ import (
 	"github.com/ctxtra/ctxtra/internal/agent/registry"
 	"github.com/ctxtra/ctxtra/internal/config"
 	"github.com/ctxtra/ctxtra/internal/experimental"
+	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/mcp/names"
+	"github.com/ctxtra/ctxtra/internal/mcp/oauth"
 	"github.com/ctxtra/ctxtra/internal/mcp/proxy"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 	"github.com/ctxtra/ctxtra/internal/paths"
@@ -53,7 +55,7 @@ only with ` + experimental.MCPVar + `=1.`,
 			return group(c, args)
 		},
 	}
-	c.AddCommand(a.mcpAddCmd(), a.mcpListCmd(), a.mcpShowCmd(), a.mcpRemoveCmd(), mcpProxyCmd())
+	c.AddCommand(a.mcpAddCmd(), a.mcpListCmd(), a.mcpShowCmd(), a.mcpStatusCmd(), a.mcpLoginCmd(), a.mcpLogoutCmd(), a.mcpRemoveCmd(), mcpProxyCmd())
 	return c
 }
 
@@ -87,10 +89,17 @@ and never fails a session. You don't run it yourself.`,
 }
 
 type mcpAddOptions struct {
-	env, envPass []string
-	notes        string
-	noLogin      bool
-	dryRun       bool
+	env, envPass  []string
+	secretEnv     []string
+	secretHeaders []string
+	clientID      string
+	clientSecret  bool
+	notes         string
+	noLogin       bool
+	dryRun        bool
+	noInput       bool
+	interactive   bool
+	signIn        signInOptions
 }
 
 func (a *app) mcpAddCmd() *cobra.Command {
@@ -103,10 +112,19 @@ session folder, or a remote one at URL. Then it lists the tools that sessions
 will see. Bind the server to folders with ctxtra binding add --mcp NAME.
 
 NAME is 1 to 20 characters of a-z, 0-9 and _. The program must be an absolute
-path or a name in PATH. A local server gets only its --env and --env-pass
-variables and a few base ones (PATH, HOME, proxy settings), not the agent's.`,
-		Example: `  ctxtra mcp add pg --env PGUSER=dev -- npx -y @modelcontextprotocol/server-postgres postgresql://localhost/dev
-  ctxtra mcp add linear_work https://mcp.linear.app/mcp --no-login`,
+path or a name in PATH. A local server gets only its --env, --env-pass and
+--secret-env variables and a few base ones (PATH, HOME, proxy settings), not
+the agent's.
+
+A remote server that uses OAuth is signed in to right away, in your browser,
+unless --no-login is given; signing in needs a terminal.
+
+ctxtra asks for the values of --secret-env, --secret-header and
+--client-secret in the terminal, or reads them from stdin, one per line, and
+stores them encrypted, never in the config.`,
+		Example: `  ctxtra mcp add pg --env PGUSER=dev --secret-env PGPASSWORD -- npx -y @modelcontextprotocol/server-postgres postgresql://localhost/dev
+  ctxtra mcp add linear_work https://mcp.linear.app/mcp --notes 'the work workspace'
+  ctxtra mcp add internal https://mcp.internal.example/mcp --secret-header Authorization --no-login`,
 		Args: func(c *cobra.Command, args []string) error {
 			if len(args) == 0 {
 				return errors.New("expected NAME")
@@ -127,14 +145,21 @@ variables and a few base ones (PATH, HOME, proxy settings), not the agent's.`,
 			default:
 				return errors.New("expected a URL, or -- and a command")
 			}
+			o.noInput, o.interactive = a.noInput, !a.noInput && Interactive(a.IO)
 			return code(mcpAdd(a.IO, args[0], url, command, o))
 		}),
 	}
 	f := c.Flags()
 	f.StringArrayVar(&o.env, "env", nil, "give a local server the variable `NAME=VALUE` (repeatable)")
 	f.StringArrayVar(&o.envPass, "env-pass", nil, "pass a local server the variable `NAME` from the agent's environment (repeatable)")
+	f.StringArrayVar(&o.secretEnv, "secret-env", nil, "give a local server the variable `NAME`, with a value ctxtra asks for and stores (repeatable)")
+	f.StringArrayVar(&o.secretHeaders, "secret-header", nil, "send a remote server the header `NAME`, with a value ctxtra asks for and stores (repeatable)")
+	f.StringVar(&o.clientID, "client-id", "", "the `ID` of your own OAuth app for a remote server")
+	f.BoolVar(&o.clientSecret, "client-secret", false, "ask for the secret of the --client-id app, and store it")
 	f.StringVar(&o.notes, "notes", "", "your notes about the server, such as which account to use")
 	f.BoolVar(&o.noLogin, "no-login", false, "don't sign in now (remote servers)")
+	f.BoolVar(&o.signIn.noBrowser, "no-browser", false, "print the sign-in link instead of opening a browser, and accept the address it ends at")
+	f.IntVar(&o.signIn.callbackPort, "callback-port", 0, "listen for the sign-in on this `PORT`, as your own app expects; it is stored")
 	f.BoolVar(&o.dryRun, "dry-run", false, "show the change; change nothing, start and connect to nothing")
 	return c
 }
@@ -145,16 +170,17 @@ func mcpAdd(stdio IO, name, url string, command []string, o mcpAddOptions) int {
 	if err := config.CheckServerName(name); err != nil {
 		return fail(err)
 	}
-	srv := config.NewMCPServer{Name: name, URL: url, Command: command, EnvPass: o.envPass, Notes: o.notes}
+	srv := config.NewMCPServer{Name: name, URL: url, Command: command, EnvPass: o.envPass, SecretEnv: o.secretEnv,
+		SecretHeaders: o.secretHeaders, ClientID: o.clientID, Notes: o.notes}
+	if o.clientSecret && o.clientID == "" {
+		return fail(errors.New("--client-secret needs --client-id"))
+	}
 	for _, kv := range o.env {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok || k == "" {
 			return fail(fmt.Errorf("--env %q: expected NAME=VALUE", kv))
 		}
 		srv.Env = append(srv.Env, [2]string{k, v})
-	}
-	if url != "" && !o.noLogin && !o.dryRun {
-		return fail(errors.New("signing in to remote servers isn't supported yet; add --no-login"))
 	}
 	var added upstream.Server
 	change := func(old []byte) ([]byte, error) {
@@ -175,23 +201,69 @@ func mcpAdd(stdio IO, name, url string, command []string, o mcpAddOptions) int {
 		}
 		return out, nil
 	}
+	old, err := readConfig(s.file)
+	if err == nil {
+		_, err = change(old)
+	}
+	if err != nil {
+		return fail(err)
+	}
 	if o.dryRun {
-		old, err := readConfig(s.file)
-		if err == nil {
-			_, err = change(old)
-		}
-		if err != nil {
-			return fail(err)
-		}
 		fmt.Fprintf(s.Out, "would add the MCP server %s to %s: %s\n", name, paths.Tilde(s.file), describeServer(added))
 		fmt.Fprintln(s.Out, "nothing changed (--dry-run)")
 		return 0
 	}
-	if err := s.edit(change); err != nil {
+	secrets, err := askSecrets(stdio, o.noInput, name, added.SecretEnv, added.SecretHeaders, o.clientSecret)
+	if err != nil {
+		return fail(err)
+	}
+	ctx, stop := signalContext()
+	defer stop()
+	// A remote server that answers a request without a token with 401
+	// uses OAuth: sign in now, in the terminal, or later with login.
+	var ch *oauth.Challenge
+	if !added.Local() && !o.noLogin {
+		if ch, err = detectOAuth(ctx, added, secrets.headers); err != nil {
+			return fail(fmt.Errorf("can't reach %s: %w; to add it anyway, add --no-login", name, err))
+		}
+		if ch != nil && !o.interactive {
+			return fail(fmt.Errorf("%w; nothing changed: add --no-login, and run ctxtra mcp login %s in your terminal later", errNeedsTerminal, name))
+		}
+	}
+	// The values are stored under the config's lock, once the edit knows
+	// the name is new, so that a concurrent add of the same name can't
+	// replace or delete them.
+	store := openStore()
+	commit := func(old []byte) ([]byte, error) {
+		out, err := change(old)
+		if err != nil || secrets.empty() && o.signIn.callbackPort == 0 {
+			return out, err
+		}
+		if err := storeSecrets(s.Err, store, added, secrets); err != nil {
+			return nil, err
+		}
+		if o.signIn.callbackPort != 0 {
+			return out, store.SetCallbackPort(added, o.signIn.callbackPort)
+		}
+		return out, nil
+	}
+	if err := s.edit(commit); err != nil {
 		return fail(err)
 	}
 	fmt.Fprintf(s.Out, "added the MCP server %s to %s: %s\n", name, paths.Tilde(s.file), describeServer(added))
-	if added.Local() {
+	if !secrets.empty() {
+		fmt.Fprintf(s.Out, "stored its secret values, encrypted, in %s\n", paths.Tilde(store.Dir))
+	}
+	signedIn := ch == nil
+	if ch != nil {
+		o.signIn.clientSecret = secrets.clientSecret
+		if err := signInTo(ctx, stdio, store, added, ch, o.signIn); err != nil {
+			fmt.Fprintf(s.Err, "ctxtra mcp add: the sign-in failed: %v\nThe server is added; sign in with ctxtra mcp login %s\n", err, name)
+		} else {
+			signedIn = true
+		}
+	}
+	if added.Local() || !o.noLogin && signedIn {
 		wd, _ := os.Getwd()
 		if tools, err := serverTools(added, wd, false); err != nil {
 			fmt.Fprintf(s.Err, "warning: couldn't list its tools: %v; check it with ctxtra mcp show %s\n", err, name)
@@ -225,6 +297,27 @@ func agentsNeedingSetup() []string {
 	return out
 }
 
+// storeSecrets stores the secret values of srv, creating the store's key
+// when there is none.
+func storeSecrets(errOut io.Writer, store *creds.Store, srv upstream.Server, v secretValues) error {
+	fileKey, err := store.EnsureKey()
+	if err != nil {
+		return err
+	}
+	if fileKey {
+		warnFileKey(errOut, store)
+	}
+	if len(v.env) > 0 || len(v.headers) > 0 {
+		if err := store.SetSecrets(srv, v.env, v.headers); err != nil {
+			return err
+		}
+	}
+	if v.clientSecret != "" {
+		return store.SetClientSecret(srv, v.clientSecret)
+	}
+	return nil
+}
+
 func describeServer(s upstream.Server) string {
 	if s.Local() {
 		return "local, " + strings.Join(s.Command, " ")
@@ -246,7 +339,9 @@ func serverTools(s upstream.Server, dir string, stderr bool) ([]names.Name, erro
 	}
 	// Started and stopped like the proxy starts and stops it, with every
 	// process it starts.
-	up, err := proxy.DialStderr(ctx, s, dir, mcp.NewClient(&mcp.Implementation{Name: "ctxtra"}, &mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}}), errOut)
+	store := openStore()
+	d := proxy.Dialer{Secrets: store, Tokens: store, Stderr: errOut}
+	up, err := d.Dial(ctx, s, dir, mcp.NewClient(&mcp.Implementation{Name: "ctxtra"}, &mcp.ClientOptions{Capabilities: &mcp.ClientCapabilities{}}))
 	if err != nil {
 		return nil, err
 	}
@@ -288,13 +383,63 @@ type mcpInfo struct {
 	Notes   string   `json:"notes,omitempty"`
 }
 
+// mcpInfos are the config's servers with their sign-in state.
+func mcpInfos(cfg *config.Config) []mcpInfo {
+	out := []mcpInfo{}
+	for _, s := range cfg.MCPServers {
+		kind := "remote"
+		if s.Local() {
+			kind = "local"
+		}
+		out = append(out, mcpInfo{s.Name, kind, s.URL, s.Command, signIn(s), s.Notes})
+	}
+	return out
+}
+
+// keyLocation is where the key of the credentials is: "keychain", the key
+// file's path, or "" when nothing is stored yet.
+func keyLocation() string {
+	switch loc := creds.Open().KeyLocation(); loc {
+	case "the OS keychain":
+		return "keychain"
+	default:
+		return loc
+	}
+}
+
+// keyNote says where the key of the credentials is, with the warning for
+// a key file.
+func keyNote() string {
+	switch loc := keyLocation(); loc {
+	case "":
+		return "none stored yet"
+	case "keychain":
+		return "encrypted, the key in the OS keychain"
+	default:
+		return "encrypted, the key in " + paths.Tilde(loc) + " (no OS keychain was usable: any process of yours can read the credentials)"
+	}
+}
+
 // signIn is a server's sign-in state, from local files only.
 func signIn(s upstream.Server) string {
 	switch {
 	case s.Local() && len(s.SecretEnv) == 0:
 		return "none needed"
+	}
+	st, err := creds.Open().State(s)
+	switch {
+	case err != nil:
+		return "sign-in state unknown: " + err.Error()
+	case s.Local() && st.SignedIn:
+		return "secret values set"
 	case s.Local():
 		return "secret values not set"
+	case st.NeedsLogin:
+		return "needs sign-in: " + st.Reason
+	case st.SignedIn && st.Issuer != "":
+		return "signed in with " + st.Issuer
+	case st.SignedIn:
+		return "secret values set"
 	}
 	return "not signed in"
 }
@@ -308,14 +453,7 @@ func (a *app) mcpListCmd() *cobra.Command {
 		Args:    noArgs,
 		RunE: a.mcpRun(func(*cobra.Command, []string) error {
 			cfg := config.Load(paths.ConfigPath(), newReader())
-			out := []mcpInfo{}
-			for _, s := range cfg.MCPServers {
-				kind := "remote"
-				if s.Local() {
-					kind = "local"
-				}
-				out = append(out, mcpInfo{s.Name, kind, s.URL, s.Command, signIn(s), s.Notes})
-			}
+			out := mcpInfos(cfg)
 			var problems []string
 			for _, p := range cfg.Problems {
 				if strings.Contains(p, "mcp-servers") {
@@ -331,6 +469,9 @@ func (a *app) mcpListCmd() *cobra.Command {
 			}
 			for _, s := range out {
 				fmt.Fprintf(a.Out, "%s  %s, %s\n", s.Name, s.Kind, s.SignIn)
+			}
+			if len(out) > 0 {
+				fmt.Fprintf(a.Out, "credentials: %s\n", keyNote())
 			}
 			for _, p := range problems {
 				fmt.Fprintf(a.Out, "PROBLEM: %s\n", p)
@@ -385,6 +526,15 @@ func (a *app) mcpRemoveCmd() *cobra.Command {
 			name := args[0]
 			s := newSources(a.IO)
 			change := func(old []byte) ([]byte, error) { return config.RemoveMCPServer(old, name) }
+			// Its credentials go with it, also when its definition was
+			// broken: after the config is written, under its lock, so a
+			// later add of the same name keeps its own.
+			deleteCreds := func() error {
+				if err := creds.Open().Delete(upstream.Server{ID: config.MCPServerID(name), Name: name}); err != nil {
+					return fmt.Errorf("removed it from the config, but couldn't delete its credentials: %w", err)
+				}
+				return nil
+			}
 			var err error
 			if dryRun {
 				var old []byte
@@ -392,7 +542,7 @@ func (a *app) mcpRemoveCmd() *cobra.Command {
 					_, err = change(old)
 				}
 			} else {
-				err = s.edit(change)
+				err = s.editThen(change, deleteCreds)
 			}
 			if err != nil {
 				return exitCode(s.fail("mcp remove", err))

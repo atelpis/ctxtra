@@ -14,13 +14,16 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/jsonrpc"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/mcp/names"
+	"github.com/ctxtra/ctxtra/internal/mcp/status"
 	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
 )
 
@@ -42,10 +45,30 @@ type Options struct {
 	// Servers returns the servers bound to dir, and problems to log. It
 	// never fails: a broken config has no servers.
 	Servers func(dir string) ([]upstream.Server, []string)
-	// Connect starts a session with one server; nil uses Dial.
+	// Connect starts a session with one server; nil uses a Dialer with
+	// Secrets.
 	Connect func(ctx context.Context, s upstream.Server, dir string, c *mcp.Client) (*Upstream, error)
+	// Secrets has the servers' secret values, Tokens their OAuth tokens.
+	Secrets Secrets
+	Tokens  Tokens
+	// SignInState is a server's sign-in generation and whether it is
+	// signed in, from local files: a server missing because it needs
+	// sign-in is connected when they change. nil doesn't wait.
+	SignInState func(upstream.Server) (int64, bool)
+	// SignInPoll is how often SignInState is read; 0 is 3 seconds.
+	SignInPoll time.Duration
 	// Log records what happened; nil logs nothing.
 	Log func(Record)
+	// Report gets the session start's status record for the folder, for
+	// ctxtra mcp status; nil keeps none.
+	Report func(status.Record)
+	// NeedsSignIn reports whether a server's state says it needs sign-in,
+	// from local files, for the instructions.
+	NeedsSignIn func(upstream.Server) bool
+	// KeepsFirstList is set for an agent that ignores tool list changes,
+	// such as Codex and Muse: tools that come later reach a new session
+	// only.
+	KeepsFirstList bool
 }
 
 // Run serves the agent over t until the agent closes it or ctx ends, then
@@ -56,7 +79,10 @@ func Run(ctx context.Context, o Options, t mcp.Transport) error {
 		o.Deadline = Deadline
 	}
 	if o.Connect == nil {
-		o.Connect = Dial
+		o.Connect = Dialer{Secrets: o.Secrets, Tokens: o.Tokens}.Dial
+	}
+	if o.SignInPoll == 0 {
+		o.SignInPoll = 3 * time.Second
 	}
 	if o.Log == nil {
 		o.Log = func(Record) {}
@@ -67,11 +93,11 @@ func Run(ctx context.Context, o Options, t mcp.Transport) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	p := &proxy{o: o, ctx: ctx, ready: make(chan struct{}), tools: map[string]route{}, progress: map[string]*progressQueue{},
-		latest: map[string][]*mcp.Tool{}}
+		latest: map[string][]*mcp.Tool{}, resolved: make(chan struct{})}
 	p.server = mcp.NewServer(&mcp.Implementation{Name: "ctxtra", Version: o.Version}, &mcp.ServerOptions{
 		Capabilities: &mcp.ServerCapabilities{Tools: &mcp.ToolCapabilities{ListChanged: true}},
 	})
-	p.server.AddReceivingMiddleware(p.waitForTools)
+	p.server.AddReceivingMiddleware(p.waitForTools, p.instruct)
 	p.wg.Go(func() { p.start(ctx) })
 	// The servers stop as soon as the session ends: when the agent closes
 	// the connection, or ctx ends. The SDK then still waits for running
@@ -157,6 +183,165 @@ type proxy struct {
 	latest    map[string][]*mcp.Tool    // each server's last tool list before the first list was answered
 	stopping  bool                      // no more upstreams are added
 	ended     map[*Upstream]bool        // servers that ended during the session
+
+	report *report
+
+	resolved chan struct{}     // closed when bound is set
+	bound    []upstream.Server // the session's servers
+}
+
+// initWait is how long the answer to initialize waits for the session's
+// servers, to name in the instructions those that need sign-in. Resolving
+// is quick unless the folder's repository is slow to read.
+const initWait = 500 * time.Millisecond
+
+// instruct adds the instructions to the answer to initialize: Claude Code
+// shows them in the model's system prompt, Codex in the description of
+// the server's tools. They say how to learn why a tool is missing, and
+// name the servers whose state says they need sign-in.
+func (p *proxy) instruct(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if method != "initialize" && method != "server/discover" {
+			return next(ctx, method, req)
+		}
+		select {
+		case <-p.resolved:
+		case <-time.After(initWait):
+		case <-ctx.Done():
+		}
+		res, err := next(ctx, method, req)
+		if err != nil {
+			return res, err
+		}
+		// initialize, or discover in protocol versions from 2026-07-28.
+		switch r := res.(type) {
+		case *mcp.InitializeResult:
+			r.Instructions = p.instructions()
+		case *mcp.DiscoverResult:
+			r.Instructions = p.instructions()
+		}
+		return res, err
+	}
+}
+
+func (p *proxy) instructions() string {
+	select {
+	case <-p.resolved:
+	default:
+		return ""
+	}
+	if len(p.bound) == 0 {
+		return ""
+	}
+	var names []string
+	for _, s := range p.bound {
+		names = append(names, s.Name)
+	}
+	text := "This server gives the session the tools of the MCP servers that ctxtra binds to this folder (" +
+		strings.Join(names, ", ") + "). When an expected tool of theirs is missing or a call fails, run " +
+		"`ctxtra mcp status` in the session folder: it says why."
+	if p.o.NeedsSignIn == nil {
+		return text
+	}
+	for _, s := range p.bound {
+		if p.o.NeedsSignIn(s) {
+			then := ", and its tools follow."
+			if p.o.KeepsFirstList {
+				then = "; its tools come in a new session."
+			}
+			text += "\n" + s.Name + " needs sign-in and has no tools now: the user runs `ctxtra mcp login " + s.Name +
+				"` in a terminal" + then
+		}
+	}
+	return text
+}
+
+// report is the session start's status record, written once the first
+// tool list was answered and again for each later change.
+type report struct {
+	mu      sync.Mutex
+	rec     status.Record
+	write   func(status.Record)
+	written bool
+	ended   map[string]bool // servers that ended: later startup news doesn't revive them
+}
+
+func newReport(o Options, servers []upstream.Server) *report {
+	if len(servers) == 0 {
+		// A folder without servers keeps no record.
+		return nil
+	}
+	r := &report{write: o.Report, rec: status.Record{Dir: o.Dir, Agent: o.Agent, Started: o.Start.UTC(),
+		DeadlineMs: o.Deadline.Milliseconds()}}
+	for _, s := range servers {
+		r.rec.Servers = append(r.rec.Servers, status.Server{Name: s.Name, State: status.Missing})
+	}
+	return r
+}
+
+// set records what happened to the server name. A server that ended stays
+// missing, whatever its start reports after that.
+func (r *report) set(name, state, reason string, ms int64) {
+	r.update(name, state, reason, ms, false)
+}
+
+// ended records that name ended during the session.
+func (r *report) end(name, reason string) {
+	r.update(name, status.Missing, reason, 0, true)
+}
+
+// restart records a server that connected again, after a sign-in.
+func (r *report) restart(name, reason string, ms int64) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	delete(r.ended, name)
+	r.mu.Unlock()
+	r.set(name, status.Late, reason, ms)
+}
+
+func (r *report) update(name, state, reason string, ms int64, ended bool) {
+	if r == nil || r.write == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.ended[name] && !ended {
+		return
+	}
+	if ended {
+		if r.ended == nil {
+			r.ended = map[string]bool{}
+		}
+		r.ended[name] = true
+	}
+	for i := range r.rec.Servers {
+		if r.rec.Servers[i].Name == name {
+			r.rec.Servers[i] = status.Server{Name: name, State: state, Reason: reason, Ms: ms}
+		}
+	}
+	if r.written {
+		r.write(r.copyLocked())
+	}
+}
+
+// flush writes the record, the first time when the first tool list was
+// answered.
+func (r *report) flush() {
+	if r == nil || r.write == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.written = true
+	r.write(r.copyLocked())
+}
+
+func (r *report) copyLocked() status.Record {
+	c := r.rec
+	c.Servers = slices.Clone(r.rec.Servers)
+	return c
 }
 
 // route is where a shown tool goes.
@@ -225,6 +410,17 @@ func (p *proxy) start(ctx context.Context) {
 	case <-ctx.Done():
 		return
 	}
+	p.bound = servers
+	close(p.resolved)
+	p.report = newReport(p.o, servers)
+	if p.isOpen() {
+		// The first list was answered while the servers were being found:
+		// each is missing from it, and may follow.
+		for _, s := range servers {
+			p.report.set(s.Name, status.Missing, "too slow for the first tool list: finding the folder's servers took too long", 0)
+		}
+		p.report.flush()
+	}
 	type result struct {
 		s     upstream.Server
 		up    *Upstream
@@ -261,14 +457,27 @@ func (p *proxy) start(ctx context.Context) {
 			if r.err != nil {
 				rec.Error = errorKind(r.err)
 				p.o.Log(rec)
+				// A connection that the session's end cut off says nothing
+				// about the server: it keeps what the record says, such as
+				// too slow for the first list.
+				if ctx.Err() == nil {
+					p.report.set(r.s.Name, status.Missing, rec.Error, 0)
+				}
+				var login *creds.LoginError
+				if errors.As(r.err, &login) && p.o.SignInState != nil {
+					p.wg.Go(func() { p.awaitSignIn(ctx, r.s) })
+				}
 				continue
 			}
 			p.o.Log(rec)
 			if p.isOpen() {
-				p.o.Log(Record{Event: "late", Server: r.s.Name, Ms: time.Since(p.o.Start).Milliseconds()})
+				late := time.Since(p.o.Start).Milliseconds()
+				p.o.Log(Record{Event: "late", Server: r.s.Name, Ms: late})
+				p.report.set(r.s.Name, status.Late, "too slow for the first tool list", late)
 				p.setTools(r.up, r.tools)
 				continue
 			}
+			p.report.set(r.s.Name, status.Ready, "", time.Since(p.o.Start).Milliseconds())
 			first[r.s.Name] = r.tools
 		case <-deadline.C:
 			var slow []string
@@ -277,8 +486,12 @@ func (p *proxy) start(ctx context.Context) {
 			}
 			slices.Sort(slow)
 			p.o.Log(Record{Event: "deadline", Servers: slow})
+			for _, n := range slow {
+				p.report.set(n, status.Missing, "too slow for the first tool list", 0)
+			}
 			p.publish(first)
 			p.open()
+			p.report.flush()
 		case <-ctx.Done():
 			return
 		}
@@ -286,6 +499,59 @@ func (p *proxy) start(ctx context.Context) {
 	if !p.isOpen() {
 		p.publish(first)
 		p.open()
+	}
+	// Also when the first list was answered while the servers were still
+	// being resolved: they all came late.
+	p.report.flush()
+}
+
+// awaitSignIn connects to s, which needs sign-in, once its state file
+// says it was signed in again, and adds its tools with a list change.
+// The session's set of servers doesn't change: s is one of them.
+func (p *proxy) awaitSignIn(ctx context.Context, s upstream.Server) {
+	// A sign-in may have finished between the failed connection and now:
+	// the first check connects whenever the state says signed in.
+	gen := int64(-1)
+	tick := time.NewTicker(p.o.SignInPoll)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-tick.C:
+		}
+		g, ok := p.o.SignInState(s)
+		if g == gen || !ok && gen != -1 {
+			continue
+		}
+		first := gen == -1
+		gen = g
+		if !ok && first {
+			continue
+		}
+		up, tools, err := p.connect(ctx, s)
+		var login *creds.LoginError
+		if errors.As(err, &login) {
+			continue
+		}
+		if err != nil {
+			p.o.Log(Record{Event: "connect", Server: s.Name, Error: errorKind(err)})
+			return
+		}
+		if !p.add(up) {
+			up.Close()
+			return
+		}
+		p.wg.Go(func() { p.watchExit(up) })
+		p.o.Log(Record{Event: "signed-in", Server: s.Name, Tools: len(tools)})
+		p.report.restart(s.Name, "signed in during the session", time.Since(p.o.Start).Milliseconds())
+		select {
+		case <-p.ready:
+		case <-ctx.Done():
+			return
+		}
+		p.setTools(up, tools)
+		return
 	}
 }
 
@@ -526,7 +792,7 @@ func (p *proxy) call(ctx context.Context, req *mcp.CallToolRequest) (res *mcp.Ca
 			p.o.Log(Record{Event: "call", Server: server, Error: "panic"})
 		}
 	}()
-	params := &mcp.CallToolParams{Meta: req.Params.Meta, Name: r.name, Arguments: req.Params.Arguments}
+	params := &mcp.CallToolParams{Meta: forwardMeta(req.Params.Meta), Name: r.name, Arguments: req.Params.Arguments}
 	if len(req.Params.Arguments) == 0 {
 		params.Arguments = nil
 	}
@@ -548,13 +814,35 @@ func (p *proxy) call(ctx context.Context, req *mcp.CallToolRequest) (res *mcp.Ca
 	defer stop()
 	defer context.AfterFunc(p.ctx, stop)()
 	res, err = r.up.Session.CallTool(ctx, params)
+	var login *creds.LoginError
 	switch {
+	case errors.As(err, &login):
+		// The agent and the user see what to do; never a browser.
+		p.o.Log(Record{Event: "call", Server: server, Error: errorKind(err)})
+		return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: login.Error()}}}, nil
 	case err != nil:
 		p.o.Log(Record{Event: "call", Server: server, Error: errorKind(err)})
 	case res.IsError:
 		p.o.Log(Record{Event: "call", Server: server, Error: "tool error"})
 	}
 	return res, err
+}
+
+// forwardMeta is a call's _meta without the protocol's own keys
+// (io.modelcontextprotocol/...): they describe the agent's session with
+// the proxy, not the proxy's with the server, and a server can refuse a
+// request that carries another session's protocol version.
+func forwardMeta(m mcp.Meta) mcp.Meta {
+	if m == nil {
+		return nil
+	}
+	out := mcp.Meta{}
+	for k, v := range m {
+		if !strings.HasPrefix(k, "io.modelcontextprotocol/") {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // stop ends every server session and stops the local servers, also those
@@ -608,6 +896,13 @@ func (p *proxy) watchExit(up *Upstream) {
 		st = "connection closed"
 	}
 	p.o.Log(Record{Event: "server ended", Server: up.Server.Name, Error: st})
+	p.report.end(up.Server.Name, "ended during the session: "+st)
+	// A remote server whose sign-in ended with it comes back after a login.
+	if !up.Server.Local() && p.o.SignInState != nil {
+		if _, ok := p.o.SignInState(up.Server); !ok {
+			p.wg.Go(func() { p.awaitSignIn(p.ctx, up.Server) })
+		}
+	}
 }
 
 // tokenKey is a progress token as a map key. The spec allows strings and

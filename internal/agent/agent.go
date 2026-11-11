@@ -18,6 +18,7 @@ import (
 	"github.com/ctxtra/ctxtra/internal/chunk"
 	"github.com/ctxtra/ctxtra/internal/config"
 	"github.com/ctxtra/ctxtra/internal/fsutil"
+	"github.com/ctxtra/ctxtra/internal/mcp/creds"
 	"github.com/ctxtra/ctxtra/internal/paths"
 	"github.com/ctxtra/ctxtra/internal/resolve"
 )
@@ -325,7 +326,8 @@ func Summary(res *resolve.Result) string {
 		issues = append(issues, plural(n, "problem"))
 	}
 	issues = append(issues, dropped(res.Dropped, res.Namer())...)
-	if len(added) == 0 && len(issues) == 0 && len(res.Notices) == 0 {
+	signIn := needSignIn(res.MCPServers)
+	if len(added) == 0 && len(issues) == 0 && len(res.Notices) == 0 && len(signIn) == 0 {
 		return ""
 	}
 	s := "ctxtra added nothing"
@@ -340,13 +342,34 @@ func Summary(res *resolve.Result) string {
 	}
 	// After an empty line, each with its own marker: agents indent the lines
 	// after the first, so a notice right after a list reads as part of it.
-	if len(res.Notices) > 0 {
+	if len(res.Notices) > 0 || len(signIn) > 0 {
 		s += "\n"
+		for _, n := range signIn {
+			s += "\n⚠ " + n
+		}
 		for _, n := range res.Notices {
 			s += "\nℹ " + strings.ReplaceAll(n, "\n", "\n  ")
 		}
 	}
 	return s
+}
+
+// needSignIn are the lines for the bound MCP servers whose state file
+// says only ctxtra mcp login can make them work: from state files only,
+// never the keychain or the network. A server that no session has tried
+// yet has no state, and no line.
+func needSignIn(servers []resolve.MCPServer) []string {
+	if len(servers) == 0 {
+		return nil
+	}
+	store := creds.Open()
+	var out []string
+	for _, m := range servers {
+		if st, err := store.State(m.Server); err == nil && st.NeedsLogin {
+			out = append(out, fmt.Sprintf("%s needs sign-in: run ctxtra mcp login %s", m.Name, m.Name))
+		}
+	}
+	return out
 }
 
 // Summary lines: a group per source under each list title, its entries

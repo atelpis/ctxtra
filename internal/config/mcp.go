@@ -110,8 +110,12 @@ var (
 	remoteKeys = []string{"headers", "secret-headers", "client-id", "scopes"}
 )
 
+// MCPServerID is the identity of the config's server called name: the key
+// of its credentials, also while its definition is broken.
+func MCPServerID(name string) string { return name }
+
 func (c *Config) decodeMCPServer(name string, n *yaml.Node) (upstream.Server, error) {
-	s := upstream.Server{ID: name, Name: name}
+	s := upstream.Server{ID: MCPServerID(name), Name: name}
 	f, err := fields(n, slices.Concat([]string{"url", "command", "notes"}, localKeys, remoteKeys)...)
 	if err != nil {
 		return s, err

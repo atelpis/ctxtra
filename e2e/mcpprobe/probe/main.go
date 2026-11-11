@@ -1,6 +1,6 @@
 // Command probe is a test tool for the MCP proxy experiment.
 //
-//	probe mcp -log FILE         a stdio MCP server that records what the agent gives it
+//	probe mcp -log FILE [-instructions TEXT]   a stdio MCP server that records what the agent gives it
 //	probe hook -log FILE -real BIN [args]   runs BIN with args, after recording the hook's process chain and input
 //
 // Both append one JSON record per line to FILE. Environment values are
@@ -254,9 +254,15 @@ func serveMCP(logPath string) {
 			if pv == "" {
 				pv = "2025-06-18"
 			}
-			reply(map[string]any{"protocolVersion": pv,
+			result := map[string]any{"protocolVersion": pv,
 				"capabilities": map[string]any{"tools": map[string]any{"listChanged": true}},
-				"serverInfo":   map[string]any{"name": "probe", "version": "0.0.1"}})
+				"serverInfo":   map[string]any{"name": "probe", "version": "0.0.1"}}
+			// -instructions TEXT: the server's instructions, to learn
+			// which agents show them to the model.
+			if text := flagValue(os.Args[2:], "-instructions"); text != "" {
+				result["instructions"] = text
+			}
+			reply(result)
 		case "notifications/initialized":
 			if _, ok := clientCaps["roots"]; ok {
 				go s.request("roots/list", nil)

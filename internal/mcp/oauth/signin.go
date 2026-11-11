@@ -1,0 +1,397 @@
+package oauth
+
+import (
+	"bufio"
+	"bytes"
+	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/ctxtra/ctxtra/internal/mcp/creds"
+	"github.com/ctxtra/ctxtra/internal/mcp/upstream"
+)
+
+// ClientMetadataURL is the URL of ctxtra's client ID metadata document.
+// Empty until the domain exists and real providers accept it: until
+// then, sign-in uses dynamic registration.
+const ClientMetadataURL = ""
+
+// SignInTimeout is how long the redirect listener waits.
+const SignInTimeout = 5 * time.Minute
+
+// SignIn is one sign-in to Server.
+type SignIn struct {
+	Server upstream.Server
+	Store  *creds.Store
+	// HTTP sends discovery, registration and token requests.
+	HTTP *http.Client
+	// Out gets the messages for the user; In the pasted redirect URL.
+	Out io.Writer
+	In  io.Reader
+	// OpenBrowser opens the authorization URL; with NoBrowser, the URL
+	// is printed and the redirect URL can be pasted.
+	OpenBrowser func(string) error
+	NoBrowser   bool
+	// CallbackPort is the listener's port; 0 picks one.
+	CallbackPort int
+	// ClientSecret is the secret of Server.ClientID, if it has one; ""
+	// uses the stored one, when it was stored for the same authorization
+	// server.
+	ClientSecret string
+	// Scopes are asked for besides the server's own: an earlier sign-in's,
+	// and those a 403 asked for.
+	Scopes []string
+	// Commit runs save, which stores the sign-in; nil runs it as it is.
+	// The caller can check there, under its own lock, that the server is
+	// still what the sign-in was for.
+	Commit  func(save func() error) error
+	Timeout time.Duration
+}
+
+// Result is what a sign-in got.
+type Result struct {
+	Issuer string
+	// Account is the account the provider's answer named, "" when it
+	// named none.
+	Account string
+	// NoRefresh is set when the provider issued no refresh token.
+	NoRefresh bool
+	Record    *creds.Record
+}
+
+// ErrNeedsClientID is a server that supports neither client ID metadata
+// documents nor dynamic registration.
+var ErrNeedsClientID = errors.New("the server's authorization server accepts only registered apps: create an OAuth app there and pass --client-id")
+
+// Run signs in: discovery, registration, the browser, the redirect, the
+// token request, and the save, which fails when another sign-in or a
+// removal finished meanwhile. ch is the server's 401 challenge.
+func (f *SignIn) Run(ctx context.Context, ch *Challenge) (*Result, error) {
+	// One limit for the whole sign-in, discovery and registration too, so
+	// the listener's port is never held longer.
+	timeout := f.Timeout
+	if timeout == 0 {
+		timeout = SignInTimeout
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	gen, err := f.Store.Generation(f.Server)
+	if err != nil {
+		return nil, err
+	}
+	resource := creds.CanonicalURL(f.Server.URL)
+	m, err := Discover(ctx, f.HTTP, resource, ch)
+	if err != nil {
+		return nil, err
+	}
+	scopes := Scopes(f.Server.Scopes, ch, m, f.Scopes)
+	port := f.CallbackPort
+	ln, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		return nil, fmt.Errorf("can't listen for the sign-in's redirect on 127.0.0.1:%d: %w", port, err)
+	}
+	defer ln.Close()
+	redirect := fmt.Sprintf("http://127.0.0.1:%d/callback", ln.Addr().(*net.TCPAddr).Port)
+	client, err := f.client(ctx, m, redirect)
+	if err != nil {
+		return nil, err
+	}
+	client.CallbackPort = f.CallbackPort
+	issuer := m.Server.Issuer
+	if others := f.Store.ServersOf(issuer, f.Server); len(others) > 0 {
+		fmt.Fprintf(f.Out, "You are already signed in to %s as %s. The provider may use the account of your browser's\n"+
+			"active session; to sign in with another one, open the link in a private window.\n", issuer, strings.Join(others, ", "))
+	}
+
+	state, verifier := random(), random()
+	sum := sha256.Sum256([]byte(verifier))
+	q := url.Values{
+		"response_type":         {"code"},
+		"client_id":             {client.ID},
+		"redirect_uri":          {redirect},
+		"state":                 {state},
+		"code_challenge":        {base64.RawURLEncoding.EncodeToString(sum[:])},
+		"code_challenge_method": {"S256"},
+		"resource":              {resource},
+	}
+	if len(scopes) > 0 {
+		q.Set("scope", strings.Join(scopes, " "))
+	}
+	authURL := m.Server.AuthorizationEndpoint
+	if strings.Contains(authURL, "?") {
+		authURL += "&" + q.Encode()
+	} else {
+		authURL += "?" + q.Encode()
+	}
+
+	got := make(chan url.Values, 2)
+	srv := &http.Server{Handler: callback(state, got), ReadHeaderTimeout: 10 * time.Second}
+	go func() { _ = srv.Serve(ln) }()
+	defer srv.Close()
+
+	if f.NoBrowser || f.OpenBrowser == nil {
+		fmt.Fprintf(f.Out, "Open this link to sign in to %s:\n\n  %s\n\n", f.Server.Name, authURL)
+		fmt.Fprintln(f.Out, "If your browser can't reach this machine (for example over SSH), paste the address it ends at here:")
+		go f.readPasted(got)
+	} else {
+		fmt.Fprintf(f.Out, "Opening your browser to sign in to %s. If it doesn't open, use this link:\n\n  %s\n\n", f.Server.Name, authURL)
+		if err := f.OpenBrowser(authURL); err != nil {
+			fmt.Fprintf(f.Out, "couldn't open the browser: %v\n", err)
+		}
+	}
+
+	var params url.Values
+	select {
+	case params = <-got:
+	case <-ctx.Done():
+		return nil, fmt.Errorf("no sign-in came back within %s", timeout)
+	}
+	if params.Get("state") != state {
+		return nil, errors.New("the pasted address is from another sign-in; nothing was saved")
+	}
+	if e := params.Get("error"); e != "" {
+		return nil, fmt.Errorf("the provider refused the sign-in: %s", safeCode(e))
+	}
+	iss := params.Get("iss")
+	if iss != "" && iss != issuer || iss == "" && m.Server.AuthorizationResponseIssParameterSupported {
+		return nil, errors.New("the sign-in's answer is from another authorization server (iss); nothing was saved")
+	}
+	code := params.Get("code")
+	if code == "" {
+		return nil, errors.New("the sign-in's answer has no code")
+	}
+	tok, extra, err := f.Store.RequestToken(ctx, client, url.Values{
+		"grant_type":    {"authorization_code"},
+		"code":          {code},
+		"redirect_uri":  {redirect},
+		"code_verifier": {verifier},
+		"resource":      {resource},
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(tok.Scopes) == 0 {
+		tok.Scopes = scopes
+	}
+	var r *creds.Record
+	save := func() error {
+		var err error
+		r, err = f.Store.SaveSignIn(f.Server, gen, issuer, client, tok)
+		return err
+	}
+	if f.Commit != nil {
+		err = f.Commit(save)
+	} else {
+		err = save()
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &Result{Issuer: issuer, Account: account(extra), NoRefresh: tok.Refresh == "", Record: r}, nil
+}
+
+// client is the OAuth client to sign in with, in the spec's order: the
+// configured client ID, ctxtra's client ID metadata document, then a
+// dynamic registration (the stored one when it has this redirect).
+func (f *SignIn) client(ctx context.Context, m *Metadata, redirect string) (creds.Client, error) {
+	tokenURL := m.Server.TokenEndpoint
+	stored, _ := f.Store.Load(f.Server)
+	// Made for another server or authorization server: nothing of it goes
+	// to this one. A client secret stored before the first sign-in has no
+	// issuer yet.
+	if stored != nil && (!stored.Matches(f.Server) || stored.Issuer != "" && stored.Issuer != m.Server.Issuer) {
+		stored = nil
+	}
+	if f.Server.ClientID != "" {
+		secret := f.ClientSecret
+		if secret == "" && stored != nil && stored.Client.ID == f.Server.ClientID {
+			secret = stored.Client.Secret
+		}
+		c := creds.Client{ID: f.Server.ClientID, Secret: secret, AuthMethod: "none", TokenURL: tokenURL}
+		if c.Secret != "" {
+			c.AuthMethod = "client_secret_post"
+			if len(m.Server.TokenEndpointAuthMethodsSupported) == 0 || slices.Contains(m.Server.TokenEndpointAuthMethodsSupported, "client_secret_basic") {
+				c.AuthMethod = "client_secret_basic"
+			}
+		}
+		return c, nil
+	}
+	if ClientMetadataURL != "" && m.Server.ClientIDMetadataDocumentSupported {
+		return creds.Client{ID: ClientMetadataURL, AuthMethod: "none", TokenURL: tokenURL}, nil
+	}
+	if stored != nil && stored.Client.Registered && stored.Client.Redirect == redirect && stored.Client.TokenURL == tokenURL {
+		return stored.Client, nil
+	}
+	if m.Server.RegistrationEndpoint == "" {
+		return creds.Client{}, ErrNeedsClientID
+	}
+	reg, err := register(ctx, f.HTTP, m.Server.RegistrationEndpoint, redirect)
+	if err != nil {
+		return creds.Client{}, err
+	}
+	c := creds.Client{ID: reg.ClientID, Secret: reg.ClientSecret, AuthMethod: reg.TokenEndpointAuthMethod,
+		TokenURL: tokenURL, Redirect: redirect, Registered: true}
+	if c.AuthMethod == "" {
+		c.AuthMethod = "none"
+		if c.Secret != "" {
+			c.AuthMethod = "client_secret_basic"
+		}
+	}
+	return c, nil
+}
+
+// registration is a dynamic client registration's answer (RFC 7591).
+type registration struct {
+	ClientID                string `json:"client_id"`
+	ClientSecret            string `json:"client_secret"`
+	TokenEndpointAuthMethod string `json:"token_endpoint_auth_method"`
+}
+
+// register registers ctxtra as a public client for redirect. Errors name
+// the status only: the answer can hold a client secret.
+func register(ctx context.Context, c *http.Client, endpoint, redirect string) (*registration, error) {
+	body, _ := json.Marshal(map[string]any{
+		"redirect_uris":              []string{redirect},
+		"token_endpoint_auth_method": "none",
+		"grant_types":                []string{"authorization_code", "refresh_token"},
+		"response_types":             []string{"code"},
+		"client_name":                "ctxtra",
+		"application_type":           "native",
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	resp, err := c.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("can't reach the authorization server's registration endpoint")
+	}
+	defer resp.Body.Close()
+	failed := errors.New("registering ctxtra with the authorization server failed")
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: HTTP %d", failed, resp.StatusCode)
+	}
+	var reg registration
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&reg); err != nil || reg.ClientID == "" {
+		return nil, failed
+	}
+	return &reg, nil
+}
+
+// callback is the redirect listener's handler. A request with another
+// state is refused and the listener keeps waiting; the first right one
+// ends the sign-in.
+func callback(state string, got chan<- url.Values) http.Handler {
+	var mu sync.Mutex
+	done := false
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/callback" {
+			http.NotFound(w, r)
+			return
+		}
+		q := r.URL.Query()
+		mu.Lock()
+		first := q.Get("state") == state && !done
+		done = done || first
+		mu.Unlock()
+		if !first {
+			http.Error(w, "This isn't the sign-in ctxtra is waiting for.", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		if q.Get("error") != "" {
+			io.WriteString(w, "The sign-in was refused. You can close this tab.\n")
+		} else {
+			io.WriteString(w, "Signed in to ctxtra. You can close this tab.\n")
+		}
+		select {
+		case got <- q:
+		default:
+		}
+	})
+}
+
+// readPasted reads the address the browser ended at.
+func (f *SignIn) readPasted(got chan<- url.Values) {
+	if f.In == nil {
+		return
+	}
+	line, err := bufio.NewReader(f.In).ReadString('\n')
+	if err != nil && line == "" {
+		return
+	}
+	u, err := url.Parse(strings.TrimSpace(line))
+	if err != nil {
+		return
+	}
+	select {
+	case got <- u.Query():
+	default:
+	}
+}
+
+func random() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+// safeCode is an OAuth error code from a redirect, or "an error" for text
+// that isn't one: the provider controls it.
+func safeCode(s string) string {
+	for _, r := range s {
+		if (r < 'a' || r > 'z') && r != '_' {
+			return "an error"
+		}
+	}
+	if len(s) > 40 {
+		return "an error"
+	}
+	return s
+}
+
+// account is the account a token answer names: the email or name in its
+// ID token, unverified (it's only shown), or "" without one.
+func account(extra map[string]json.RawMessage) string {
+	var idToken string
+	if json.Unmarshal(extra["id_token"], &idToken) != nil {
+		return ""
+	}
+	parts := strings.Split(idToken, ".")
+	if len(parts) != 3 {
+		return ""
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ""
+	}
+	var claims struct {
+		Email             string `json:"email"`
+		PreferredUsername string `json:"preferred_username"`
+		Name              string `json:"name"`
+	}
+	if json.Unmarshal(payload, &claims) != nil {
+		return ""
+	}
+	for _, v := range []string{claims.Email, claims.PreferredUsername, claims.Name} {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}

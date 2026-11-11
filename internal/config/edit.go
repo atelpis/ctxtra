@@ -33,6 +33,23 @@ const NewConfig = "schema: " + Schema + "\n"
 // valid config. The file is replaced atomically and keeps its mode; a
 // symlink stays a symlink. The old content is kept in ~/.ctxtra/backups.
 func Edit(path string, fn func(old []byte) ([]byte, error)) error {
+	return EditThen(path, fn, nil)
+}
+
+// WithLock runs fn under the config's lock, the one Edit takes: no edit
+// of any config comes in between.
+func WithLock(fn func() error) error {
+	unlock, err := fsutil.Lock(filepath.Join(paths.StateDir(), "config.lock"))
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return fn()
+}
+
+// EditThen is Edit that runs then after the config was written, still
+// under the config's lock, so that no other edit comes in between.
+func EditThen(path string, fn func(old []byte) ([]byte, error), then func() error) error {
 	unlock, err := fsutil.Lock(filepath.Join(paths.StateDir(), "config.lock"))
 	if err != nil {
 		return err
@@ -54,8 +71,10 @@ func Edit(path string, fn func(old []byte) ([]byte, error)) error {
 	if err := Check(data); err != nil {
 		return fmt.Errorf("the changed config would be invalid (%v); nothing changed", err)
 	}
-	_, _, err = fsutil.WriteAtomic(path, data, paths.BackupDir(), false)
-	return err
+	if _, _, err = fsutil.WriteAtomic(path, data, paths.BackupDir(), false); err != nil || then == nil {
+		return err
+	}
+	return then()
 }
 
 // Check reports whether data is a valid config document. Binding files are
