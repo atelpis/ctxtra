@@ -326,6 +326,14 @@ ctxtra mcp logout linear_work               # deletes the sign-in on this machin
   `--callback-port PORT`.
 - `logout` doesn't tell the provider: remove the grant in the provider's settings to end it there.
 
+What to keep in mind:
+
+- Binding servers to folders prevents mistakes, such as a session using the wrong account. It doesn't
+  protect anything from an agent that has a shell: it can use every server of your config.
+- Any process of yours can read the stored credentials, as with the agents' own sign-ins.
+- `ctxtra mcp show` prints a local server's error output, which can hold secrets; an agent that runs it
+  reads it too.
+
 When a session lacks a server's tools, `ctxtra mcp status` in that folder says why: the server needs sign-in,
 failed, or was too slow for the agent's first tool list. The session summary also names servers that need
 sign-in.

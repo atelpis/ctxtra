@@ -890,6 +890,32 @@ The setup notices and `doctor` report the entry:
 | Codex's entry doesn't pass a local server's `env-pass` variable | `codex: the ctxtra MCP server doesn't pass DBHOST to local servers; run ctxtra setup --agent codex` |
 | An entry named ctxtra isn't setup's | `~/.claude.json: the ctxtra MCP server doesn't run ctxtra mcp proxy; rename or delete it, then run ctxtra setup --agent claude` |
 
+### Security
+
+ctxtra holds the sign-ins of many services, the most sensitive data it keeps. What protects them, and what
+doesn't:
+
+- **Folder scoping prevents mistakes; it isn't a security boundary.** A binding decides which servers a
+  session gets, so an agent doesn't use the wrong account by accident. An agent with a shell can still run
+  `ctxtra mcp proxy` in another folder, or run `ctxtra mcp` commands, and use every server of the config.
+- **Any process of the user can read the credentials,** through the keychain's command-line tool or the key
+  file. Encryption protects them from backups, sync tools and casual reads, as the agents' own sign-ins are.
+- **The proxy sees every call and its result,** and forwards them. It logs neither: only which servers
+  started, how they ended, and failed calls by their kind or code, with URLs cut to their origin.
+- **Credentials stay on their origin** and go only over HTTPS: see [Network and logs](#network-and-logs).
+- **Local servers get little of the agent's environment:** their own variables and a fixed base set, so a
+  token in the agent's environment doesn't reach them. They run in the session folder, and a tool like `npx`
+  can run code of the session's repository.
+- **`ctxtra mcp show` prints a local server's stderr** in the terminal, which can hold secrets. An agent that
+  runs it reads that output. `ctxtra mcp status`, which the proxy's instructions point agents to, shows only
+  a server's origin or program name, never a URL's path, its query or a command's arguments.
+- **Packages can't start commands.** A source's binding files can name servers but not declare them, so a
+  pinned package never makes the proxy start a program.
+- **A failed proxy never fails a session:** the session lacks the tools it couldn't get.
+- **ctxtra's client identity.** When ctxtra's client ID metadata document is used, it is the identity that
+  authorization servers show and trust for ctxtra, and whoever controls its domain controls that identity.
+  Until the domain exists, ctxtra registers itself with each authorization server instead.
+
 ### Tool names
 
 A session sees each tool as `<server>__<tool>`. The name uses only `A-Z`, `a-z`, `0-9` and `_`, and is at most
