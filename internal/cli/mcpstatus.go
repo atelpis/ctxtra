@@ -63,7 +63,7 @@ func (a *app) mcpStatus(dir string) int {
 		case sessionstatus.Ready:
 			fmt.Fprintf(a.Out, "  %s  ready after %s\n", s.Name, seconds(s.Ms))
 		case sessionstatus.Late:
-			fmt.Fprintf(a.Out, "  %s  later: %s, after %s; Codex and Muse sessions didn't get its tools\n", s.Name, s.Reason, seconds(s.Ms))
+			fmt.Fprintf(a.Out, "  %s  later: %s, after %s; Codex sessions didn't get its tools\n", s.Name, s.Reason, seconds(s.Ms))
 		default:
 			fmt.Fprintf(a.Out, "  %s  missing: %s\n", s.Name, s.Reason)
 		}

@@ -15,7 +15,7 @@ stdout '^tool fast__echo'
 exec ctxtra mcp status dev/app
 stdout '^the last session here \(claude, .*\) waited 1.5 s for the first tool list:$'
 stdout '^  fast  ready after [0-9.]+ s$'
-stdout '^  (pg  missing: too slow for the first tool list|pg  later: too slow for the first tool list, after [3-9]\.[0-9] s; Codex and Muse sessions didn''t get its tools)$'
+stdout '^  (pg  missing: too slow for the first tool list|pg  later: too slow for the first tool list, after [3-9]\.[0-9] s; Codex sessions didn''t get its tools)$'
 
 exec ctxtra mcp status other
 stdout 'no MCP servers are bound to ~/other'

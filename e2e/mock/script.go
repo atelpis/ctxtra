@@ -1,6 +1,7 @@
 package mock
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -11,6 +12,14 @@ type Step struct {
 	kind string // "read", "skill", "subagent", "wait"
 	path string
 	name string // skill
+	args string // a "call" step's arguments, JSON: steps stay comparable
+}
+
+// Call makes the agent call its tool name with args, such as Claude's
+// Bash with a command.
+func Call(name string, args map[string]any) Step {
+	b, _ := json.Marshal(args)
+	return Step{kind: "call", name: name, args: string(b)}
 }
 
 // Read makes the agent read the file at path (an absolute path).
@@ -79,6 +88,11 @@ func decide(api API, body map[string]any, script []Step) *call {
 		return &call{namespace: step.path, name: step.name, args: args}
 	case "code":
 		return &call{name: step.name, args: map[string]any{"code": step.path}}
+	case "call":
+		ns, _, _ := findTool(api, body, step.name)
+		var args map[string]any
+		_ = json.Unmarshal([]byte(step.args), &args)
+		return &call{namespace: ns, name: step.name, args: args}
 	case "mcp-generic-call", "mcp-code-call":
 		return genericCall(step)
 	case "read":

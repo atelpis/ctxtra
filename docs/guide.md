@@ -302,7 +302,6 @@ ctxtra binds to that folder:
 - Claude Code: allow `mcp__ctxtra` in `permissions.allow`, or a pattern such as `mcp__ctxtra__linear_work__*`.
 - Codex: add `default_tools_approval_mode = "approve"` to the `[mcp_servers.ctxtra]` table; setup keeps it.
 - Antigravity: an allow rule `mcp(ctxtra/*)`.
-- Muse has no rules per server: approve the tools when it asks.
 
 ctxtra keeps the servers' secret values, such as an API token, encrypted in `~/.ctxtra/mcp`, with the key in
 your OS keychain. Without a keychain, for example on a Linux server, the key is a file there, and ctxtra warns
@@ -318,7 +317,7 @@ ctxtra mcp logout linear_work               # deletes the sign-in on this machin
 
 - Sessions never open a browser. When a sign-in expires or the server wants more permissions, a tool call
   says to run `ctxtra mcp login NAME`. A session that started before you signed in gets the tools within a few
-  seconds; in Codex and Muse, start a new session.
+  seconds; in Codex, start a new session.
 - Two accounts of one provider, such as two Linear workspaces, are two servers with two names. Write in each
   server's notes which account it is. When you sign in to the second one, the provider may pick the account
   your browser is signed in to: use a private window.

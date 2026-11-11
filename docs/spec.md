@@ -745,7 +745,7 @@ browser's active account, so a private window helps to sign in with another one.
 ctxtra says the user signs in again when the sign-in expires.
 
 In a session, a server that needs sign-in at its start has no tools; the proxy reads its state file every 3
-seconds and adds its tools once it is signed in (Codex and Muse ignore the list change: a new session gets
+seconds and adds its tools once it is signed in (Codex ignores the list change: a new session gets
 them). A refresh token that the provider rejects, or a 401 after one refresh, fails the call with `run ctxtra
 mcp login NAME`. A 403 `insufficient_scope` records the scopes it asks for, for the next login, and fails the call
 the same way.
@@ -767,14 +767,14 @@ The hook reads only the state files: no key, no keychain, no network. A server t
 has no state, and no line.
 
 The proxy records, per session folder, what the last session started there got from each bound server: its
-tools in the first tool list, later (too slow for it, or signed in during the session; Codex and Muse don't
+tools in the first tool list, later (too slow for it, or signed in during the session; Codex doesn't
 get those tools), or none, and why. `ctxtra mcp status [DIR]` shows that record with the folder's servers and
 their sign-in state, from local files only:
 
 ```text
 the last session here (codex, 2026-11-10 14:08:19) waited 10.0 s for the first tool list:
   linear_work  ready after 0.4 s
-  pg  later: too slow for the first tool list, after 15.2 s; Codex and Muse sessions didn't get its tools
+  pg  later: too slow for the first tool list, after 15.2 s; Codex sessions didn't get its tools
 ```
 
 The records are in `~/.ctxtra/mcp/status`, one per folder, so a session in one folder never changes another's.
@@ -850,8 +850,10 @@ keeps one that is there; `--remove` removes it.
 | Cursor | `~/.cursor/mcp.json` | `mcpServers.ctxtra: {command, args}` |
 | OpenCode | `~/.config/opencode/opencode.json` | `mcp.servers.ctxtra: {type: local, command, pool: false}` |
 | Pi | `~/.pi/agent/mcp.json` | `mcpServers.ctxtra: {command, args}` |
-| Muse | `~/.config/muse/settings.json` | `mcpServers.ctxtra: {type: stdio, command, args, mode: optional}` |
 | Antigravity | `~/.gemini/config/mcp_config.json` | `mcpServers.ctxtra: {command, args}` |
+
+Muse isn't supported yet: it starts MCP servers with a cleared environment, so ctxtra's server would get
+neither `CTXTRA_EXPERIMENTAL_MCP` nor ctxtra's other settings. Setup adds no entry to it.
 
 Agents write these files themselves too (Claude Code often writes `~/.claude.json`): when a file changes
 between setup's read and its write, setup makes its edit again on the new content, so the agent's change stays.
