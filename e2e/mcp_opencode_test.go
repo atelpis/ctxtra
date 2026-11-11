@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -66,19 +67,19 @@ bindings:
 			t.Fatalf("opencode service set port: %v\n%s", err, out)
 		}
 		// Before the home is removed: the service must be gone, with its
-		// proxies.
+		// proxies. One that doesn't stop is killed: it is this test's, by
+		// its port.
 		t.Cleanup(func() {
 			if out, err := service("stop"); err != nil {
 				t.Errorf("opencode service stop: %v\n%s", err, out)
 			}
-			for i := 0; ; i++ {
-				c, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), time.Second)
-				if err != nil {
-					break
-				}
-				c.Close()
+			for i := 0; listening(port); i++ {
 				if i == 50 {
-					t.Errorf("OpenCode's service still listens on port %d", port)
+					t.Errorf("OpenCode's service still listens on port %d: killed", port)
+					if pid := listener(t, port); pid > 0 {
+						_ = syscall.Kill(-pid, syscall.SIGKILL)
+						_ = syscall.Kill(pid, syscall.SIGKILL)
+					}
 					break
 				}
 				time.Sleep(200 * time.Millisecond)
@@ -91,7 +92,12 @@ bindings:
 		}
 
 		s.Run(wt, driver.Options{}, mcpScript(a.Name(), "alpha__probe_ping")...)
+		first := listener(t, port)
 		s.Run(billing, driver.Options{}, mcpScript(a.Name(), "beta__probe_ping")...)
+		// One service served both folders.
+		if first == 0 || listener(t, port) != first {
+			t.Errorf("the service on port %d changed between the runs: pid %d, then %d", port, first, listener(t, port))
+		}
 		if calls, _ := probeCalls(t, s.Path("alpha.jsonl")); !slices.Contains(calls, "probe_ping") {
 			t.Errorf("alpha got calls %v from the worktree", calls)
 		}
@@ -135,4 +141,21 @@ func realPath(p string) string {
 		return r
 	}
 	return p
+}
+
+func listening(port int) bool {
+	c, err := net.DialTimeout("tcp", "127.0.0.1:"+strconv.Itoa(port), time.Second)
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
+}
+
+// listener is the process that listens on port, 0 when none does.
+func listener(t *testing.T, port int) int {
+	t.Helper()
+	out, _ := exec.Command("lsof", "-nP", "-t", "-iTCP:"+strconv.Itoa(port), "-sTCP:LISTEN").Output()
+	pid, _ := strconv.Atoi(strings.TrimSpace(strings.Split(string(out), "\n")[0]))
+	return pid
 }

@@ -131,7 +131,7 @@ func shownTools(t *testing.T, s *Session, server string) map[string]string {
 }
 
 // probeCalls are the tool names that the probe logged in file got calls
-// for, and how often it was started.
+// for, and how often its process started.
 func probeCalls(t *testing.T, file string) (calls []string, starts int) {
 	t.Helper()
 	f, err := os.Open(file)
@@ -149,13 +149,13 @@ func probeCalls(t *testing.T, file string) (calls []string, starts int) {
 			Event, Method string
 			Params        struct{ Name string }
 		}
-		if json.Unmarshal(sc.Bytes(), &rec) != nil || rec.Event != "client_message" {
+		if json.Unmarshal(sc.Bytes(), &rec) != nil {
 			continue
 		}
-		switch rec.Method {
-		case "initialize":
+		switch {
+		case rec.Event == "start":
 			starts++
-		case "tools/call":
+		case rec.Event == "client_message" && rec.Method == "tools/call":
 			calls = append(calls, rec.Params.Name)
 		}
 	}
@@ -215,7 +215,16 @@ bindings:
 		}
 
 		_, betaStarts := probeCalls(t, betaLog)
-		s.Run(s.Path("dev/c"), driver.Options{})
+		r := s.Run(s.Path("dev/c"), driver.Options{})
+		// Where the request lists MCP tools, it has none of the ctxtra
+		// server's; Pi, OpenCode and Antigravity list them only on demand.
+		for _, q := range r.Requests {
+			for _, tool := range mock.ToolNames(q.API, q.Body) {
+				if strings.Contains(tool.Name, "alpha__") || strings.Contains(tool.Name, "beta__") {
+					t.Errorf("a session in dev/c was offered %s", tool.Name)
+				}
+			}
+		}
 		if _, n := probeCalls(t, alphaLog); n != alphaStarts {
 			t.Errorf("alpha started for a session in dev/c")
 		}
