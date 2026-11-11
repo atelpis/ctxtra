@@ -67,16 +67,13 @@ bindings:
 		if out, err := service("set", "port", strconv.Itoa(port)); err != nil {
 			t.Fatalf("opencode service set port: %v\n%s", err, out)
 		}
-		// Before the home is removed: the service must be gone, with its
-		// proxies. One that doesn't stop is killed: it is this test's, by
-		// its port.
+		// Wait for the service and its proxies before removing the home,
+		// even if stop fails. Kill this test's service if it still listens.
 		t.Cleanup(func() {
-			if out, err := service("stop"); err != nil {
-				t.Errorf("opencode service stop: %v\n%s", err, out)
-			}
+			out, err := service("stop")
 			for i := 0; listening(port); i++ {
 				if i == 50 {
-					t.Errorf("OpenCode's service still listens on port %d: killed", port)
+					t.Errorf("OpenCode's service still listens on port %d: killed; opencode service stop: %v\n%s", port, err, out)
 					for _, pid := range services(s.Home) {
 						_ = syscall.Kill(-pid, syscall.SIGKILL)
 						_ = syscall.Kill(pid, syscall.SIGKILL)
