@@ -94,40 +94,65 @@ func licenseFiles(m module) []string {
 	return out
 }
 
-// runtimeNotices are the license headers of Go runtime sources that carry
-// their own, such as the Inferno code in memmove: the linked runtime files
-// of each target whose leading comment grants a license.
-func runtimeNotices(t *testing.T) []string {
+// grants are words that start a license in a source comment.
+var grants = []string{"Permission is hereby granted", "Permission to use, copy, modify", "Redistribution and use in source"}
+
+// sourceNotices are the licenses that linked source files carry in their
+// comments, apart from their module's own files: code bundled from
+// elsewhere, such as the Inferno code in the Go runtime or the Bech32 code
+// in age. Each comment block that grants a license, once, by the module
+// (or "Go") whose files have it.
+func sourceNotices(t *testing.T) map[string][]string {
 	t.Helper()
+	out := map[string][]string{}
 	seen := map[string]bool{}
-	var out []string
+	format := `{{if .Module}}{{.Module.Path}}{{else}}Go{{end}}` + "\t" + `{{.Dir}}` + "\t" + `{{join .GoFiles " "}} {{join .SFiles " "}}`
 	for _, target := range targets {
-		for _, line := range list(t, target, `{{if eq .ImportPath "runtime"}}{{.Dir}}{{range .SFiles}} {{.}}{{end}}{{end}}`, "github.com/ctxtra/ctxtra/cmd/ctxtra") {
-			f := strings.Fields(line)
-			if len(f) < 2 {
+		for _, line := range list(t, target, format, "github.com/ctxtra/ctxtra/cmd/ctxtra") {
+			f := strings.Split(line, "\t")
+			if len(f) != 3 || f[0] == "github.com/ctxtra/ctxtra" {
 				continue
 			}
-			for _, name := range f[1:] {
-				data, err := os.ReadFile(filepath.Join(f[0], name))
+			for _, name := range strings.Fields(f[2]) {
+				data, err := os.ReadFile(filepath.Join(f[1], name))
 				if err != nil {
 					t.Fatal(err)
 				}
-				var head []string
-				for _, l := range strings.Split(string(data), "\n") {
-					if !strings.HasPrefix(l, "//") {
-						break
+				for _, block := range commentBlocks(string(data)) {
+					if !slices.ContainsFunc(grants, func(g string) bool { return strings.Contains(block, g) }) || seen[block] {
+						continue
 					}
-					head = append(head, strings.TrimPrefix(strings.TrimPrefix(l, "//"), " "))
-				}
-				text := strings.Join(head, "\n")
-				if strings.Contains(text, "Permission is hereby granted") && !seen[text] {
-					seen[text] = true
-					out = append(out, "runtime/"+name+":\n\n"+text)
+					seen[block] = true
+					out[f[0]] = append(out[f[0]], block)
 				}
 			}
 		}
 	}
-	slices.Sort(out)
+	for k := range out {
+		slices.Sort(out[k])
+	}
+	return out
+}
+
+// commentBlocks are the runs of // comment lines in a source file, without
+// the comment markers.
+func commentBlocks(src string) []string {
+	var out, cur []string
+	flush := func() {
+		if len(cur) > 0 {
+			out = append(out, strings.Join(cur, "\n"))
+			cur = nil
+		}
+	}
+	for _, l := range strings.Split(src, "\n") {
+		l = strings.TrimSpace(l)
+		if !strings.HasPrefix(l, "//") {
+			flush()
+			continue
+		}
+		cur = append(cur, strings.TrimPrefix(strings.TrimPrefix(l, "//"), " "))
+	}
+	flush()
 	return out
 }
 
@@ -151,8 +176,9 @@ func generate(t *testing.T) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
+	notices := sourceNotices(t)
 	section("Go", []string{filepath.Join(strings.TrimSpace(string(goroot)), "LICENSE")})
-	for _, n := range runtimeNotices(t) {
+	for _, n := range notices["Go"] {
 		block(n)
 	}
 	for _, m := range modules(t) {
@@ -161,6 +187,9 @@ func generate(t *testing.T) []byte {
 			t.Errorf("%s %s has no license file", m.Path, m.Version)
 		}
 		section(m.Path+" "+m.Version, paths)
+		for _, n := range notices[m.Path] {
+			block(n)
+		}
 	}
 	return b.Bytes()
 }

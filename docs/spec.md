@@ -908,7 +908,7 @@ doesn't:
   [Network and logs](#network-and-logs).
 - **Local servers get little of the agent's environment:** their own variables, the fixed base set, and the
   variables they name in `env-pass`. A token in the agent's environment reaches a server only when that
-  server names it. They run in the session folder, and a tool like `npx`
+  server names it, or when it is part of a base variable, such as a proxy URL with a password. They run in the session folder, and a tool like `npx`
   can run code of the session's repository.
 - **`ctxtra mcp show` prints a local server's stderr** in the terminal, which can hold secrets. An agent that
   runs it reads that output. `ctxtra mcp status`, which the proxy's instructions point agents to, shows only
