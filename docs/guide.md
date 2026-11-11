@@ -333,6 +333,11 @@ What to keep in mind:
 - Any process of yours can read the stored credentials, as with the agents' own sign-ins.
 - `ctxtra mcp show` prints a local server's error output, which can hold secrets; an agent that runs it
   reads it too.
+- ctxtra's MCP server sees every tool call and its result, and passes them on. Its log has neither, only
+  which servers started and how calls failed.
+- Without a keychain, a backup of `~/.ctxtra/mcp` holds the key of your credentials too.
+- ctxtra will later sign in as an app described by a file on its own domain, which authorization servers
+  show you. Until then it registers itself with each authorization server.
 
 When a session lacks a server's tools, `ctxtra mcp status` in that folder says why: the server needs sign-in,
 failed, or was too slow for the agent's first tool list. The session summary also names servers that need
