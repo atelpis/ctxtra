@@ -28,9 +28,6 @@ func Lock(path string) (unlock func(), err error) {
 	return func() { f.Close() }, nil
 }
 
-// ErrLockTimeout is LockShared or LockTimeout giving up.
-var ErrLockTimeout = errors.New("timed out waiting for a lock")
-
 // LockShared takes a shared lock on the file path: many holders, but none
 // while someone holds Lock. It waits at most timeout. Where the file can't
 // be written, for example in an agent's sandbox, an existing one is locked
