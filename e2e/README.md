@@ -78,7 +78,7 @@ docker build -f e2e/Dockerfile --build-arg AGENTS=latest -t ctxtra-e2e-latest . 
 | `TestMCPFailingServer` | A bound server that fails to start costs only its own tools |
 | `TestMCPInstructions` | Claude Code and Codex show the proxy's MCP instructions to the model: how to learn why a tool is missing, and which servers need sign-in |
 | `TestMCPSignInDuringSession` | Claude Code: a server missing at the start because its secret value isn't set gets its tools once the user sets it during the session |
-| `TestMCPOpenCodeService` | OpenCode's shared background service (on a port of its own, stopped at the end): a repository's subfolder and a worktree each get their own proxy, in their folder, with their servers |
+| `TestMCPOpenCodeService` | OpenCode's shared background service (started explicitly on a port of its own, stopped at the end): a repository's subfolder and a worktree each get their own proxy, in their folder, with their servers |
 | `TestNativeFiles` | The files that `ctxtra import` lists for an agent are the user-level files that reach its model, out of a set of candidates, apart from files it leaves out on purpose (`nativeExcluded`); a file it lists as not read now doesn't reach it |
 
 A scenario that needs a capability (`driver.Cap`) runs only for agents that declare it, and is skipped

@@ -56,11 +56,12 @@ bindings:
 		}
 		port := ln.Addr().(*net.TCPAddr).Port
 		ln.Close()
+		serviceEnv := s.Env()
 		service := func(args ...string) (string, error) {
 			ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 			defer cancel()
 			cmd := exec.CommandContext(ctx, a.Bin, append([]string{"service"}, args...)...)
-			cmd.Dir, cmd.Env = s.Home, s.Env()
+			cmd.Dir, cmd.Env = s.Home, serviceEnv
 			out, err := cmd.CombinedOutput()
 			return string(out), err
 		}
@@ -84,9 +85,18 @@ bindings:
 			}
 		})
 		adjust := s.Adjust
+		started := false
 		s.Adjust = func(cmd *exec.Cmd) {
 			adjust(cmd)
 			cmd.Args = slices.DeleteFunc(cmd.Args, func(a string) bool { return a == "--standalone" })
+			if !started {
+				// Start after the driver writes the mock provider and setup adds MCP.
+				serviceEnv = cmd.Env
+				if out, err := service("start"); err != nil {
+					t.Fatalf("opencode service start: %v\n%s", err, out)
+				}
+				started = true
+			}
 		}
 
 		s.Run(wt, driver.Options{}, mcpScript(a.Name(), "alpha__probe_ping")...)
