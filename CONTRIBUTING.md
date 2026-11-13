@@ -3,6 +3,11 @@
 Bug reports and small fixes are welcome. For a new feature or a larger change, open an issue first, so we
 can agree on it before you write the code. ctxtra is in preview and maintained by one person.
 
+Submit changes as a pull request to `main`. Explain what changes and why, and link any related public
+issue. The maintainer reviews pull requests before merging; address review comments and make sure the
+checks pass. Add automated tests for major new functionality and regression tests for bug fixes.
+Update the docs when behavior changes.
+
 Build and test (Go 1.27.3+, macOS or Linux):
 
 ```bash
