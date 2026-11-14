@@ -1157,7 +1157,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## github.com/godbus/dbus/v5 v5.2.2
+## github.com/godbus/dbus/v5 v5.2.4
 
 ```text
 Copyright (c) 2013, Georg Reinke (<guelfey at gmail dot com>), Google
